@@ -774,7 +774,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ruamel.yaml import YAMLError
+from ruamel.yaml.error import YAMLError
 
 from talkub import yamlio
 from talkub.errors import RepoNotFound, ValidationError
@@ -2059,6 +2059,8 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 `tests/test_access.py` (uses fake `talosctl`/`kubectl`/shell scripts on PATH that print what they received):
 
 ```python
+import os
+
 import pytest
 
 from helpers import need
@@ -2070,6 +2072,7 @@ pytestmark = need("age", "age-keygen", "sops")
 
 REPORT = """printf 'args:%s\\n' "$*"
 printf 'key:%s\\n' "${SOPS_AGE_KEY:-absent}"
+printf 'ident:%s\\n' "${TALKUB_IDENTITY:-absent}"
 printf 'session:%s\\n' "${TALKUB_SESSION:-none}"
 [ -n "$TALOSCONFIG" ] && [ -f "$TALOSCONFIG" ] && cat "$TALOSCONFIG"
 [ -n "$KUBECONFIG" ] && [ -f "$KUBECONFIG" ] && cat "$KUBECONFIG"
@@ -2078,17 +2081,21 @@ exit 5
 """
 
 
-def test_talosctl_gets_decrypted_config_and_verbatim_args(repo_with_configs, fake_bin, capfd, monkeypatch):
+def test_talosctl_gets_decrypted_config_and_verbatim_args(
+    repo_with_configs, software_identity, fake_bin, capfd, monkeypatch
+):
     fake_bin("talosctl", REPORT)
-    monkeypatch.setenv("SOPS_AGE_KEY_FILE", "/should/not/leak")
+    # Used by talkub to decrypt, but must not be visible to talosctl.
+    monkeypatch.setenv("TALKUB_IDENTITY", str(software_identity[0]))
     code = access.talosctl(Context.open(repo_with_configs), ["get", "members", "--", "-x"])
     out = capfd.readouterr().out
     assert code == 5
     assert "args:get members -- -x" in out
     assert "talos: marker" in out
     assert "key:absent" in out
+    assert "ident:absent" in out
     talosconfig = out.split("tc:")[1].strip()
-    assert talosconfig and not __import__("os").path.exists(talosconfig)
+    assert talosconfig and not os.path.exists(talosconfig)
 
 
 def test_kubectl_uses_kubeconfig(repo_with_configs, fake_bin, capfd):
@@ -2570,6 +2577,7 @@ def test_generated_patches_validate_with_talosctl(tmp_path, software_identity, f
                 "talosctl", "gen", "config", "demo", "https://10.0.0.10:6443",
                 "--with-secrets", str(paths["secrets.yaml"]),
                 "-t", "controlplane", "-o", str(out),
+                "--with-docs=false", "--with-examples=false",
                 "--config-patch-control-plane", f"@{repo.root / 'talos/patches/controlplane.yaml'}",
                 "--config-patch", f"@{repo.root / 'talos/nodes/cp-01.yaml'}",
             ],
@@ -2598,15 +2606,25 @@ def test_existing_git_dir_is_allowed(tmp_path, software_identity, fake_bin):
     assert (target / ".talkub.yaml").is_file()
 
 
-def test_failed_init_cleans_up_and_can_be_retried(tmp_path, software_identity, fake_bin):
+def test_failed_helm_lookup_writes_nothing(tmp_path, software_identity, fake_bin):
     fake_bin("helm", "echo 'network unreachable' >&2; exit 1\n")
+    target = tmp_path / "demo"
+    with pytest.raises(CommandFailed):
+        init_cluster(_request(target, software_identity[1]), Runner())
+    assert not target.exists()
+
+
+def test_failure_after_writing_cleans_up_and_can_be_retried(tmp_path, software_identity, fake_bin):
+    fake_bin("helm", HELM)
+    # Fails after keys/ has been written, so cleanup is really exercised.
+    broken_talosctl = fake_bin("talosctl", "echo 'boom' >&2; exit 1\n")
     target = tmp_path / "demo"
     (target / ".git").mkdir(parents=True)
     with pytest.raises(CommandFailed):
         init_cluster(_request(target, software_identity[1]), Runner())
     assert sorted(p.name for p in target.iterdir()) == [".git"]
 
-    fake_bin("helm", HELM)
+    broken_talosctl.unlink()
     init_cluster(_request(target, software_identity[1]), Runner())
     assert (target / "keys/master.age").is_file()
 
@@ -2934,7 +2952,7 @@ def _write_tree(source: Traversable, destination: Path, values: dict[str, str]) 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_scaffold.py -v`
-Expected: 6 passed. If `test_generated_patches_validate_with_talosctl` fails, print `result.stdout` and fix the patch template rather than weakening the assertion.
+Expected: 7 passed. If `test_generated_patches_validate_with_talosctl` fails, print `result.stdout` and fix the patch template rather than weakening the assertion.
 
 - [ ] **Step 6: Commit**
 
@@ -3115,7 +3133,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ruamel.yaml import YAMLError
+from ruamel.yaml.error import YAMLError
 
 from talkub import recipients as recipients_file
 from talkub import yamlio
@@ -3574,7 +3592,7 @@ def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd,
     assert _run(["admin", "add", OTHER_KEY, "--name", "backup"]) == 0
     assert _run(["admin", "list"]) == 0
     out = capfd.readouterr().out
-    assert "backup" in out and "jam" not in out or "backup" in out
+    assert "backup\tage1qk2vu7" in out
 
     assert _run(["admin", "remove", "backup"]) == 0
     assert "keys rotate" in capfd.readouterr().out
@@ -3789,18 +3807,6 @@ app.add_typer(admin.app, name="admin")
 app.add_typer(keys.app, name="keys")
 app.add_typer(sops_cli.app, name="sops")
 app.command("check")(check.check)
-```
-
-Also fix the weak assertion in the test from Step 1 — replace
-
-```python
-    assert "backup" in out and "jam" not in out or "backup" in out
-```
-
-with
-
-```python
-    assert "backup\tage1qk2vu7" in out
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
