@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from talkub import identity
 from talkub import recipients as recipients_file
 from talkub.crypto import age
+from talkub.crypto.sops import Sops, render_sops_config
 from talkub.errors import NoIdentity, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.recipients import Recipient
@@ -92,3 +93,30 @@ class Keyring:
         # and re-running the same command fixes it.
         atomic_write(self.repo.master_age, ciphertext)
         atomic_write(self.repo.recipients_file, recipients_file.render(recipients).encode())
+
+    def rotate(self, sops: Sops) -> None:
+        """Replace the master key and re-encrypt every SOPS file.
+
+        The new key is written to master.next.age before any SOPS file changes, so
+        an interruption never loses the key those files are encrypted to.
+        """
+        pending = self.repo.master_next_age
+        if pending.exists():
+            raise ValidationError(
+                "a previous key rotation was interrupted",
+                hint=(
+                    "keys/master.next.age holds the newer key; decrypt it with `age -d`, "
+                    "check which key the SOPS files use, finish manually and delete master.next.age"
+                ),
+            )
+        recipients = self.recipients()
+        plaintexts = {path: sops.decrypt(path) for path in self.repo.sops_files()}
+        new = age.generate(self.runner)
+
+        atomic_write(pending, age.encrypt(self.runner, (new.secret + "\n").encode(), [r.key for r in recipients]))
+        for path, plaintext in plaintexts.items():
+            atomic_write(path, sops.encrypt(plaintext, filename=path.name, public_key=new.public))
+        atomic_write(self.repo.master_pub, (new.public + "\n").encode())
+        atomic_write(self.repo.sops_config, render_sops_config(new.public).encode())
+        os.replace(pending, self.repo.master_age)
+        self._master = new.secret
