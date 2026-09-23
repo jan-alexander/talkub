@@ -10,7 +10,7 @@ from talkub.errors import CommandFailed, ValidationError
 from talkub.recipients import Recipient
 from talkub.repo import NodeSpec
 from talkub.runner import Runner
-from talkub.scaffold import InitRequest, init_cluster
+from talkub.scaffold import TEMPLATES, InitRequest, init_cluster
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
@@ -120,6 +120,28 @@ def test_failure_after_writing_cleans_up_and_can_be_retried(tmp_path, software_i
     broken_talosctl.unlink()
     init_cluster(_request(target, software_identity[1]), Runner())
     assert (target / "keys/master.age").is_file()
+
+
+def test_target_that_is_a_file_refused(tmp_path, software_identity):
+    target = tmp_path / "demo"
+    target.write_text("x")
+    with pytest.raises(ValidationError):
+        init_cluster(_request(target, software_identity[1]), Runner())
+    assert target.read_text() == "x"
+
+
+def test_existing_ds_store_is_allowed(tmp_path, software_identity, fake_bin):
+    fake_bin("helm", HELM)
+    target = tmp_path / "demo"
+    target.mkdir()
+    (target / ".DS_Store").write_bytes(b"\0")
+    init_cluster(_request(target, software_identity[1]), Runner())
+    assert (target / ".talkub.yaml").is_file()
+
+
+def test_repo_readme_template_has_no_placeholder_link():
+    text = (TEMPLATES / "repo" / "README.md.tmpl").read_text()
+    assert "https://github.com/)" not in text
 
 
 def test_needs_a_controlplane_node(tmp_path, software_identity):

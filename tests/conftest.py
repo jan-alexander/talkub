@@ -84,13 +84,15 @@ def keyed_repo(empty_repo, software_identity):
 
 @pytest.fixture
 def repo_with_configs(keyed_repo):
-    """keyed_repo plus SOPS-encrypted talosconfig and kubeconfig with marker content."""
+    """keyed_repo plus .sops.yaml and SOPS-encrypted talosconfig and kubeconfig with marker content."""
     _require("sops")
     from talkub.context import Context
+    from talkub.crypto.sops import render_sops_config
     from talkub.fsutil import atomic_write
 
     ctx = Context.open(keyed_repo)
     public = ctx.keyring.public_key()
+    atomic_write(keyed_repo.sops_config, render_sops_config(public).encode())
     for path, text in (
         (keyed_repo.talosconfig, b"talos: marker\n"),
         (keyed_repo.kubeconfig, b"kube: marker\n"),

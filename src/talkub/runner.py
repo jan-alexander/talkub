@@ -82,12 +82,16 @@ class Runner:
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
     ) -> int:
-        """Run interactively with inherited stdio and return the exit code."""
+        """Run interactively with inherited stdio and return the exit code.
+
+        A child killed by signal N yields 128 + N, like a shell does.
+        """
         require_tool(argv[0])
         proc = subprocess.Popen(list(argv), env=child_env(env), cwd=cwd)
         while True:
             try:
-                return proc.wait()
+                code = proc.wait()
+                return 128 - code if code < 0 else code
             except KeyboardInterrupt:
                 # The child got SIGINT too (same process group); let it decide when to exit.
                 continue

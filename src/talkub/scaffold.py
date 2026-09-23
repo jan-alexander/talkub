@@ -22,7 +22,7 @@ from talkub.runner import Runner
 from talkub.talos import gen
 
 TEMPLATES = resources.files("talkub") / "templates"
-ALLOWED_EXISTING = {".git"}
+ALLOWED_EXISTING = {".git", ".DS_Store"}
 _NAME = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?")
 
 
@@ -44,6 +44,8 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
     _validate(request)
     target = request.target
     existed = target.exists()
+    if existed and not target.is_dir():
+        raise ValidationError(f"{target} exists and is not a directory", hint="choose a new directory")
     if existed and {p.name for p in target.iterdir()} - ALLOWED_EXISTING:
         raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
 

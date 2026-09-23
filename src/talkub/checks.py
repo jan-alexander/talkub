@@ -30,16 +30,57 @@ def _repo_files(repo: Repo) -> list[Path]:
     ]
 
 
+def _load_yaml(path: Path) -> object:
+    try:
+        return yamlio.load(path.read_text())
+    except (OSError, YAMLError):
+        return None
+
+
+def _age_recipients(metadata: object) -> set[str]:
+    """Recipients from a SOPS file's `sops.age` block."""
+    entries = metadata.get("age") if isinstance(metadata, Mapping) else None
+    if not isinstance(entries, list):
+        return set()
+    return {str(e["recipient"]).strip() for e in entries if isinstance(e, Mapping) and "recipient" in e}
+
+
+def _sops_config_keys(config: object) -> set[str]:
+    """age keys named in `.sops.yaml` creation rules (a comma-separated string or a list)."""
+    rules = config.get("creation_rules") if isinstance(config, Mapping) else None
+    keys: set[str] = set()
+    for rule in rules if isinstance(rules, list) else []:
+        value = rule.get("age") if isinstance(rule, Mapping) else None
+        items = value if isinstance(value, list) else str(value or "").split(",")
+        keys.update(str(item).strip() for item in items if str(item).strip())
+    return keys
+
+
+def _master_pub(repo: Repo, findings: list[Finding]) -> str | None:
+    try:
+        return repo.master_pub.read_text().strip() or None
+    except OSError:
+        findings.append(Finding("error", "keys/master.pub is missing"))
+        return None
+
+
 def run_checks(repo: Repo) -> list[Finding]:
+    """Key-free checks: nothing here decrypts or needs an identity."""
     findings: list[Finding] = []
+    master_pub = _master_pub(repo, findings)
+
+    if master_pub is not None:
+        if not repo.sops_config.is_file():
+            findings.append(Finding("error", ".sops.yaml is missing"))
+        elif master_pub not in _sops_config_keys(_load_yaml(repo.sops_config)):
+            findings.append(Finding("error", ".sops.yaml does not use the key in keys/master.pub"))
 
     for path in repo.sops_files():
-        try:
-            data = yamlio.load(path.read_text())
-        except YAMLError:
-            data = None
+        data = _load_yaml(path)
         if not isinstance(data, Mapping) or "sops" not in data:
             findings.append(Finding("error", f"{repo.rel(path)} is not SOPS-encrypted"))
+        elif master_pub is not None and master_pub not in _age_recipients(data["sops"]):
+            findings.append(Finding("error", f"{repo.rel(path)} is not encrypted to keys/master.pub"))
 
     if repo.gitops_dir.is_dir():
         for path in sorted(repo.gitops_dir.rglob("*")):

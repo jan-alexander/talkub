@@ -5,7 +5,7 @@ import pytest
 from helpers import need
 from talkub import access
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.errors import ToolMissing, ValidationError
 
 pytestmark = need("age", "age-keygen", "sops")
 
@@ -47,6 +47,24 @@ def test_kubectl_without_kubeconfig_explains(keyed_repo):
     with pytest.raises(ValidationError) as exc:
         access.kubectl(Context.open(keyed_repo), ["get", "pods"])
     assert "bootstrap" in exc.value.hint
+    assert "talkub sops edit kubernetes/kubeconfig.sops.yaml" in exc.value.hint
+
+
+@pytest.mark.parametrize("command", ["talosctl", "kubectl"])
+def test_missing_tool_reported_before_decrypting(repo_with_configs, monkeypatch, tmp_path, command):
+    # No identity available: decrypting first would raise NoIdentity instead.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
+    ctx = Context.open(repo_with_configs)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+    with pytest.raises(ToolMissing) as exc:
+        getattr(access, command)(ctx, ["version"])
+    assert command in str(exc.value)
+
+
+def test_shell_missing_program_reported_before_decrypting(repo_with_configs, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
+    with pytest.raises(ToolMissing):
+        access.shell(Context.open(repo_with_configs), str(tmp_path / "no-such-shell"))
 
 
 def test_shell_sets_session_and_both_configs(repo_with_configs, fake_bin, capfd):

@@ -87,3 +87,7 @@ def main(argv: list[str] | None = None) -> None:
     except TalkubError as err:
         _report(err, state.debug)
         raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        # Ctrl-C (e.g. while waiting for a YubiKey touch): no traceback, shell-style code.
+        print("interrupted", file=sys.stderr)
+        raise SystemExit(130) from None

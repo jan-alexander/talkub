@@ -1,12 +1,12 @@
 # $name
 
-Talos cluster repo managed with [talkub](https://github.com/).
+Talos cluster repo managed with talkub.
 
 | Path | Content |
 |---|---|
 | `keys/` | cluster master key (`master.age`, encrypted to `recipients.txt`) |
 | `talos/` | Talos secrets and talosconfig (SOPS), patches, per-node patches |
-| `kubernetes/` | kubeconfig (SOPS), created by `talkub bootstrap` |
+| `kubernetes/` | kubeconfig (SOPS), created by `talkub bootstrap` (phase 2; until then `talkub sops edit kubernetes/kubeconfig.sops.yaml`) |
 | `bootstrap/` | sealed-secrets key backup (SOPS) and public cert |
 | `gitops/` | everything ArgoCD reads (`root.yaml` is the app of apps) |
 

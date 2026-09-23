@@ -1,5 +1,8 @@
 from helpers import need
 from talkub.checks import run_checks
+from talkub.context import Context
+from talkub.crypto import age
+from talkub.crypto.sops import render_sops_config
 from talkub.recipients import Recipient
 from talkub.keyring import Keyring
 from talkub.runner import Runner
@@ -43,6 +46,24 @@ def test_age_secret_key_anywhere(repo_with_configs):
 def test_known_plaintext_names(repo_with_configs):
     (repo_with_configs.root / "kubernetes" / "kubeconfig").write_text("x")
     assert any("kubernetes/kubeconfig" in m for m in _messages(repo_with_configs, "error"))
+
+
+def test_sops_file_not_encrypted_to_master_pub(repo_with_configs):
+    other = age.generate(Runner()).public
+    path = repo_with_configs.root / "talos" / "extra.sops.yaml"
+    path.write_bytes(Context.open(repo_with_configs).sops.encrypt(b"a: 1\n", filename=path.name, public_key=other))
+    assert "talos/extra.sops.yaml is not encrypted to keys/master.pub" in _messages(repo_with_configs, "error")
+
+
+def test_sops_config_without_master_pub(repo_with_configs):
+    other = age.generate(Runner()).public
+    repo_with_configs.sops_config.write_text(render_sops_config(other))
+    assert any(".sops.yaml" in m and "keys/master.pub" in m for m in _messages(repo_with_configs, "error"))
+
+
+def test_missing_sops_config(repo_with_configs):
+    repo_with_configs.sops_config.unlink()
+    assert any(".sops.yaml" in m for m in _messages(repo_with_configs, "error"))
 
 
 def test_interrupted_rotation_warned(repo_with_configs):

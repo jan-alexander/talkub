@@ -2,7 +2,7 @@ import pytest
 
 from helpers import need
 from talkub import yamlio
-from talkub.cli.main import main, split_globals
+from talkub.cli.main import PASSTHROUGH, main, split_globals
 from talkub.context import Context
 
 pytestmark = need("age", "age-keygen", "sops")
@@ -68,6 +68,15 @@ def test_shell_command(repo_with_configs, fake_bin, capfd):
     program = fake_bin("fakeshell", "printf 'session:%s\\n' \"$TALKUB_SESSION\"\n")
     assert _run(["--repo", str(repo_with_configs.root), "shell", "--program", str(program)]) == 0
     assert "session:test" in capfd.readouterr().out
+
+
+def test_ctrl_c_exits_130_without_traceback(repo_with_configs, capfd, monkeypatch):
+    def interrupted(ctx, args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setitem(PASSTHROUGH, "k", interrupted)
+    assert _run(["--repo", str(repo_with_configs.root), "k", "get", "pods"]) == 130
+    assert "Traceback" not in capfd.readouterr().err
 
 
 def _editor(fake_bin, monkeypatch, tmp_path, body):

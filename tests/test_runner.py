@@ -54,3 +54,8 @@ def test_run_child_does_not_inherit_key(monkeypatch):
 
 def test_call_returns_exit_code():
     assert Runner().call([sys.executable, "-c", "raise SystemExit(7)"]) == 7
+
+
+def test_call_maps_signal_death_to_shell_exit_code():
+    code = "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"
+    assert Runner().call([sys.executable, "-c", code]) == 143

@@ -36,6 +36,13 @@ the cluster repo and is installed with uv.
     talkub shell                       # subshell with TALOSCONFIG/KUBECONFIG, removed on exit
     talkub sops edit talos/secrets.sops.yaml
 
+`talkub k` needs `kubernetes/kubeconfig.sops.yaml`. It will be created by
+`talkub bootstrap` (phase 2, not yet available); until then place a kubeconfig
+with `talkub sops edit kubernetes/kubeconfig.sops.yaml`.
+
+`talkub sops edit` decrypts into a private temp file and opens it in
+`$SOPS_EDITOR` or `$EDITOR` (default `vi`); the editor never sees the master key.
+
 Inside `talkub shell`, `TALKUB_SESSION` holds the cluster name. zsh prompt example:
 
     PROMPT='${TALKUB_SESSION:+(talkub:$TALKUB_SESSION) }'$PROMPT
