@@ -8,13 +8,14 @@ from talkub.identity import (
     create_identity,
     identities_dir,
     identity_files,
-    master_key_from_env,
+    master_key_candidates_from_env,
     own_recipients,
     recipient_of,
 )
 from talkub.runner import Runner
 
 SECRET = "AGE-SECRET-KEY-133FP6CADJCE6M9H6AUXY3NLXNX73NSSLQS0CHGVLPSVZKK87V80SPY0R56"
+SECRET2 = "AGE-SECRET-KEY-1LHPX92WHKCJYFAXTHK80Z8AU99RC40TTJWPGPX2QKM37N4XJNAWSJJJVF7"
 
 
 def test_identities_dir_uses_xdg(tmp_path):
@@ -22,22 +23,27 @@ def test_identities_dir_uses_xdg(tmp_path):
 
 
 def test_master_key_from_env_direct():
-    assert master_key_from_env({"SOPS_AGE_KEY": f"# comment\n{SECRET}\n"}) == SECRET
+    assert master_key_candidates_from_env({"SOPS_AGE_KEY": f"# comment\n{SECRET}\n"}) == [SECRET]
+
+
+def test_master_key_from_env_returns_every_key():
+    env = {"SOPS_AGE_KEY": f"{SECRET}\n# second\n{SECRET2}\n"}
+    assert master_key_candidates_from_env(env) == [SECRET, SECRET2]
 
 
 def test_master_key_from_env_file(tmp_path):
     keyfile = tmp_path / "k.txt"
     keyfile.write_text(f"# created\n{SECRET}\n")
-    assert master_key_from_env({"SOPS_AGE_KEY_FILE": str(keyfile)}) == SECRET
+    assert master_key_candidates_from_env({"SOPS_AGE_KEY_FILE": str(keyfile)}) == [SECRET]
 
 
 def test_master_key_from_env_file_missing(tmp_path):
     with pytest.raises(NoIdentity):
-        master_key_from_env({"SOPS_AGE_KEY_FILE": str(tmp_path / "nope")})
+        master_key_candidates_from_env({"SOPS_AGE_KEY_FILE": str(tmp_path / "nope")})
 
 
 def test_master_key_from_env_absent():
-    assert master_key_from_env({}) is None
+    assert master_key_candidates_from_env({}) == []
 
 
 def test_identity_files_prefers_talkub_identity(tmp_path):

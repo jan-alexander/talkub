@@ -86,3 +86,32 @@ def test_remove_last_recipient_refused(keyed_repo):
 def test_remove_unknown(keyed_repo):
     with pytest.raises(ValidationError):
         Keyring(keyed_repo, Runner()).remove("nobody")
+
+
+def test_add_with_unrelated_env_key_refused_and_master_age_untouched(keyed_repo, tmp_path):
+    unrelated = age.generate(Runner())
+    keyfile = tmp_path / "personal-sops-keys.txt"
+    keyfile.write_text(unrelated.secret + "\n")
+    before = keyed_repo.master_age.read_bytes()
+    keyring = Keyring(keyed_repo, Runner(), env={"SOPS_AGE_KEY_FILE": str(keyfile)})
+    with pytest.raises(NoIdentity) as exc:
+        keyring.add(Recipient("backup", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"))
+    assert "does not contain this cluster's master key" in str(exc.value)
+    assert keyed_repo.master_age.read_bytes() == before
+    assert [r.name for r in Keyring(keyed_repo, Runner()).recipients()] == ["me"]
+
+
+def test_env_with_several_keys_picks_the_master(keyed_repo):
+    master = Keyring(keyed_repo, Runner()).master_key()
+    unrelated = age.generate(Runner())
+    env = {"SOPS_AGE_KEY": f"{unrelated.secret}\n{master}\n"}
+    assert Keyring(keyed_repo, Runner(), env=env).master_key() == master
+
+
+def test_write_refuses_key_not_matching_master_pub(keyed_repo):
+    unrelated = age.generate(Runner())
+    keyring = Keyring(keyed_repo, Runner())
+    before = keyed_repo.master_age.read_bytes()
+    with pytest.raises(ValidationError):
+        keyring._write(unrelated.secret, keyring.recipients())
+    assert keyed_repo.master_age.read_bytes() == before

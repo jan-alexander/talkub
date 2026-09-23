@@ -35,7 +35,10 @@ class Keyring:
         return recipients_file.parse(path.read_text())
 
     def public_key(self) -> str:
-        return self.repo.master_pub.read_text().strip()
+        path = self.repo.master_pub
+        if not path.is_file():
+            raise ValidationError(f"{self.repo.rel(path)} is missing")
+        return path.read_text().strip()
 
     def master_key(self) -> str:
         if self._master is None:
@@ -43,8 +46,17 @@ class Keyring:
         return self._master
 
     def _resolve(self) -> str:
-        if key := identity.master_key_from_env(self.env):
-            return key
+        if candidates := identity.master_key_candidates_from_env(self.env):
+            # Explicit env wins, but only if it really holds this cluster's key:
+            # SOPS_AGE_KEY_FILE often points at an unrelated personal key file.
+            expected = self.public_key()
+            for candidate in candidates:
+                if age.public_key(self.runner, candidate) == expected:
+                    return candidate
+            raise NoIdentity(
+                "SOPS_AGE_KEY/SOPS_AGE_KEY_FILE is set but does not contain this cluster's master key",
+                hint="unset it for talkub, or check keys/master.pub",
+            )
         files = identity.identity_files(self.env)
         if not files:
             raise NoIdentity(
@@ -62,8 +74,9 @@ class Keyring:
         if not recipients:
             raise ValidationError("at least one recipient is required")
         pair = age.generate(self.runner)
-        self._write(pair.secret, list(recipients))
+        # master.pub first: _write checks the secret against it.
         atomic_write(self.repo.master_pub, (pair.public + "\n").encode())
+        self._write(pair.secret, list(recipients))
         self._master = pair.secret
         return pair.secret
 
@@ -88,6 +101,12 @@ class Keyring:
         self._write(self.master_key(), remaining)
 
     def _write(self, secret: str, recipients: list[Recipient]) -> None:
+        # Invariant: master.age always holds the key matching master.pub, which every
+        # SOPS file is encrypted to. Writing any other key would lock everyone out.
+        if age.public_key(self.runner, secret) != self.public_key():
+            raise ValidationError(
+                "refusing to write keys/master.age: the key does not match keys/master.pub"
+            )
         ciphertext = age.encrypt(self.runner, (secret + "\n").encode(), [r.key for r in recipients])
         # master.age first: if we stop in between, recipients.txt is merely stale
         # and re-running the same command fixes it.

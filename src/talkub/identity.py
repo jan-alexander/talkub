@@ -23,23 +23,27 @@ def identities_dir(env: Mapping[str, str]) -> Path:
     return Path(base) / "talkub" / "identities"
 
 
-def _first_secret(text: str, source: str) -> str:
-    match = _SECRET.search(text)
-    if match is None:
+def _all_secrets(text: str, source: str) -> list[str]:
+    secrets = _SECRET.findall(text)
+    if not secrets:
         raise NoIdentity(f"{source} does not contain an AGE-SECRET-KEY")
-    return match.group(0)
+    return secrets
 
 
-def master_key_from_env(env: Mapping[str, str]) -> str | None:
-    """Stage 1 of the resolution order: the master key itself (CI/automation)."""
+def master_key_candidates_from_env(env: Mapping[str, str]) -> list[str]:
+    """Stage 1 of the resolution order: the master key itself (CI/automation).
+
+    Returns every age secret key found; the caller picks the one matching
+    keys/master.pub. Empty when neither variable is set.
+    """
     if value := env.get("SOPS_AGE_KEY", "").strip():
-        return _first_secret(value, "SOPS_AGE_KEY")
+        return _all_secrets(value, "SOPS_AGE_KEY")
     if path := env.get("SOPS_AGE_KEY_FILE"):
         try:
-            return _first_secret(Path(path).expanduser().read_text(), "SOPS_AGE_KEY_FILE")
+            return _all_secrets(Path(path).expanduser().read_text(), "SOPS_AGE_KEY_FILE")
         except OSError as err:
             raise NoIdentity(f"cannot read SOPS_AGE_KEY_FILE {path}: {err.strerror}") from err
-    return None
+    return []
 
 
 def identity_files(env: Mapping[str, str]) -> list[Path]:
