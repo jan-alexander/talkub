@@ -1,7 +1,9 @@
 import pytest
 
 from helpers import need
+from talkub import yamlio
 from talkub.cli.main import main, split_globals
+from talkub.context import Context
 
 pytestmark = need("age", "age-keygen", "sops")
 
@@ -66,3 +68,35 @@ def test_shell_command(repo_with_configs, fake_bin, capfd):
     program = fake_bin("fakeshell", "printf 'session:%s\\n' \"$TALKUB_SESSION\"\n")
     assert _run(["--repo", str(repo_with_configs.root), "shell", "--program", str(program)]) == 0
     assert "session:test" in capfd.readouterr().out
+
+
+def _editor(fake_bin, monkeypatch, tmp_path, body):
+    """A fake $EDITOR that records whether it saw the master key, then runs `body`."""
+    seen = tmp_path / "editor-saw-key.txt"
+    editor = fake_bin("fake-editor", f'printf "%s" "${{SOPS_AGE_KEY:-absent}}" > {seen}\n{body}')
+    monkeypatch.delenv("SOPS_EDITOR", raising=False)
+    monkeypatch.setenv("EDITOR", str(editor))
+    return seen
+
+
+def test_sops_edit_hides_key_from_editor_and_reencrypts(repo_with_configs, fake_bin, monkeypatch, tmp_path):
+    ctx = Context.open(repo_with_configs)
+    # Even a master key given via the environment must not reach the editor.
+    monkeypatch.setenv("SOPS_AGE_KEY", ctx.keyring.master_key())
+    seen = _editor(fake_bin, monkeypatch, tmp_path, 'printf "added: yes\\n" >> "$1"\n')
+    path = repo_with_configs.talosconfig
+    assert _run(["--repo", str(repo_with_configs.root), "sops", "edit", str(path)]) == 0
+    assert seen.read_text() == "absent"
+    assert "sops" in yamlio.load(path.read_text())
+    assert yamlio.load(Context.open(repo_with_configs).sops.decrypt(path).decode()) == {
+        "talos": "marker",
+        "added": "yes",
+    }
+
+
+def test_sops_edit_unchanged_exits_zero_and_keeps_file(repo_with_configs, fake_bin, monkeypatch, tmp_path):
+    _editor(fake_bin, monkeypatch, tmp_path, "exit 0\n")
+    path = repo_with_configs.talosconfig
+    before = path.read_bytes()
+    assert _run(["--repo", str(repo_with_configs.root), "sops", "edit", str(path)]) == 0
+    assert path.read_bytes() == before

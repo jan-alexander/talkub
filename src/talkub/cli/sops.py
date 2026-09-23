@@ -14,7 +14,7 @@ app = typer.Typer(help="Edit or decrypt SOPS files with the cluster master key."
 def edit(ctx: typer.Context, file: Path) -> None:
     """Open a SOPS file in $EDITOR (creates it if missing)."""
     context = ctx.obj.context()
-    raise typer.Exit(context.sops.edit(file.resolve(), cwd=context.repo.root))
+    raise typer.Exit(context.sops.edit(file.resolve(), context.keyring.public_key()))
 
 
 @app.command("decrypt")
