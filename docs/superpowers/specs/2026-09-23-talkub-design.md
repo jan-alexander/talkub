@@ -137,6 +137,7 @@ Das Repo wird gefunden, indem ab `cwd` aufwärts nach `.talkub.yaml` gesucht wir
 ## 6. Architektur
 
 Stack: Python ≥ 3.12, `uv`-Projekt, `src/`-Layout, Typer (CLI), ruamel.yaml (kommentarerhaltendes YAML).
+Sprache: Code, Bezeichner, Kommentare, Docstrings und CLI-Ausgaben sind durchgehend Englisch.
 Externe Binaries: `age` (+ Plugins), `sops`, `talosctl`, `kubectl`, `kubeseal`, `helm`. Vorhandensein
 wird beim Aufruf des jeweiligen Befehls geprüft (`ToolMissing`).
 
