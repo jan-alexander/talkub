@@ -45,17 +45,18 @@ Erfolgskriterien:
 ├── talos/
 │   ├── secrets.sops.yaml        # talosctl gen secrets
 │   ├── talosconfig.sops.yaml
-│   ├── patches/common.yaml
-│   └── nodes/<node>.yaml
+│   ├── patches/                 # optional: common.yaml (alle), controlplane.yaml, worker.yaml
+│   │   └── controlplane.yaml    # init: entfernt NoSchedule-Taint (Workloads auf CP)
+│   └── nodes/<node>.yaml        # Node-Patch (HostnameConfig, Disk, Netzwerk)
 ├── kubernetes/
 │   └── kubeconfig.sops.yaml
 ├── bootstrap/
 │   ├── sealed-secrets-key.sops.yaml
-│   ├── sealed-secrets.pem       # öffentliches Sealing-Cert (Offline-Sealing)
-│   └── argocd/values.yaml
+│   └── sealed-secrets.pem       # öffentliches Sealing-Cert (Offline-Sealing)
 └── gitops/
     ├── root.yaml                # Root-Application → gitops/apps/
     ├── apps/{argocd,sealed-secrets,<app>}.yaml
+    ├── values/{argocd,sealed-secrets}.yaml   # Helm-Values; Bootstrap und ArgoCD nutzen dieselben Dateien
     └── manifests/<app>/{kustomization.yaml,*.sealed.yaml}
 ```
 
@@ -70,11 +71,22 @@ Konventionen:
 ```yaml
 name: my-cluster
 endpoint: https://10.0.0.10:6443
-talosVersion: v1.11.0
-kubernetesVersion: v1.34.0
-charts:
-  argocd: 8.x.x
-  sealedSecrets: 2.x.x
+talosVersion: v1.14.0
+kubernetesVersion: 1.37.0
+installImage: factory.talos.dev/metal-installer/<schematic-id>   # Tag = talosVersion
+nodes:
+  cp-01:
+    ip: 10.0.0.10
+    role: controlplane
+charts:                          # Versionen ermittelt `init` per `helm show chart`
+  argocd:
+    repo: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    version: 10.9.2
+  sealed-secrets:
+    repo: https://bitnami.github.io/sealed-secrets
+    chart: sealed-secrets
+    version: 2.20.0
 ```
 
 ## 4. Identitäts- und Schlüsselauflösung
@@ -102,7 +114,7 @@ Regeln:
 | Befehl | Verhalten |
 |---|---|
 | `identity new [--yubikey\|--se\|--software]` | Erzeugt persönliche Identität in `~/.config/talkub/identities/`, gibt Public Key aus. |
-| `init <name> --endpoint <url> --node <name>=<ip>` | Legt Struktur an; erzeugt Master-Key (nur RAM) und verschlüsselt ihn an den eigenen Public Key; `talosctl gen secrets` → SOPS; schreibt `.sops.yaml`, `.talkub.yaml`, Patches, Node-Datei, GitOps-Gerüst. Bricht ab, wenn Zielverzeichnis nicht leer ist. |
+| `init <name> --endpoint <url> --node <name>=<ip> --git-url <url>` | Legt Struktur an; erzeugt Master-Key (nur RAM) und verschlüsselt ihn an den eigenen Public Key; `talosctl gen secrets` → SOPS; schreibt `.sops.yaml`, `.talkub.yaml`, Patches, Node-Datei, GitOps-Gerüst. Bricht ab, wenn Zielverzeichnis nicht leer ist. |
 | `admin add <pubkey> --name <n>` | Fügt Empfänger hinzu, verschlüsselt `master.age` neu. |
 | `admin remove <n>` | Entfernt Empfänger, verschlüsselt `master.age` neu; verweigert letzten Empfänger; empfiehlt `keys rotate`. |
 | `admin list` | Listet Empfänger; Warnung bei < 2. |
@@ -112,9 +124,9 @@ Regeln:
 
 | Befehl | Verhalten |
 |---|---|
-| `node add <name> --ip <ip> [--role controlplane\|worker]` | Legt `talos/nodes/<name>.yaml` an. |
+| `node add <name> --ip <ip> [--role controlplane\|worker]` | Legt `talos/nodes/<name>.yaml` (Patch) an und trägt IP/Rolle unter `nodes:` in `.talkub.yaml` ein. |
 | `plan [node]` | Rendert Config im Speicher, `talosctl apply-config --dry-run`, zeigt Diff und Reboot-Bedarf. |
-| `apply [node] [--mode auto\|no-reboot\|reboot\|staged] [--yes]` | Wie `plan`, dann nach Bestätigung anwenden. |
+| `apply [node] [--mode auto\|no-reboot\|staged\|try] [--yes]` | Wie `plan`, dann nach Bestätigung anwenden. |
 | `apply --insecure <node>` | Erstinstallation eines Nodes im Maintenance-Modus. |
 | `bootstrap` | `talosctl bootstrap` → Health abwarten → kubeconfig holen, SOPS-verschlüsselt speichern → falls Backup vorhanden, Sealing-Key einspielen → Sealed Secrets + ArgoCD per Helm → `gitops/root.yaml` anwenden → falls kein Backup existierte, `secret backup-sealing-key` ausführen. |
 | `upgrade talos` / `upgrade k8s` | Soll-Version aus `.talkub.yaml` vs. Ist; `talosctl upgrade` bzw. `talosctl upgrade-k8s`. |
@@ -126,7 +138,7 @@ Regeln:
 |---|---|
 | `talosctl …` / `t …` | Ephemer entschlüsselte talosconfig, Argumente unverändert durchreichen, Exit-Code übernehmen. |
 | `kubectl …` / `k …` | Wie oben mit kubeconfig. |
-| `shell` | Subshell (`$SHELL`) mit `TALOSCONFIG`/`KUBECONFIG`; Prompt-Präfix `(talkub:<name>)`; Aufräumen bei Exit. |
+| `shell` | Subshell (`$SHELL`) mit `TALOSCONFIG`/`KUBECONFIG`; setzt `TALKUB_SESSION=<name>` für die Prompt-Integration (z. B. starship/zsh-Snippet in der README), Banner beim Start/Ende; verweigert verschachtelte Sessions; Aufräumen bei Exit. |
 | `secret seal <datei> [-o <out>]` | Secret → `*.sealed.yaml` via `kubeseal`; Cert live aus dem Cluster, Fallback `bootstrap/sealed-secrets.pem`. |
 | `secret backup-sealing-key` | Controller-Key(s) aus dem Cluster → `bootstrap/sealed-secrets-key.sops.yaml`; Cert → `bootstrap/sealed-secrets.pem`. |
 | `sops edit\|decrypt <datei>` | `sops` mit aufgelöstem Master-Key. |
@@ -144,8 +156,8 @@ wird beim Aufruf des jeweiligen Befehls geprüft (`ToolMissing`).
 ```
 src/talkub/
 ├── cli/            # nur Parsing, ruft Services
-│   ├── main.py     # App, Aliase t/k
-│   └── keys.py admin.py talos.py secrets.py passthrough.py
+│   ├── main.py     # App, globale Optionen, Fehlerausgabe, Pass-Through t/k
+│   └── setup.py admin.py keys.py sops.py check.py session.py (+ talos.py, secrets.py in Phase 2)
 ├── repo.py         # Repo finden, Pfade, .talkub.yaml laden/validieren
 ├── identity.py     # Auflösungsreihenfolge (Abschnitt 4)
 ├── crypto/age.py   # encrypt an Empfänger, decrypt mit Identitäten
@@ -168,8 +180,10 @@ src/talkub/
 
 ### Pass-Through
 
-Typer-Unterbefehle mit `context_settings={"allow_extra_args": True, "ignore_unknown_options": True}`;
-Argumente aus `ctx.args` als Liste an `runner`. Nie Shell-Strings.
+`main()` erkennt `t`/`talosctl`/`k`/`kubectl` (nach optionalen globalen Optionen `--repo`, `--debug`)
+selbst und reicht den Rest von `argv` **unverändert** weiter, ohne Typer. Grund: Click verschluckt `--`
+(z. B. `kubectl exec pod -- sh`) und würde `--help` abfangen. Die Typer-Befehle existieren nur für die Hilfe-Ausgabe.
+Argumente gehen immer als Liste an `runner`, nie als Shell-String.
 
 ## 7. Fehlerbehandlung
 
@@ -187,7 +201,17 @@ Argumente aus `ctx.args` als Liste an `runner`. Nie Shell-Strings.
 - Talos/Kubernetes-Befehle über einen Fake-Runner, der erwartete argv prüft.
 - Optional, per Marker deaktiviert: E2E gegen `talosctl cluster create` (Docker).
 
-## 9. Nicht in v1
+## 9. Umsetzungsphasen
+
+- Phase 1 (Fundament): Runner, Repo, Identitäten, age/SOPS, ephemere Entschlüsselung, `identity new`, `init`,
+  `admin`, `keys rotate`, `check`, `sops`, `t`/`k`/`shell`.
+- Phase 2 (Talos & Cluster): Rendern, `node add`, `plan`/`apply`, `bootstrap`, `upgrade`, `status`, `secret seal`/`backup-sealing-key`.
+
+Hinweis Talos ≥ 1.12: Machine-Configs sind Multi-Dokument-YAML (z. B. `HostnameConfig`, `KubeNodeConfig`).
+Patches verwenden diese Dokumentformen; `cluster.allowSchedulingOnControlPlanes` und `machine.network.hostname`
+kollidieren mit den Defaults.
+
+## 10. Nicht in v1
 
 - Agent / Master-Key-Cache (Ansatz 3).
 - Mehrere Cluster pro Repo.
