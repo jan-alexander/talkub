@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from talkub import __version__, access
-from talkub.cli import session
+from talkub.cli import admin, check, keys, session, setup
 from talkub.cli import sops as sops_cli
 from talkub.cli.state import State
 from talkub.errors import TalkubError
@@ -39,7 +39,12 @@ def _globals(
 
 
 session.register(app)
+app.add_typer(setup.identity_app, name="identity")
+app.command("init")(setup.init)
+app.add_typer(admin.app, name="admin")
+app.add_typer(keys.app, name="keys")
 app.add_typer(sops_cli.app, name="sops")
+app.command("check")(check.check)
 
 PASSTHROUGH = {"t": access.talosctl, "talosctl": access.talosctl, "k": access.kubectl, "kubectl": access.kubectl}
 
