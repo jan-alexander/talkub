@@ -1,0 +1,3 @@
+# Helm values for Argo CD (chart argo-cd). Used by `talkub bootstrap` and by Argo CD itself.
+dex:
+  enabled: false

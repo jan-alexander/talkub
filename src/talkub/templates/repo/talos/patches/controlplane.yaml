@@ -1,0 +1,6 @@
+# Allow regular workloads on control plane nodes (single-node cluster):
+# removes the default node-role.kubernetes.io/control-plane:NoSchedule taint.
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+taints:
+  $patch: delete

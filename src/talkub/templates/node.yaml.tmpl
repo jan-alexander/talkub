@@ -1,0 +1,6 @@
+# Talos patch for node $node, applied after talos/patches/*.yaml.
+# Add node-specific settings here (install disk, network, ...).
+apiVersion: v1alpha1
+kind: HostnameConfig
+auto: "off"
+hostname: $node

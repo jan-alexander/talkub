@@ -1,0 +1,138 @@
+"""`talkub init`: create a new cluster repo from the packaged templates."""
+
+from __future__ import annotations
+
+import re
+import shutil
+from dataclasses import dataclass
+from importlib import resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
+from string import Template
+
+from talkub import charts
+from talkub.crypto.sops import Sops, render_sops_config
+from talkub.ephemeral import private_tempdir
+from talkub.errors import ValidationError
+from talkub.fsutil import atomic_write
+from talkub.keyring import Keyring
+from talkub.recipients import Recipient
+from talkub.repo import NodeSpec, Repo, Settings
+from talkub.runner import Runner
+from talkub.talos import gen
+
+TEMPLATES = resources.files("talkub") / "templates"
+ALLOWED_EXISTING = {".git"}
+_NAME = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?")
+
+
+@dataclass(frozen=True)
+class InitRequest:
+    target: Path
+    name: str
+    endpoint: str
+    git_url: str
+    nodes: dict[str, NodeSpec]
+    recipients: list[Recipient]
+
+
+def render_node_patch(node: str) -> str:
+    return Template((TEMPLATES / "node.yaml.tmpl").read_text()).substitute(node=node)
+
+
+def init_cluster(request: InitRequest, runner: Runner) -> Repo:
+    _validate(request)
+    target = request.target
+    existed = target.exists()
+    if existed and {p.name for p in target.iterdir()} - ALLOWED_EXISTING:
+        raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
+
+    # Network lookups first: nothing is written if they fail.
+    chart_specs = charts.resolve_defaults(runner)
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        return _populate(Repo(target.resolve()), request, chart_specs, runner)
+    except BaseException:
+        _cleanup(target, existed)
+        raise
+
+
+def _validate(request: InitRequest) -> None:
+    if not _NAME.fullmatch(request.name):
+        raise ValidationError(
+            f"invalid cluster name {request.name!r}", hint="lowercase letters, digits and '-'"
+        )
+    if not request.endpoint.startswith("https://"):
+        raise ValidationError("endpoint must start with https://", hint="e.g. https://10.0.0.10:6443")
+    if not any(n.role == "controlplane" for n in request.nodes.values()):
+        raise ValidationError("at least one controlplane node is required")
+    if not request.recipients:
+        raise ValidationError("at least one recipient is required")
+
+
+def _cleanup(target: Path, existed: bool) -> None:
+    if not existed:
+        shutil.rmtree(target, ignore_errors=True)
+        return
+    for child in target.iterdir():
+        if child.name in ALLOWED_EXISTING:
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
+
+
+def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> Repo:
+    keyring = Keyring(repo, runner, env={})
+    keyring.create(request.recipients)
+    public = keyring.public_key()
+    sops = Sops(runner, keyring.master_key)
+    atomic_write(repo.sops_config, render_sops_config(public).encode())
+
+    controlplane_ips = [n.ip for n in request.nodes.values() if n.role == "controlplane"]
+    with private_tempdir() as work:
+        secrets = gen.gen_secrets(runner, work)
+        defaults = gen.detect_defaults(runner, request.name, request.endpoint, secrets)
+        talosconfig = gen.gen_talosconfig(
+            runner, request.name, request.endpoint, secrets, work,
+            endpoints=controlplane_ips, node=controlplane_ips[0],
+        )
+        for source, target in ((secrets, repo.talos_secrets), (talosconfig, repo.talosconfig)):
+            atomic_write(target, sops.encrypt(source.read_bytes(), filename=target.name, public_key=public))
+
+    settings = Settings(
+        name=request.name,
+        endpoint=request.endpoint,
+        talos_version=defaults.talos_version,
+        kubernetes_version=defaults.kubernetes_version,
+        install_image=defaults.install_image,
+        nodes=dict(request.nodes),
+        charts=chart_specs,
+    )
+    repo.write_settings(settings)
+    _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, request.git_url))
+    for node in request.nodes:
+        atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node).encode())
+    return repo
+
+
+def _template_values(settings: Settings, git_url: str) -> dict[str, str]:
+    values = {"name": settings.name, "git_url": git_url}
+    for key, spec in settings.charts.items():
+        prefix = key.replace("-", "_")
+        values |= {f"{prefix}_repo": spec.repo, f"{prefix}_chart": spec.chart, f"{prefix}_version": spec.version}
+    return values
+
+
+def _write_tree(source: Traversable, destination: Path, values: dict[str, str]) -> None:
+    """Copy templates; 'dot-x' becomes '.x', '*.tmpl' files are rendered with string.Template."""
+    for entry in source.iterdir():
+        name = "." + entry.name[4:] if entry.name.startswith("dot-") else entry.name
+        if entry.is_dir():
+            _write_tree(entry, destination / name, values)
+        elif name.endswith(".tmpl"):
+            text = Template(entry.read_text()).substitute(values)
+            atomic_write(destination / name.removesuffix(".tmpl"), text.encode())
+        else:
+            atomic_write(destination / name, entry.read_bytes())

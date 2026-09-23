@@ -1,0 +1,27 @@
+# Argo CD manages itself after `talkub bootstrap` installed it once.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: $argocd_repo
+      chart: $argocd_chart
+      targetRevision: $argocd_version
+      helm:
+        valueFiles:
+          - $$values/gitops/values/argocd.yaml
+    - repoURL: $git_url
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

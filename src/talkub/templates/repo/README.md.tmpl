@@ -1,0 +1,19 @@
+# $name
+
+Talos cluster repo managed with [talkub](https://github.com/).
+
+| Path | Content |
+|---|---|
+| `keys/` | cluster master key (`master.age`, encrypted to `recipients.txt`) |
+| `talos/` | Talos secrets and talosconfig (SOPS), patches, per-node patches |
+| `kubernetes/` | kubeconfig (SOPS), created by `talkub bootstrap` |
+| `bootstrap/` | sealed-secrets key backup (SOPS) and public cert |
+| `gitops/` | everything ArgoCD reads (`root.yaml` is the app of apps) |
+
+Common commands:
+
+    talkub t get members        # talosctl with the decrypted talosconfig
+    talkub k get pods -A        # kubectl with the decrypted kubeconfig
+    talkub shell                # subshell with TALOSCONFIG/KUBECONFIG set
+    talkub admin add <age1...> --name <admin>
+    talkub check                # run before every commit

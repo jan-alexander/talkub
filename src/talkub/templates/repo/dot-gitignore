@@ -1,0 +1,7 @@
+# Plaintext must never be committed. talkub only decrypts into private temp dirs.
+*.dec
+*.dec.*
+.talkub-tmp/
+talos/secrets.yaml
+talos/talosconfig
+kubernetes/kubeconfig
