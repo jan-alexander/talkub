@@ -138,8 +138,12 @@ Fehler → `ValidationError` mit der talosctl-Meldung, es wird nichts gesendet.
     sowie Pod- und Service-Subnetz (Talos-Defaults `10.244.0.0/16`, `10.96.0.0/12`);
     `NetworkRuleConfig` `flannel-vxlan`: udp 4789 von `nodeCidr`.
 - Fügt `siderolabs/tailscale` zu jeder genutzten Plattform-Schematic hinzu.
-- Setzt `endpoint` auf `https://<erster CP>.<tailnet>:6443` und für jeden Node ohne `mgmt`
-  `mgmt: <node>.<tailnet>`; aktualisiert die talosconfig-Endpoints auf die `mgmt`-Adressen der CPs.
+- **Endpoints (Korrektur 2026-09-24):** Der Cluster-Endpoint (`endpoint`, den Nodes/Kubelet/Join benutzen)
+  bleibt die LAN-/öffentliche Adresse des ersten CP — Nodes lösen mit `TS_ACCEPT_DNS=false` keine
+  `*.ts.net`-Namen auf. Nur die **Client-Seite** geht übers Tailnet: talosconfig-Endpoints = `mgmt`-Adressen
+  der CPs, kubeconfig `server:` = `https://<mgmt des ersten CP>:6443` (bootstrap schreibt das beim Speichern um,
+  `tailscale enable` schreibt eine vorhandene kubeconfig um). Die `mgmt`-Namen stehen per `--additional-sans`
+  im API-Zertifikat. Jeder Node ohne `mgmt` bekommt `mgmt: <node>.<tailnet>` (auch neue Nodes bei `node add`).
 - `nodeCidr`-Default: `/24` um die `ip` des ersten Nodes; wird angezeigt.
 - Hinweis-Ausgabe: getaggten, wiederverwendbaren, vorab genehmigten Auth-Key verwenden;
   bei `tailscale enable` auf laufenden Nodes: `apply` blockt danach LAN-Zugriff auf 50000 —
@@ -242,5 +246,5 @@ src/talkub/
 
 ## 13. Nicht in Phase 2
 
-KubeSpan/Multi-Standort, `node remove`/`talosctl reset`, automatische Versionsermittlung für
-Talos/Kubernetes-Updates, Tailscale Kubernetes Operator, Cilium o. a. CNI-Wechsel.
+KubeSpan/Multi-Standort, Tailscale Kubernetes Operator (Pod-Zugriff aufs Tailnet per Egress-Services; eigener späterer Schritt), `node remove`/`talosctl reset`, automatische Versionsermittlung für
+Talos/Kubernetes-Updates, Cilium o. a. CNI-Wechsel.
