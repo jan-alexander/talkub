@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -16,6 +16,7 @@ from talkub.ephemeral import private_tempdir
 from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
 from talkub.keyring import Keyring
+from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
 from talkub.recipients import Recipient
 from talkub.repo import (
     PLATFORMS,
@@ -43,10 +44,7 @@ class InitRequest:
     nodes: dict[str, NodeSpec]
     recipients: list[Recipient]
     platform: str = "metal"
-
-
-def render_node_patch(node: str) -> str:
-    return Template((TEMPLATES / "node.yaml.tmpl").read_text()).substitute(node=node)
+    node_options: dict[str, NodeOptions] = field(default_factory=dict)
 
 
 def init_cluster(request: InitRequest, runner: Runner) -> Repo:
@@ -83,6 +81,10 @@ def _validate(request: InitRequest) -> None:
         raise ValidationError("at least one controlplane node is required")
     if not request.recipients:
         raise ValidationError("at least one recipient is required")
+    for node in request.nodes:
+        validate_node_name(node)
+    for options in request.node_options.values():
+        options.check()
 
 
 def _cleanup(target: Path, existed: bool) -> None:
@@ -132,7 +134,8 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
     repo.write_settings(settings)
     _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, request.git_url))
     for node in request.nodes:
-        atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node).encode())
+        options = request.node_options.get(node, NodeOptions())
+        atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node, options).encode())
     return repo
 
 
