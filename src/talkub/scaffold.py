@@ -15,11 +15,13 @@ from talkub.crypto.sops import Sops, render_sops_config
 from talkub.ephemeral import private_tempdir
 from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
+from talkub.gitrepo import classify_url
 from talkub.keyring import Keyring
 from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
 from talkub.recipients import Recipient
 from talkub.repo import (
     PLATFORMS,
+    GitSpec,
     NodeSpec,
     Repo,
     SchematicSpec,
@@ -77,6 +79,7 @@ def _validate(request: InitRequest) -> None:
         raise ValidationError(
             f"unknown platform {request.platform!r}", hint=f"use one of: {', '.join(PLATFORMS)}"
         )
+    classify_url(request.git_url)
     if not any(n.role == "controlplane" for n in request.nodes.values()):
         raise ValidationError("at least one controlplane node is required")
     if not request.recipients:
@@ -121,6 +124,7 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
     # The schematic ID depends only on the customization, not on the platform, so the
     # default (empty) schematic from talosctl is valid for every platform.
     _, default_id = parse_installer_image(defaults.install_image)
+    git_url = request.git_url.strip()
     settings = Settings(
         name=request.name,
         endpoint=request.endpoint,
@@ -130,9 +134,10 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
         schematics={request.platform: SchematicSpec(id=default_id, hash=customization_hash([], []))},
         nodes=dict(request.nodes),
         charts=chart_specs,
+        git=GitSpec(url=git_url),
     )
     repo.write_settings(settings)
-    _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, request.git_url))
+    _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, git_url))
     for node in request.nodes:
         options = request.node_options.get(node, NodeOptions())
         atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node, options).encode())

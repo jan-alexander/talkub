@@ -11,6 +11,7 @@ from ruamel.yaml.error import YAMLError
 from talkub import recipients as recipients_file
 from talkub import yamlio
 from talkub.errors import ValidationError
+from talkub.gitrepo import SECRET_TYPE_LABEL
 from talkub.repo import Repo
 
 PLAINTEXT_NAMES = ("talos/secrets.yaml", "talos/talosconfig", "kubernetes/kubeconfig")
@@ -94,6 +95,16 @@ def run_checks(repo: Repo) -> list[Finding]:
             if any(isinstance(d, Mapping) and d.get("kind") == "Secret" for d in docs):
                 findings.append(
                     Finding("error", f"{repo.rel(path)} contains a plain Secret; seal it with kubeseal")
+                )
+
+    bootstrap_dir = repo.root / "bootstrap"
+    if bootstrap_dir.is_dir():
+        for path in sorted(bootstrap_dir.iterdir()):
+            if path.name.endswith(".sops.yaml") or path.suffix not in (".yaml", ".yml") or not path.is_file():
+                continue  # *.sops.yaml are checked for encryption above
+            if SECRET_TYPE_LABEL.encode() in path.read_bytes():
+                findings.append(
+                    Finding("error", f"{repo.rel(path)} is a plaintext Argo CD repository secret")
                 )
 
     for path in _repo_files(repo):

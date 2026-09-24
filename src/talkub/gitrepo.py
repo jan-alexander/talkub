@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +67,21 @@ def classify_url(url: str) -> GitUrl:
     if match is not None:
         return GitUrl(url, "ssh", match["host"].lower(), None)
     raise ValidationError("unsupported git URL (ssh or https only)", hint=URL_HINT)
+
+
+def git_init(root: Path, url: str, runner: Runner) -> list[str]:
+    """`git init -b main` and `origin` = url where missing. Problems become warnings, not errors."""
+    if shutil.which("git") is None:
+        return [f"git not found; run `git init -b main && git remote add origin {url}` in {root}"]
+    if not (root / ".git").exists():
+        proc = runner.run(["git", "init", "-q", "-b", "main"], cwd=root, check=False)
+        if proc.returncode != 0:
+            return [f"git init failed: {(proc.stderr or b'').decode(errors='replace').strip()}"]
+    if runner.run(["git", "remote", "get-url", "origin"], cwd=root, check=False).returncode != 0:
+        proc = runner.run(["git", "remote", "add", "origin", url], cwd=root, check=False)
+        if proc.returncode != 0:
+            return [f"could not add remote origin: {(proc.stderr or b'').decode(errors='replace').strip()}"]
+    return []
 
 
 def _manifest_files(repo: Repo) -> list[Path]:

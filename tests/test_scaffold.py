@@ -62,6 +62,10 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     talosconfig = yamlio.load(ctx.sops.decrypt(repo.talosconfig).decode())
     assert list(talosconfig["contexts"]["demo"]["endpoints"]) == ["10.0.0.10"]
 
+    from talkub.repo import GitSpec
+
+    assert settings.git == GitSpec(url="https://git.example.com/demo.git")
+
 
 def test_generated_patches_validate_with_talosctl(tmp_path, software_identity, fake_bin):
     fake_bin("helm", HELM)
@@ -166,3 +170,12 @@ def test_init_with_hcloud_platform(tmp_path, software_identity, fake_bin):
 def test_init_rejects_unknown_platform(tmp_path, software_identity):
     with pytest.raises(ValidationError):
         init_cluster(_request(tmp_path / "demo", software_identity[1], platform="vmware"), Runner())
+
+
+def test_init_rejects_invalid_git_url(tmp_path, software_identity):
+    request = _request(tmp_path / "demo", software_identity[1])
+    from dataclasses import replace
+
+    with pytest.raises(ValidationError):
+        init_cluster(replace(request, git_url="http://git.example.com/demo.git"), Runner())
+    assert not (tmp_path / "demo").exists()

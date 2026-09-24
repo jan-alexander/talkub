@@ -1,3 +1,6 @@
+import shutil
+import subprocess
+
 import pytest
 
 from talkub import gitrepo
@@ -5,6 +8,7 @@ from talkub.errors import ValidationError
 from talkub.gitrepo import GitUrl, classify_url
 from talkub.fsutil import atomic_write
 from talkub.repo import Repo
+from talkub.runner import Runner
 from talkub.scaffold import TEMPLATES
 
 
@@ -110,3 +114,28 @@ def test_rewrite_aborts_on_invalid_yaml_before_writing_anything(tmp_path):
         gitrepo.rewrite_repo_urls(repo, OLD, NEW)
     assert "gitops/apps/broken.yaml" in str(exc.value)
     assert (repo.gitops_dir / "root.yaml").read_text() == root_before
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_git_init_creates_repo_and_origin(tmp_path):
+    assert gitrepo.git_init(tmp_path, NEW, Runner()) == []
+    remote = subprocess.run(["git", "-C", str(tmp_path), "remote", "get-url", "origin"], capture_output=True, text=True)
+    assert remote.stdout.strip() == NEW
+    branch = subprocess.run(["git", "-C", str(tmp_path), "symbolic-ref", "--short", "HEAD"], capture_output=True, text=True)
+    assert branch.stdout.strip() == "main"
+    assert gitrepo.git_init(tmp_path, "git@other:x.git", Runner()) == []  # existing origin is kept
+    remote = subprocess.run(["git", "-C", str(tmp_path), "remote", "get-url", "origin"], capture_output=True, text=True)
+    assert remote.stdout.strip() == NEW
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_git_init_on_broken_git_dir_only_warns(tmp_path):
+    (tmp_path / ".git").mkdir()  # not a real repository
+    warnings = gitrepo.git_init(tmp_path, NEW, Runner())
+    assert warnings and "origin" in warnings[0]
+
+
+def test_git_init_without_git_warns(tmp_path, monkeypatch):
+    monkeypatch.setattr(gitrepo.shutil, "which", lambda name: None)
+    [warning] = gitrepo.git_init(tmp_path, NEW, Runner())
+    assert "git init -b main" in warning

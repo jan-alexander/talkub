@@ -41,6 +41,16 @@ def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd,
     ])
     assert code == 0
     assert (tmp_path / "demo" / ".talkub.yaml").is_file()
+
+    import shutil as _shutil
+    import subprocess as _subprocess
+
+    if _shutil.which("git"):
+        remote = _subprocess.run(
+            ["git", "-C", str(tmp_path / "demo"), "remote", "get-url", "origin"], capture_output=True, text=True
+        )
+        assert remote.stdout.strip() == "https://git.example.com/demo.git"
+
     monkeypatch.chdir(tmp_path / "demo")
 
     assert _run(["check"]) == 0

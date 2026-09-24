@@ -69,3 +69,13 @@ def test_missing_sops_config(repo_with_configs):
 def test_interrupted_rotation_warned(repo_with_configs):
     repo_with_configs.master_next_age.write_text("x")
     assert any("master.next.age" in m for m in _messages(repo_with_configs, "warning"))
+
+
+def test_plaintext_repo_secret_in_bootstrap_is_an_error(repo_with_configs):
+    from talkub import gitrepo
+
+    target = repo_with_configs.root / "bootstrap" / "repo.yaml"
+    target.parent.mkdir(exist_ok=True)
+    target.write_bytes(gitrepo.build_secret("demo", "git@github.com:me/x.git", ssh_private_key="K\n"))
+    messages = [f.message for f in run_checks(repo_with_configs)]
+    assert any("bootstrap/repo.yaml" in m and "plaintext" in m for m in messages)

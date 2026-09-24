@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from talkub import tailscale
+from talkub import gitrepo, tailscale
 from talkub.cli.nodes import (
     DISK,
     DNS,
@@ -111,6 +111,7 @@ def init(
         node_options=node_opts,
     )
     repo = init_cluster(request, Runner())
+    print_warnings(gitrepo.git_init(repo.root, git_url.strip(), Runner()))
     if authkey is not None:
         context = Context.open(repo)
         try:
@@ -131,4 +132,4 @@ def init(
                 hint=f"{hint}; {err.hint}" if err.hint else hint,
             ) from err
     print(f"created {repo.root}")
-    print("next: add a second admin or backup key (talkub admin add), then git add/commit")
+    print("next: add a second admin or backup key (talkub admin add), then git add -A && git commit")

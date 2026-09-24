@@ -57,7 +57,7 @@ def test_enable_rejects_bad_key_file(repo, tmp_path, capfd):
 
 def test_init_tailscale_needs_tailnet(tmp_path, capfd, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://git.example.com/demo.git",
                  "--node", "cp-01=10.0.0.10", "--tailscale"])
     assert code == 1
     assert "--tailnet" in capfd.readouterr().err
@@ -70,7 +70,7 @@ def test_init_with_tailscale(tmp_path, software_identity, fake_bin, monkeypatch)
     monkeypatch.chdir(tmp_path)
     key_file = tmp_path / "key"
     key_file.write_text(KEY)
-    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://git.example.com/demo.git",
                  "--node", "cp-01=10.0.0.10", "--tailscale", "--tailnet", "t.ts.net",
                  "--tailscale-authkey-file", str(key_file)])
     assert code == 0
@@ -95,7 +95,7 @@ def test_init_tailscale_lockdown_failure_hints_at_the_repo(tmp_path, software_id
         raise ValidationError("boom")
 
     monkeypatch.setattr(tailscale, "lockdown", _boom)
-    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://git.example.com/demo.git",
                  "--node", "cp-01=10.0.0.10", "--tailscale", "--tailnet", "t.ts.net",
                  "--tailscale-authkey-file", str(key_file)])
     assert code == 1
@@ -167,7 +167,7 @@ def test_init_tailscale_enable_failure_hint_keeps_node_cidr(tmp_path, software_i
         raise ValidationError("boom")
 
     monkeypatch.setattr(tailscale, "enable", _boom)
-    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://git.example.com/demo.git",
                  "--node", "cp-01=10.0.0.10", "--tailscale", "--tailnet", "t.ts.net",
                  "--tailscale-authkey-file", str(key_file), "--node-cidr", "10.0.0.0/16"])
     assert code == 1

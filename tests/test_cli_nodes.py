@@ -52,7 +52,7 @@ def test_init_with_platform_and_static_node(tmp_path, software_identity, fake_bi
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     code = _run([
-        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://git.example.com/demo.git",
         "--node", "cp-01=10.0.0.10", "--platform", "hcloud",
         "--static", "10.0.0.10/24", "--gateway", "10.0.0.1", "--mac", "aa:bb:cc:dd:ee:ff",
     ])
@@ -76,7 +76,7 @@ def test_init_warns_when_static_address_differs(tmp_path, software_identity, fak
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     code = _run([
-        "init", "demo", "--endpoint", "https://10.0.0.50:6443", "--git-url", "https://g",
+        "init", "demo", "--endpoint", "https://10.0.0.50:6443", "--git-url", "https://git.example.com/demo.git",
         "--node", "cp-01=192.168.1.50", "--static", "10.0.0.50/24", "--gateway", "10.0.0.1", "--mac", "aa:bb:cc:dd:ee:ff",
     ])
     assert code == 0
