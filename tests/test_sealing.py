@@ -57,6 +57,17 @@ def test_secret_manifest_errors(literals, files, message):
     assert message in str(exc.value) + (exc.value.hint or "")
 
 
+def test_secret_manifest_with_prompted():
+    doc = yamlio.load(sealing.secret_manifest("db", "app", [], [], prompted={"password": "hunter2"}).decode())
+    assert base64.b64decode(doc["data"]["password"]) == b"hunter2"
+
+
+def test_secret_manifest_prompted_duplicate_rejected():
+    with pytest.raises(ValidationError) as exc:
+        sealing.secret_manifest("db", "app", ["password=a"], [], prompted={"password": "b"})
+    assert "duplicate" in str(exc.value)
+
+
 @pytest.mark.parametrize(
     "text, message",
     [
@@ -98,6 +109,30 @@ def test_seal_prefers_live_cert(repo_with_configs, sealing_cert, spy):
 
 
 @pytestmark_keys
+def test_sealing_cert_warns_when_stored_cert_differs(repo_with_configs, sealing_cert, spy, capfd):
+    spy("kubectl")
+    spy("kubeseal").on("--fetch-cert", stdout=sealing_cert.decode())
+    atomic_write(
+        sealing.cert_path(repo_with_configs),
+        b"-----BEGIN CERTIFICATE-----\nstale\n-----END CERTIFICATE-----\n",
+    )
+    cert = sealing.sealing_cert(Context.open(repo_with_configs))
+    assert cert == sealing_cert
+    err = capfd.readouterr().err
+    assert "differs from bootstrap/sealed-secrets.pem" in err
+    assert "backup-sealing-key" in err
+
+
+@pytestmark_keys
+def test_sealing_cert_no_warning_when_stored_cert_matches(repo_with_configs, sealing_cert, spy, capfd):
+    spy("kubectl")
+    spy("kubeseal").on("--fetch-cert", stdout=sealing_cert.decode())
+    atomic_write(sealing.cert_path(repo_with_configs), sealing_cert)
+    sealing.sealing_cert(Context.open(repo_with_configs))
+    assert "differs from" not in capfd.readouterr().err
+
+
+@pytestmark_keys
 def test_seal_without_any_cert(keyed_repo):
     with pytest.raises(ValidationError) as exc:
         sealing.seal(Context.open(keyed_repo), sealing.secret_manifest("db", "app", ["a=b"], []))
@@ -124,6 +159,8 @@ def test_backup_sealing_key(repo_with_configs, sealing_cert, spy):
     item = doc["items"][0]
     assert doc["kind"] == "List"
     assert item["data"]["tls.key"] == "a2V5"
+    assert item["type"] == "kubernetes.io/tls"
+    assert item["metadata"]["labels"][sealing.KEY_LABEL] == "active"
     for field in ("resourceVersion", "uid", "creationTimestamp"):
         assert field not in item["metadata"]
     assert "kubectl.kubernetes.io/last-applied-configuration" not in item["metadata"].get("annotations", {})

@@ -44,10 +44,16 @@ def _add(data: dict[str, str], key: str, value: bytes) -> None:
     data[key] = base64.b64encode(value).decode()
 
 
-def secret_manifest(name: str, namespace: str, literals: Sequence[str], files: Sequence[str]) -> bytes:
+def secret_manifest(
+    name: str,
+    namespace: str,
+    literals: Sequence[str],
+    files: Sequence[str],
+    prompted: Mapping[str, str] = {},
+) -> bytes:
     """A Secret manifest built in memory, so values never appear on a command line."""
-    if not literals and not files:
-        raise ValidationError("give at least one --from-literal or --from-file")
+    if not literals and not files and not prompted:
+        raise ValidationError("give at least one --from-literal, --from-file or --prompt")
     data: dict[str, str] = {}
     for item in literals:
         key, sep, value = item.partition("=")
@@ -63,6 +69,8 @@ def secret_manifest(name: str, namespace: str, literals: Sequence[str], files: S
         except OSError as err:
             raise ValidationError(f"cannot read {path}: {err.strerror}") from None
         _add(data, key, content)
+    for key, value in prompted.items():
+        _add(data, key, value.encode())
     manifest = {
         "apiVersion": "v1",
         "kind": "Secret",
@@ -95,7 +103,15 @@ def sealing_cert(ctx: Context) -> bytes:
             reason = str(err)
         else:
             if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
-                return proc.stdout
+                live = proc.stdout
+                stored = cert_path(ctx.repo)
+                if not stored.is_file() or stored.read_bytes() != live:
+                    print(
+                        f"talkub: the controller's certificate differs from {ctx.repo.rel(stored)} — "
+                        "run `talkub secret backup-sealing-key` and commit bootstrap/",
+                        file=sys.stderr,
+                    )
+                return live
             reason = (proc.stderr or b"").decode().strip() or f"kubeseal exited with {proc.returncode}"
     fallback = cert_path(ctx.repo)
     if fallback.is_file():

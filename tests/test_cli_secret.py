@@ -32,6 +32,28 @@ def test_seal_refuses_manifest_inside_repo(keyed_repo, sealing_cert, capfd):
     assert "inside the cluster repo" in capfd.readouterr().err
 
 
+def test_seal_from_prompt(keyed_repo, sealing_cert, tmp_path, monkeypatch):
+    atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "hunter2")
+    out = tmp_path / "db.sealed.yaml"
+    code = _run(["--repo", str(keyed_repo.root), "secret", "seal", "db", "-n", "app",
+                 "--prompt", "password", "-o", str(out)])
+    assert code == 0
+    sealed = out.read_bytes()
+    assert b"kind: SealedSecret" in sealed
+    assert b"hunter2" not in sealed
+
+
+def test_seal_refuses_from_file_inside_repo(keyed_repo, sealing_cert, capfd, tmp_path):
+    atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
+    secret_file = keyed_repo.root / "token.txt"
+    secret_file.write_text("s3cret")
+    code = _run(["--repo", str(keyed_repo.root), "secret", "seal", "db", "-n", "app",
+                 "--from-file", f"token={secret_file}", "-o", str(tmp_path / "db.sealed.yaml")])
+    assert code == 1
+    assert "inside the cluster repo" in capfd.readouterr().err
+
+
 def test_seal_manifest_from_outside(keyed_repo, sealing_cert, tmp_path):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     manifest = tmp_path / "secret.yaml"
