@@ -27,3 +27,9 @@ def dump(data: Any) -> str:
     buffer = StringIO()
     _yaml().dump(data, buffer)
     return buffer.getvalue()
+
+
+def dump_all(docs: list[Any]) -> str:
+    buffer = StringIO()
+    _yaml().dump_all(docs, buffer)
+    return buffer.getvalue()

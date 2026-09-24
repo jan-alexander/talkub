@@ -3,6 +3,9 @@ import pytest
 from talkub import gitrepo
 from talkub.errors import ValidationError
 from talkub.gitrepo import GitUrl, classify_url
+from talkub.fsutil import atomic_write
+from talkub.repo import Repo
+from talkub.scaffold import TEMPLATES
 
 
 @pytest.mark.parametrize(
@@ -42,3 +45,68 @@ def test_classify_url_rejects_embedded_credentials_without_echoing_them():
 
 def test_placeholder_url():
     assert gitrepo.placeholder_url("homelab") == "https://example.invalid/CHANGE-ME/homelab.git"
+
+
+OLD = "https://example.invalid/CHANGE-ME/test.git"
+NEW = "git@github.com:me/test.git"
+
+
+def _gitops(tmp_path) -> Repo:
+    """root.yaml + the two app templates rendered with OLD, as `init` writes them."""
+    from string import Template
+    from talkub.charts import DEFAULT_CHARTS
+
+    repo = Repo(tmp_path)
+    values = {"git_url": OLD, "name": "test"}
+    for key, (repo_url, chart_name) in DEFAULT_CHARTS.items():
+        prefix = key.replace("-", "_")
+        values |= {f"{prefix}_repo": repo_url, f"{prefix}_chart": chart_name, f"{prefix}_version": "0.0.0"}
+    for rel in ("gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml"):
+        template = (TEMPLATES / "repo" / (rel + ".tmpl")).read_text()
+        atomic_write(repo.root / rel, Template(template).safe_substitute(values).encode())
+    return repo
+
+
+def test_rewrite_changes_only_matching_repo_urls_and_keeps_comments(tmp_path):
+    repo = _gitops(tmp_path)
+    before = {p: p.read_text() for p in (repo.gitops_dir).rglob("*.yaml")}
+    changed = gitrepo.rewrite_repo_urls(repo, OLD, NEW)
+    assert [repo.rel(p) for p in changed] == [
+        "gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml",
+    ]
+    for path, text in before.items():
+        assert path.read_text() == text.replace(OLD, NEW)  # byte-identical apart from the URL
+    assert "argoproj.github.io/argo-helm" in (repo.gitops_dir / "apps/argocd.yaml").read_text()
+
+
+def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path):
+    repo = _gitops(tmp_path)
+    other = repo.gitops_dir / "apps" / "extra.yml"
+    other.write_text(
+        "# two apps\n"
+        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: " + OLD + "\n"
+        "---\n"
+        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: https://charts.example.com\n"
+    )
+    unrelated = repo.gitops_dir / "apps" / "unrelated.yaml"
+    unrelated.write_text("kind: ConfigMap\ndata: {a: b}\n")
+    mtime = unrelated.stat().st_mtime_ns
+    gitrepo.rewrite_repo_urls(repo, OLD, NEW)
+    text = other.read_text()
+    assert text.startswith("# two apps\n") and text.count(NEW) == 1 and "https://charts.example.com" in text
+    assert unrelated.stat().st_mtime_ns == mtime
+
+
+def test_rewrite_without_matches_writes_nothing(tmp_path):
+    repo = _gitops(tmp_path)
+    assert gitrepo.rewrite_repo_urls(repo, "https://other.example/x.git", NEW) == []
+
+
+def test_rewrite_aborts_on_invalid_yaml_before_writing_anything(tmp_path):
+    repo = _gitops(tmp_path)
+    root_before = (repo.gitops_dir / "root.yaml").read_text()
+    (repo.gitops_dir / "apps" / "broken.yaml").write_text("spec: [unclosed\n")
+    with pytest.raises(ValidationError) as exc:
+        gitrepo.rewrite_repo_urls(repo, OLD, NEW)
+    assert "gitops/apps/broken.yaml" in str(exc.value)
+    assert (repo.gitops_dir / "root.yaml").read_text() == root_before
