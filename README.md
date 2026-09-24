@@ -47,6 +47,20 @@ Inside `talkub shell`, `TALKUB_SESSION` holds the cluster name. zsh prompt examp
 
     PROMPT='${TALKUB_SESSION:+(talkub:$TALKUB_SESSION) }'$PROMPT
 
+## Nodes and machine configs
+
+    talkub node add w-01 --ip 10.0.0.11 --role worker \
+        --static 10.0.0.11/24 --gateway 10.0.0.1 --mac aa:bb:cc:dd:ee:ff
+    talkub image add siderolabs/intel-ucode      # extensions per platform (metal, hcloud)
+    talkub image show --platform hcloud --arch arm64   # installer image + boot medium URL
+    talkub apply --insecure w-01                  # first install (maintenance mode, node's --ip)
+    talkub plan                                   # Talos dry-run for all nodes
+    talkub apply --mode no-reboot                 # asks per node; --yes to skip
+
+Machine configs are rendered on the fly from `talos/secrets.sops.yaml`, `talos/patches/*.yaml`
+(`controlplane*` / `worker*` are role-specific, `*.sops.yaml` patches are decrypted) and
+`talos/nodes/<node>.yaml`; they are never written to the repo.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate
