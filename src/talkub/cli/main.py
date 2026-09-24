@@ -10,6 +10,7 @@ import typer
 
 from talkub import __version__, access
 from talkub.cli import admin, check, image, keys, session, setup
+from talkub.cli import nodes as nodes_cli
 from talkub.cli import sops as sops_cli
 from talkub.cli.state import State
 from talkub.errors import TalkubError
@@ -45,6 +46,7 @@ app.add_typer(admin.app, name="admin")
 app.add_typer(keys.app, name="keys")
 app.add_typer(sops_cli.app, name="sops")
 app.add_typer(image.app, name="image")
+app.add_typer(nodes_cli.app, name="node")
 app.command("check")(check.check)
 
 PASSTHROUGH = {"t": access.talosctl, "talosctl": access.talosctl, "k": access.kubectl, "kubectl": access.kubectl}

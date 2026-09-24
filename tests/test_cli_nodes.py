@@ -1,0 +1,62 @@
+import pytest
+from helpers import need
+
+from talkub.cli.main import main
+from talkub.repo import NodeSpec
+
+HELM = "printf 'apiVersion: v2\\nname: x\\nversion: 1.2.3\\n'\n"
+
+
+def _run(argv):
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    return exc.value.code
+
+
+def test_node_add_static(empty_repo, capfd):
+    code = _run([
+        "--repo", str(empty_repo.root), "node", "add", "w-01",
+        "--ip", "10.0.0.11", "--role", "worker", "--mgmt", "w-01.tail.ts.net",
+        "--static", "10.0.0.11/24", "--gateway", "10.0.0.1", "--dns", "1.1.1.1",
+    ])
+    assert code == 0
+    captured = capfd.readouterr()
+    assert "warning: no --mac given" in captured.err
+    assert "talos/nodes/w-01.yaml" in captured.out
+    assert "apply --insecure w-01" in captured.out
+    assert empty_repo.load_settings().nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net")
+    assert "kind: LinkConfig" in (empty_repo.talos_dir / "nodes" / "w-01.yaml").read_text()
+
+
+def test_node_add_rejects_bad_gateway(empty_repo, capfd):
+    code = _run([
+        "--repo", str(empty_repo.root), "node", "add", "w-01", "--ip", "10.0.0.11",
+        "--static", "10.0.0.11/24", "--gateway", "192.168.1.1",
+    ])
+    assert code == 1
+    assert "not in 10.0.0.0/24" in capfd.readouterr().err
+
+
+def test_init_node_options_need_single_node(tmp_path, capfd, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    code = _run([
+        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+        "--node", "cp-01=10.0.0.10", "--node", "cp-02=10.0.0.11", "--static", "10.0.0.10/24", "--gateway", "10.0.0.1",
+    ])
+    assert code == 1
+    assert "exactly one --node" in capfd.readouterr().err
+
+
+@need("age", "age-keygen", "sops", "talosctl")
+def test_init_with_platform_and_static_node(tmp_path, software_identity, fake_bin, monkeypatch):
+    fake_bin("helm", HELM)
+    monkeypatch.chdir(tmp_path)
+    code = _run([
+        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+        "--node", "cp-01=10.0.0.10", "--platform", "hcloud",
+        "--static", "10.0.0.10/24", "--gateway", "10.0.0.1", "--mac", "aa:bb:cc:dd:ee:ff",
+    ])
+    assert code == 0
+    patch = (tmp_path / "demo" / "talos" / "nodes" / "cp-01.yaml").read_text()
+    assert 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"' in patch
+    assert "platform: hcloud" in (tmp_path / "demo" / ".talkub.yaml").read_text()

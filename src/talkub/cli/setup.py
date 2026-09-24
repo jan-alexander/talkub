@@ -8,8 +8,19 @@ from pathlib import Path
 
 import typer
 
+from talkub.cli.nodes import (
+    DISK,
+    DNS,
+    GATEWAY,
+    MAC,
+    PUBLIC,
+    STATIC,
+    node_options,
+    print_warnings,
+)
 from talkub.errors import ValidationError
 from talkub.identity import create_identity, identities_dir, own_recipients
+from talkub.nodes import NodeOptions
 from talkub.repo import NodeSpec
 from talkub.runner import Runner
 from talkub.scaffold import InitRequest, init_cluster
@@ -47,9 +58,26 @@ def init(
     node: list[str] = typer.Option(..., "--node", help="Control plane node as name=ip (repeatable)."),
     git_url: str = typer.Option(..., "--git-url", help="Git URL ArgoCD pulls this repo from."),
     directory: Path = typer.Option(None, "--dir", help="Target directory (default: ./<name>)."),
+    platform: str = typer.Option("metal", "--platform", help="Cluster platform: metal or hcloud."),
+    static: str = STATIC,
+    gateway: str = GATEWAY,
+    mac: str = MAC,
+    dns: list[str] = DNS,
+    disk_selector: str = DISK,
+    public_ingress: bool = PUBLIC,
 ) -> None:
     """Create a new cluster repo with keys, Talos secrets and the GitOps skeleton."""
     nodes = dict(_parse_node(value) for value in node)
+    options = node_options(static, gateway, mac, dns, disk_selector, public_ingress)
+    node_opts: dict[str, NodeOptions] = {}
+    if options != NodeOptions():
+        if len(nodes) != 1:
+            raise ValidationError(
+                "node options (--static, --mac, --dns, --disk-selector, --public-ingress) need exactly one --node",
+                hint="add further nodes with `talkub node add`",
+            )
+        print_warnings(options.check())
+        node_opts = {next(iter(nodes)): options}
     request = InitRequest(
         target=(directory or Path.cwd() / name),
         name=name,
@@ -57,6 +85,8 @@ def init(
         git_url=git_url,
         nodes=nodes,
         recipients=own_recipients(os.environ, getpass.getuser()),
+        platform=platform,
+        node_options=node_opts,
     )
     repo = init_cluster(request, Runner())
     print(f"created {repo.root}")
