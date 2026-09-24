@@ -68,6 +68,22 @@ fails, the error lists the nodes already applied in this run.
 Version skew: repos written by this talkub version (`schematics` instead of `installImage` in
 `.talkub.yaml`) cannot be read by older talkub versions — all admins should upgrade together.
 
+## Bootstrap, upgrades and status
+
+    talkub bootstrap                 # etcd, kubeconfig, Sealed Secrets, Argo CD, root app (re-runnable)
+    talkub status                    # target vs. actual per node + Argo CD sync/health
+    talkub upgrade talos             # nodes whose Talos version or schematic differs, one at a time
+    talkub upgrade k8s               # shows the talosctl dry-run first
+
+## Sealed Secrets
+
+    talkub secret seal db -n app --from-literal password=… -o gitops/manifests/app/db.sealed.yaml
+    talkub secret seal ~/secret.yaml -o gitops/manifests/app/db.sealed.yaml   # manifest outside the repo
+    talkub secret backup-sealing-key # done by bootstrap; commit bootstrap/ afterwards
+
+Sealing uses the controller's live certificate and falls back to `bootstrap/sealed-secrets.pem`
+when the cluster is unreachable.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate
