@@ -54,8 +54,8 @@ def test_fresh_bootstrap(cluster):
     assert "--create-namespace" in helm[1] and "argocd" in helm[1]
     assert all(call["kubeconfig"] and call["files"]["--values"] for call in spies["helm"].calls)
     kubectl = spies["kubectl"].argvs
-    assert kubectl[0] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]
-    assert kubectl[1][:2] == ["get", "secret"]
+    assert kubectl[0][:2] == ["get", "secret"]  # the new key is backed up right after sealed-secrets installs
+    assert kubectl[1] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]
     assert sealing.key_backup_path(repo).exists()
     assert sealing.cert_path(repo).read_text() == CERT
 

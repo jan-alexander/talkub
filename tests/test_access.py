@@ -46,7 +46,7 @@ def test_kubectl_uses_kubeconfig(repo_with_configs, fake_bin, capfd):
 def test_kubectl_without_kubeconfig_explains(keyed_repo):
     with pytest.raises(ValidationError) as exc:
         access.kubectl(Context.open(keyed_repo), ["get", "pods"])
-    assert "bootstrap" in exc.value.hint
+    assert exc.value.hint == access.KUBECONFIG_HINT
 
 
 @pytest.mark.parametrize("command", ["talosctl", "kubectl"])

@@ -52,6 +52,13 @@ def test_extensions_and_schematic():
     assert inspect.schematic_id("{not json") is None
 
 
+def test_bootstrap_already_done():
+    assert inspect.bootstrap_already_done("error: rpc error: code = AlreadyExists desc = etcd data directory is not empty")
+    assert inspect.bootstrap_already_done("Etcd Is ALREADY BOOTSTRAPPED, refusing")
+    assert not inspect.bootstrap_already_done("connection refused")
+    assert not inspect.bootstrap_already_done("")
+
+
 def test_config_drift():
     assert inspect.config_drift("Dry run summary:\nNo changes.\n") == "in sync"
     assert inspect.config_drift("Dry run summary:\nConfig diff:\n\n--- a\n+++ b\n+x\n") == "changes"

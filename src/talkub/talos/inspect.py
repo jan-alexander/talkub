@@ -59,6 +59,11 @@ def schematic_id(text: str) -> str | None:
     return extensions(text).get("schematic") or None
 
 
+def bootstrap_already_done(stderr: str) -> bool:
+    """Whether `talosctl bootstrap` stderr says etcd was already bootstrapped."""
+    return "AlreadyExists" in stderr or "already bootstrapped" in stderr.lower()
+
+
 def config_drift(text: str) -> str:
     """Classify `talosctl apply-config --dry-run` output."""
     lowered = text.lower()

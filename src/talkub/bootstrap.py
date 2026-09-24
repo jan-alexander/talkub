@@ -12,6 +12,7 @@ from talkub.lifecycle import ordered_nodes
 from talkub.repo import ChartSpec, Repo
 from talkub.runner import require_tool
 from talkub.talos.client import TalosSession, talos_session
+from talkub.talos.inspect import bootstrap_already_done
 
 BOOTSTRAP_HEALTH_TIMEOUT = "15m"
 # chart key in .talkub.yaml -> (Helm release, namespace, create namespace)
@@ -57,12 +58,14 @@ def run(ctx: Context) -> None:
         for key, (release, namespace, create) in RELEASES.items():
             _step(f"installing {release}")
             _helm_install(kube, ctx.repo, key, release, settings.charts[key], namespace, create)
+            if key == "sealed-secrets" and not had_backup:
+                # kube's own session stays open; backup_sealing_key opens a second one to talk
+                # to the just-installed controller (a second kubeconfig decryption, harmless).
+                _step("backing up the new sealed-secrets key")
+                sealing.backup_sealing_key(ctx)
         _step("applying gitops/root.yaml")
         kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
 
-    if not had_backup:
-        _step("backing up the new sealed-secrets key")
-        sealing.backup_sealing_key(ctx)
     print("bootstrap complete — commit kubernetes/ and bootstrap/")
 
 
@@ -71,8 +74,8 @@ def _bootstrap_etcd(talos: TalosSession, address: str) -> None:
     if proc.returncode == 0:
         return
     stderr = (proc.stderr or b"").decode()
-    if "AlreadyExists" in stderr or "already bootstrapped" in stderr.lower():
-        print("   etcd is already bootstrapped")
+    if bootstrap_already_done(stderr):
+        print("   etcd is already bootstrapped", flush=True)
         return
     raise CommandFailed("talosctl bootstrap failed", hint=stderr.strip() or f"exit code {proc.returncode}")
 
