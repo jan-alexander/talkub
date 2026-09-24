@@ -21,10 +21,13 @@ INSTALL_HINTS = {
     "age-keygen": "brew install age",
     "age-plugin-se": "brew install age-plugin-se",
     "age-plugin-yubikey": "brew install age-plugin-yubikey",
+    "git": "brew install git",
     "helm": "brew install helm",
     "kubectl": "brew install kubectl",
     "kubeseal": "brew install kubeseal",
     "sops": "brew install sops",
+    "ssh-keygen": "part of OpenSSH (preinstalled on macOS)",
+    "ssh-keyscan": "part of OpenSSH (preinstalled on macOS)",
     "talosctl": "brew install siderolabs/tap/talosctl",
 }
 

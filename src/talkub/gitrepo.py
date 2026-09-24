@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
+from ruamel.yaml.scalarstring import LiteralScalarString
 
 from talkub import yamlio
-from talkub.errors import ValidationError
+from talkub.context import Context
+from talkub.ephemeral import private_tempdir
+from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.repo import Repo
+from talkub.runner import Runner
 
 ARGOCD_KNOWN_HOSTS = frozenset(
     {"github.com", "gitlab.com", "bitbucket.org", "ssh.dev.azure.com", "vs-ssh.visualstudio.com"}
@@ -98,3 +105,141 @@ def rewrite_repo_urls(repo: Repo, old: str, new: str) -> list[Path]:
     for path, docs in pending:
         atomic_write(path, yamlio.dump_all(docs).encode())
     return [path for path, _ in pending]
+
+
+CREDENTIALS_FILE = "repo-credentials.sops.yaml"
+SECRET_TYPE_LABEL = "argocd.argoproj.io/secret-type"
+KEYSCAN_TIMEOUT = 30.0
+
+
+def credentials_path(repo: Repo) -> Path:
+    return repo.root / "bootstrap" / CREDENTIALS_FILE
+
+
+def _b64(text: str) -> str:
+    return base64.b64encode(text.encode()).decode()
+
+
+def build_secret(
+    cluster: str,
+    url: str,
+    *,
+    ssh_private_key: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+) -> bytes:
+    """The Argo CD repository Secret, in memory. `data` (not stringData): it is applied server-side."""
+    data = {"type": _b64("git"), "url": _b64(url)}
+    if ssh_private_key is not None:
+        data["sshPrivateKey"] = _b64(ssh_private_key)
+    else:
+        for label, value in (("username", username), ("token", password)):
+            if not value or "\n" in value or value != value.strip():
+                raise ValidationError(f"the {label} must be a non-empty single line")
+        data["username"] = _b64(username)
+        data["password"] = _b64(password)
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": f"repo-{cluster}",
+            "namespace": "argocd",
+            "labels": {SECRET_TYPE_LABEL: "repository"},
+        },
+        "data": data,
+    }
+    return yamlio.dump(manifest).encode()
+
+
+def credentials_kind(manifest: bytes) -> str:
+    data = yamlio.load(manifest.decode()).get("data") or {}
+    return "ssh" if "sshPrivateKey" in data else "https"
+
+
+def replace_secret_url(manifest: bytes, url: str) -> bytes:
+    doc = yamlio.load(manifest.decode())
+    doc["data"]["url"] = _b64(url)
+    return yamlio.dump(doc).encode()
+
+
+def write_credentials(ctx: Context, manifest: bytes) -> Path:
+    path = credentials_path(ctx.repo)
+    atomic_write(path, ctx.sops.encrypt(manifest, filename=path.name, public_key=ctx.keyring.public_key()))
+    return path
+
+
+def generate_ssh_key(runner: Runner, comment: str) -> tuple[str, str]:
+    """A fresh ed25519 key pair; the private half only exists in a private temp dir and in memory."""
+    with private_tempdir() as work:
+        key = work / "key"
+        runner.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", comment, "-f", str(key)])
+        return key.read_text(), (work / "key.pub").read_text().strip()
+
+
+def needs_known_hosts(url: GitUrl) -> bool:
+    return url.kind == "ssh" and (url.host not in ARGOCD_KNOWN_HOSTS or url.port is not None)
+
+
+def scan_host_keys(runner: Runner, url: GitUrl) -> list[str]:
+    argv = ["ssh-keyscan", "-T", "10"]
+    if url.port is not None:
+        argv += ["-p", str(url.port)]
+    argv.append(url.host)
+    proc = runner.run(argv, check=False, timeout=KEYSCAN_TIMEOUT)
+    lines = [
+        line.strip()
+        for line in proc.stdout.decode(errors="replace").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    if not lines:
+        where = f"{url.host}:{url.port}" if url.port else url.host
+        raise CommandFailed(f"no SSH host keys from {where}", hint="host unreachable or no SSH on that port")
+    return lines
+
+
+def fingerprint(line: str) -> str:
+    """'<keytype> SHA256:<base64>' as printed by `ssh-keygen -l`."""
+    _, keytype, blob = line.split()[:3]
+    digest = hashlib.sha256(base64.b64decode(blob)).digest()
+    return f"{keytype} SHA256:{base64.b64encode(digest).decode().rstrip('=')}"
+
+
+def add_extra_hosts(repo: Repo, lines: list[str]) -> bool:
+    """Append known-hosts lines to configs.ssh.extraHosts in gitops/values/argocd.yaml."""
+    path = repo.gitops_dir / "values" / "argocd.yaml"
+    data = (yamlio.load(path.read_text()) if path.is_file() else None) or CommentedMap()
+    ssh = data.setdefault("configs", CommentedMap()).setdefault("ssh", CommentedMap())
+    existing = [line for line in str(ssh.get("extraHosts") or "").splitlines() if line.strip()]
+    new = [line for line in lines if line not in existing]
+    if not new:
+        return False
+    ssh["extraHosts"] = LiteralScalarString("\n".join(existing + new) + "\n")
+    atomic_write(path, yamlio.dump(data).encode())
+    return True
+
+
+@dataclass(frozen=True)
+class SshCredentials:
+    path: Path
+    public_key: str
+    known_hosts_written: bool
+
+
+def create_ssh_credentials(
+    ctx: Context, name: str, url: GitUrl, confirm: Callable[[str], bool]
+) -> SshCredentials:
+    """Host keys are confirmed first; nothing is generated or written if that fails."""
+    host_lines: list[str] = []
+    if needs_known_hosts(url):
+        host_lines = scan_host_keys(ctx.runner, url)
+        shown = "\n".join(f"  {fingerprint(line)}" for line in host_lines)
+        if not confirm(f"SSH host keys of {url.host}:\n{shown}\nTrust them for Argo CD?"):
+            raise ValidationError("host keys not confirmed; nothing was written")
+    private, public = generate_ssh_key(ctx.runner, f"talkub-{name}")
+    path = write_credentials(ctx, build_secret(name, url.url, ssh_private_key=private))
+    written = add_extra_hosts(ctx.repo, host_lines) if host_lines else False
+    return SshCredentials(path, public, written)
+
+
+def create_https_credentials(ctx: Context, name: str, url: GitUrl, username: str, token: str) -> Path:
+    return write_credentials(ctx, build_secret(name, url.url, username=username, password=token))
