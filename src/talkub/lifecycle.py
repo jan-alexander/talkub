@@ -32,6 +32,14 @@ def ordered_nodes(settings: Settings, names: Sequence[str]) -> list[str]:
 def _prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], dict[str, bytes]]:
     settings = ctx.repo.load_settings()
     order = ordered_nodes(settings, names)
+    for name in order:
+        platform = settings.node_platform(name)
+        if platform not in settings.schematics:
+            raise ValidationError(
+                f"no schematic for platform '{platform}' (used by node '{name}')",
+                hint=f"define it with `talkub image add --platform {platform} …` "
+                f"or `talkub image show --platform {platform}`",
+            )
     platforms = sorted({settings.node_platform(name) for name in order})
     if images.refresh(settings, FactoryClient(), platforms):
         ctx.repo.write_settings(settings)

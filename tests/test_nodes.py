@@ -7,7 +7,7 @@ from helpers import need
 from talkub import yamlio
 from talkub.errors import ValidationError
 from talkub.nodes import FIRST_ETHERNET, NodeOptions, add_node, node_patch_path, render_node_patch
-from talkub.repo import NodeSpec
+from talkub.repo import NodeSpec, SchematicSpec
 
 
 def _docs(text):
@@ -105,12 +105,35 @@ def test_patches_validate_with_talosctl(tmp_path, talos_secrets, options):
 
 
 def test_add_node_writes_patch_and_settings(empty_repo):
-    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud"), NodeOptions())
+    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions())
     assert warnings == []
     settings = empty_repo.load_settings()
-    assert settings.nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud")
-    assert "hcloud" in settings.schematics
+    assert settings.nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker")
     assert "hostname: w-01" in node_patch_path(empty_repo, "w-01").read_text()
+
+
+def test_add_node_new_platform_copies_cluster_schematic(empty_repo):
+    settings = empty_repo.load_settings()
+    settings.schematics["metal"].extensions = ["siderolabs/intel-ucode"]
+    settings.schematics["metal"].kernel_args = ["console=ttyS0"]
+    empty_repo.write_settings(settings)
+    warnings = add_node(empty_repo, "h-01", NodeSpec(ip="10.0.0.20", role="worker", platform="hcloud"), NodeOptions())
+    assert warnings == [
+        "platform 'hcloud' is new: copied extensions from 'metal' (siderolabs/intel-ucode); "
+        "adjust with talkub image add/remove --platform hcloud"
+    ]
+    hcloud = empty_repo.load_settings().schematics["hcloud"]
+    assert hcloud == SchematicSpec(extensions=["siderolabs/intel-ucode"], kernel_args=["console=ttyS0"])
+    # a second node on the now-known platform neither copies nor warns
+    assert add_node(empty_repo, "h-02", NodeSpec(ip="10.0.0.21", role="worker", platform="hcloud"), NodeOptions()) == []
+
+
+def test_add_node_new_platform_without_extensions_says_none(empty_repo):
+    warnings = add_node(empty_repo, "h-01", NodeSpec(ip="10.0.0.20", platform="hcloud"), NodeOptions())
+    assert warnings == [
+        "platform 'hcloud' is new: copied extensions from 'metal' (none); "
+        "adjust with talkub image add/remove --platform hcloud"
+    ]
 
 
 def test_add_node_rejects_duplicates_and_bad_input(empty_repo):

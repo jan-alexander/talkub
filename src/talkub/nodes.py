@@ -10,7 +10,7 @@ from pathlib import Path
 from talkub import yamlio
 from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
-from talkub.repo import NodeSpec, Repo, Settings
+from talkub.repo import NodeSpec, Repo, SchematicSpec, Settings
 
 LINK = "net0"
 # ARPHRD_ETHER and no link kind (not a VLAN, bond or bridge): the physical Ethernet port.
@@ -138,8 +138,17 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         raise ValidationError(f"{repo.rel(path)} already exists", hint="remove it or choose another name")
     settings.nodes[name] = spec
     settings = Settings.from_dict(settings.to_dict())  # validates role, platform and arch
-    if spec.platform is not None:
-        settings.ensure_schematic(spec.platform)
+    platform = settings.node_platform(name)
+    if platform not in settings.schematics:
+        source = settings.schematics.get(settings.platform, SchematicSpec())
+        # ID and hash stay empty: resolved by the next `image show`, `plan` or `apply`.
+        settings.schematics[platform] = SchematicSpec(
+            extensions=list(source.extensions), kernel_args=list(source.kernel_args)
+        )
+        warnings.append(
+            f"platform '{platform}' is new: copied extensions from '{settings.platform}' "
+            f"({', '.join(source.extensions) or 'none'}); adjust with talkub image add/remove --platform {platform}"
+        )
     if options.public_ingress and not (repo.talos_dir / "patches" / "firewall.yaml").exists():
         warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale enable`)")
     atomic_write(path, render_node_patch(name, options).encode())

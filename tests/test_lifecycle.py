@@ -99,3 +99,17 @@ def test_current_schematic_needs_no_factory(talos_repo, talosctl_spy, monkeypatc
     monkeypatch.setenv("TALKUB_FACTORY_URL", "http://127.0.0.1:9")
     lifecycle.plan(Context.open(talos_repo), [])
     assert len(_calls(talosctl_spy)) == 1
+
+
+def test_used_platform_without_schematic_fails_before_network(talos_repo, talosctl_spy, factory_stub):
+    settings = talos_repo.load_settings()
+    settings.nodes["h-01"] = NodeSpec(ip="10.0.0.20", role="worker", platform="hcloud")
+    talos_repo.write_settings(settings)
+    atomic_write(node_patch_path(talos_repo, "h-01"), render_node_patch("h-01").encode())
+    with pytest.raises(ValidationError) as exc:
+        lifecycle.plan(Context.open(talos_repo), [])
+    assert str(exc.value) == "no schematic for platform 'hcloud' (used by node 'h-01')"
+    assert "talkub image add --platform hcloud" in exc.value.hint
+    assert factory_stub.requests == []
+    assert _calls(talosctl_spy) == []
+    assert "hcloud" not in talos_repo.load_settings().schematics
