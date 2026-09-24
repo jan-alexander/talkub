@@ -15,7 +15,13 @@ KEY = "tskey-auth-secretvalue"
 
 
 @pytest.fixture
-def repo(repo_with_configs):
+def talosctl(spy):
+    """lockdown on a running cluster probes every node via talosctl; by default all answer."""
+    return spy("talosctl")
+
+
+@pytest.fixture
+def repo(repo_with_configs, talosctl):
     """Two control planes and a worker, real-looking talosconfig/kubeconfig (encrypted)."""
     ctx = Context.open(repo_with_configs)
     public = ctx.keyring.public_key()
@@ -139,3 +145,67 @@ def test_lockdown_write_failure_does_not_leave_a_locked_down_repo(repo, monkeypa
         tailscale.lockdown(Context.open(repo))
     assert not tailscale.firewall_patch_path(repo).exists()
     assert not tailscale.is_locked_down(repo)
+
+
+def test_lockdown_rejects_nodes_outside_the_node_network(repo):
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    before_settings = repo.settings_file.read_bytes()
+    with pytest.raises(ValidationError) as exc:
+        tailscale.lockdown(Context.open(repo), node_cidr="10.0.0.0/28")  # w-01 (10.0.0.20) is outside
+    assert "outside the node network 10.0.0.0/28" in str(exc.value)
+    assert "w-01 (10.0.0.20)" in str(exc.value)
+    assert "cp-01" not in str(exc.value)
+    assert "--node-cidr" in exc.value.hint
+    assert not tailscale.firewall_patch_path(repo).exists()
+    assert repo.settings_file.read_bytes() == before_settings
+
+
+def test_lockdown_skips_non_ip_addresses_in_the_cidr_check(repo):
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    settings = repo.load_settings()
+    settings.nodes["w-02"] = NodeSpec(ip="w-02.lan", role="worker")
+    repo.write_settings(settings)
+    tailscale.lockdown(Context.open(repo))
+    assert tailscale.is_locked_down(repo)
+
+
+def test_lockdown_probes_every_node_via_the_tailnet_first(repo, talosctl):
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    tailscale.lockdown(Context.open(repo))
+    probes = [call for call in talosctl.calls if "version" in call["args"]]
+    targets = {call["args"][call["args"].index("-n") + 1] for call in probes}
+    assert targets == {"cp-01.t.ts.net", "cp-02.t.ts.net", "w-01.lan"}
+    assert all(call["files"]["--talosconfig"] for call in probes)
+    assert tailscale.is_locked_down(repo)
+
+
+def test_lockdown_refuses_when_a_node_is_not_reachable_via_the_tailnet(repo, talosctl):
+    talosctl.on("cp-02.t.ts.net", "version", rc=1, stderr="connection refused")
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    before_talosconfig = repo.talosconfig.read_bytes()
+    before_settings = repo.settings_file.read_bytes()
+    with pytest.raises(ValidationError) as exc:
+        tailscale.lockdown(Context.open(repo))
+    assert "not reachable via the tailnet yet: cp-02 (cp-02.t.ts.net)" in str(exc.value)
+    assert "cp-01" not in str(exc.value)
+    assert "tailscale status" in exc.value.hint
+    assert not tailscale.firewall_patch_path(repo).exists()
+    assert repo.settings_file.read_bytes() == before_settings
+    assert repo.talosconfig.read_bytes() == before_talosconfig
+
+
+def test_lockdown_before_bootstrap_does_not_probe(repo, talosctl):
+    repo.kubeconfig.unlink()
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    tailscale.lockdown(Context.open(repo))
+    assert talosctl.calls == []
+
+
+def test_lockdown_without_talosconfig(repo):
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    repo.talosconfig.unlink()
+    with pytest.raises(ValidationError) as exc:
+        tailscale.lockdown(Context.open(repo))
+    assert "does not exist" in str(exc.value)
+    assert "talkub init" in exc.value.hint
+    assert not tailscale.firewall_patch_path(repo).exists()

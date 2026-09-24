@@ -21,6 +21,7 @@ from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
 from talkub.lifecycle import is_bootstrapped, ordered_nodes
 from talkub.repo import Repo, Settings, TailscaleSpec
+from talkub.talos.client import talos_session
 
 EXTENSION = "siderolabs/tailscale"
 TAILNET_V4 = "100.64.0.0/10"
@@ -82,6 +83,32 @@ def default_node_cidr(settings: Settings) -> str:
         raise ValidationError(
             f"cannot derive the node network from {ip!r}", hint="pass --node-cidr, e.g. 10.0.0.0/24"
         ) from None
+
+
+def outside_node_network(settings: Settings, node_cidr: str) -> list[str]:
+    """`name (ip)` of the nodes whose IP is not in `node_cidr`; host names are skipped."""
+    network = ipaddress.ip_network(node_cidr, strict=False)
+    outside = []
+    for name, node in settings.nodes.items():
+        try:
+            address = ipaddress.ip_address(node.ip)
+        except ValueError:
+            continue
+        if address not in network:
+            outside.append(f"{name} ({node.ip})")
+    return outside
+
+
+def unreachable_via_tailnet(ctx: Context, settings: Settings) -> list[str]:
+    """`name (mgmt)` of the nodes that do not answer `talosctl version` at their management
+    address, using the current talosconfig (the client certificates do not change)."""
+    failed = []
+    with talos_session(ctx) as session:
+        for name in settings.nodes:
+            address = settings.mgmt_address(name)
+            if session.run(address, ["version"], check=False).returncode != 0:
+                failed.append(f"{name} ({address})")
+    return failed
 
 
 def admin_server(settings: Settings) -> str:
@@ -216,6 +243,14 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
         raise ValidationError(f"{repo.rel(firewall_patch_path(repo))} already exists", hint="already locked down")
     if node_cidr:
         settings.tailscale = TailscaleSpec(tailnet=settings.tailscale.tailnet, node_cidr=validate_cidr(node_cidr))
+    outside = outside_node_network(settings, settings.tailscale.node_cidr)
+    if outside:
+        raise ValidationError(
+            f"these nodes are outside the node network {settings.tailscale.node_cidr}: {', '.join(outside)}",
+            hint="the firewall would block their cluster traffic; re-run with --node-cidr covering every node",
+        )
+    if not repo.talosconfig.is_file():
+        raise ValidationError(f"{repo.rel(repo.talosconfig)} does not exist", hint="it is created by `talkub init`")
     tailnet = settings.tailscale.tailnet
     settings.nodes = {
         name: node if node.mgmt else dataclasses.replace(node, mgmt=f"{name}.{tailnet}")
@@ -224,6 +259,15 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
     endpoints = [settings.mgmt_address(name) for name in controlplanes(settings)]
     if not endpoints:
         raise ValidationError("no controlplane node defined")
+    if is_bootstrapped(ctx):
+        # After `apply` the nodes answer only via the tailnet: refuse unless they already do.
+        unreachable = unreachable_via_tailnet(ctx, settings)
+        if unreachable:
+            raise ValidationError(
+                f"not reachable via the tailnet yet: {', '.join(unreachable)}",
+                hint="finish `talkub upgrade talos` and `talkub apply` after `tailscale enable`, "
+                "check `tailscale status`, then run lockdown again",
+            )
     public = ctx.keyring.public_key()
     # Everything is computed in memory first; files are written only once all of it worked,
     # and the firewall.yaml marker (lockdown ⇔ its presence) is written last, so a failure

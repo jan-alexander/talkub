@@ -100,6 +100,12 @@ when the cluster is unreachable.
 
 The nodes keep their LAN/public cluster endpoint and do not use Tailscale DNS; only admin
 clients go through the tailnet. Use a tagged, reusable, pre-approved auth key.
+On a running cluster, `lockdown` first checks that every node answers via its tailnet
+name, and refuses if one does not. `lockdown --node-cidr` must cover every node's IP.
+
+Rollback: delete `talos/patches/firewall.yaml`, reset `mgmt` in `.talkub.yaml` to the
+LAN addresses (or remove the entries), point the talosconfig endpoints/nodes and the
+kubeconfig `server` back at the LAN with `talkub sops edit`, then run `talkub apply` via LAN.
 
 ## Admin changes
 

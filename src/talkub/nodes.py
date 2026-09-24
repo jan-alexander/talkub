@@ -145,6 +145,14 @@ def static_address_warning(spec: NodeSpec, options: NodeOptions, fix: str = "add
     return f"after install the node is reachable at {address}; {fix.format(address=address)} so plan/apply use it"
 
 
+def _outside(ip: str, cidr: str) -> bool:
+    """True when `ip` is an IP address outside `cidr` (host names are not checked)."""
+    try:
+        return ipaddress.ip_address(ip) not in ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return False
+
+
 def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> list[str]:
     """Write talos/nodes/<name>.yaml and the node entry. Returns warnings."""
     validate_node_name(name)
@@ -157,9 +165,15 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         warnings.append(moved)
     settings = repo.load_settings()
     firewall = repo.talos_dir / "patches" / "firewall.yaml"
-    if spec.mgmt is None and settings.tailscale is not None and firewall.is_file():
+    locked_down = settings.tailscale is not None and firewall.is_file()
+    if locked_down and spec.mgmt is None:
         # Locked down: talkub reaches nodes only via the tailnet (see tailscale.lockdown).
         spec = dataclasses.replace(spec, mgmt=f"{name}.{settings.tailscale.tailnet}")
+    if locked_down and _outside(spec.ip, settings.tailscale.node_cidr):
+        warnings.append(
+            f"{spec.ip} is outside the node network {settings.tailscale.node_cidr}: the firewall will block "
+            f"the node's cluster traffic until the rules in {repo.rel(firewall)} are extended"
+        )
     if name in settings.nodes:
         raise ValidationError(f"node '{name}' already exists")
     path = node_patch_path(repo, name)
