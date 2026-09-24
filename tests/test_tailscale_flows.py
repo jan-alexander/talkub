@@ -121,3 +121,21 @@ def test_lockdown_leaves_repo_retryable_on_failure(repo):
     assert not tailscale.firewall_patch_path(repo).exists()
     assert repo.talosconfig.read_bytes() == before_talosconfig
     assert repo.settings_file.read_bytes() == before_settings
+
+
+def test_lockdown_write_failure_does_not_leave_a_locked_down_repo(repo, monkeypatch):
+    """A disk failure during the talosconfig write (which happens before firewall.yaml) must
+    not leave firewall.yaml behind — proves the marker is genuinely written last, not first."""
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    real_atomic_write = tailscale.atomic_write
+
+    def failing_write(path, data, *args, **kwargs):
+        if path == repo.talosconfig:
+            raise OSError("disk full")
+        return real_atomic_write(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(tailscale, "atomic_write", failing_write)
+    with pytest.raises(OSError):
+        tailscale.lockdown(Context.open(repo))
+    assert not tailscale.firewall_patch_path(repo).exists()
+    assert not tailscale.is_locked_down(repo)
