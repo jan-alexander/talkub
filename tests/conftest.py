@@ -131,6 +131,29 @@ def talos_repo(repo_with_configs):
 
 
 @pytest.fixture
+def talosctl_spy(fake_bin, tmp_path):
+    """Fake talosctl: real binary for gen/validate, logged no-op for node calls."""
+    _require("talosctl")
+    real = shutil.which("talosctl")
+    log = tmp_path / "talosctl.log"
+    fake_bin(
+        "talosctl",
+        f"""case "$1" in gen|validate) exec "{real}" "$@";; esac
+printf 'call %s\\n' "$*" >> "{log}"
+if [ "$1" = "--talosconfig" ] && [ ! -f "$2" ]; then exit 97; fi
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--file" ] && [ -f "$a" ]; then printf 'file %s\\n' "$(grep -c 'hostname:' "$a")" >> "{log}"; fi
+  [ "$a" = "10.0.0.99" ] && exit 1
+  prev="$a"
+done
+exit 0
+""",
+    )
+    return log
+
+
+@pytest.fixture
 def factory_stub(monkeypatch):
     """Local stand-in for the Talos Image Factory; sets TALKUB_FACTORY_URL.
 
