@@ -4,6 +4,7 @@ from helpers import need
 from talkub import tailscale
 from talkub.cli.main import main
 from talkub.context import Context
+from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops")
@@ -81,3 +82,25 @@ def test_init_with_tailscale(tmp_path, software_identity, fake_bin, monkeypatch)
     assert settings.nodes["cp-01"].mgmt == "cp-01.t.ts.net"
     assert tailscale.is_locked_down(repo)
     assert tailscale.EXTENSION in settings.schematics["metal"].extensions
+
+
+@need("talosctl")
+def test_init_tailscale_lockdown_failure_hints_at_the_repo(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
+    fake_bin("helm", HELM)
+    monkeypatch.chdir(tmp_path)
+    key_file = tmp_path / "key"
+    key_file.write_text(KEY)
+
+    def _boom(ctx, **kwargs):
+        raise ValidationError("boom")
+
+    monkeypatch.setattr(tailscale, "lockdown", _boom)
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+                 "--node", "cp-01=10.0.0.10", "--tailscale", "--tailnet", "t.ts.net",
+                 "--tailscale-authkey-file", str(key_file)])
+    assert code == 1
+    repo_dir = tmp_path / "demo"
+    err = capfd.readouterr().err
+    assert str(repo_dir.resolve()) in err
+    assert "talkub tailscale lockdown" in err
+    assert repo_dir.exists()

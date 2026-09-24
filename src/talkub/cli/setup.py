@@ -21,7 +21,7 @@ from talkub.cli.nodes import (
 )
 from talkub.cli.tailscale import print_notes, read_authkey
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.errors import TalkubError, ValidationError
 from talkub.identity import create_identity, identities_dir, own_recipients
 from talkub.nodes import NodeOptions, static_address_warning, validate_address, validate_node_name
 from talkub.repo import NodeSpec
@@ -113,7 +113,21 @@ def init(
     repo = init_cluster(request, Runner())
     if authkey is not None:
         context = Context.open(repo)
-        print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
-        print_notes(tailscale.lockdown(Context.open(repo)))
+        try:
+            print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
+        except TalkubError as err:
+            hint = f"cd {repo.root} && talkub tailscale enable --tailnet {tailnet} && talkub tailscale lockdown"
+            raise type(err)(
+                f"created {repo.root}, but the Tailscale setup failed: {err}",
+                hint=f"{hint}; {err.hint}" if err.hint else hint,
+            ) from err
+        try:
+            print_notes(tailscale.lockdown(Context.open(repo)))
+        except TalkubError as err:
+            hint = f"cd {repo.root} && talkub tailscale lockdown"
+            raise type(err)(
+                f"created {repo.root}, but the Tailscale setup failed: {err}",
+                hint=f"{hint}; {err.hint}" if err.hint else hint,
+            ) from err
     print(f"created {repo.root}")
     print("next: add a second admin or backup key (talkub admin add), then git add/commit")
