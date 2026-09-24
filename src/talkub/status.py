@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 from talkub.context import Context
 from talkub.ephemeral import private_file
+from talkub.errors import TalkubError
 from talkub.kube import kube_session
-from talkub.lifecycle import is_bootstrapped, prepare
+from talkub.lifecycle import is_bootstrapped, ordered_nodes, prepare
 from talkub.repo import Settings
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
@@ -33,7 +35,14 @@ class StatusReport:
 
 
 def collect(ctx: Context) -> StatusReport:
-    settings, order, configs = prepare(ctx, [])
+    try:
+        settings, order, configs = prepare(ctx, [], refresh=False)
+    except TalkubError as err:
+        print(f"talkub: cannot render machine configs ({err}); config drift is unknown", file=sys.stderr)
+        settings = ctx.repo.load_settings()
+        order = ordered_nodes(settings, [])
+        configs = {}
+
     nodes: list[NodeStatus] = []
     with talos_session(ctx) as session:
         for name in order:
@@ -45,10 +54,11 @@ def collect(ctx: Context) -> StatusReport:
             node = NodeStatus(name, address, reachable=True, talos=inspect.server_version(version.stdout.decode()))
             extensions = session.run(address, ["get", "extensions", "-o", "json"], check=False)
             node.schematic = inspect.schematic_id(extensions.stdout.decode()) if extensions.returncode == 0 else None
-            with private_file(f"{name}.yaml", configs[name]) as path:
-                dry_run = session.run(address, ["apply-config", "--file", str(path), "--dry-run"], check=False)
-            if dry_run.returncode == 0:
-                node.config = inspect.config_drift((dry_run.stdout + (dry_run.stderr or b"")).decode())
+            if name in configs:
+                with private_file(f"{name}.yaml", configs[name]) as path:
+                    dry_run = session.run(address, ["apply-config", "--file", str(path), "--dry-run"], check=False)
+                if dry_run.returncode == 0:
+                    node.config = inspect.config_drift((dry_run.stdout + (dry_run.stderr or b"")).decode())
             nodes.append(node)
 
     if not is_bootstrapped(ctx):

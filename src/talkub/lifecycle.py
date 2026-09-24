@@ -48,10 +48,19 @@ def ensure_images(ctx: Context, settings: Settings, order: Sequence[str]) -> Non
         print("talkub: updated schematic IDs in .talkub.yaml", file=sys.stderr)
 
 
-def prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], dict[str, bytes]]:
+def prepare(
+    ctx: Context, names: Sequence[str], *, refresh: bool = True
+) -> tuple[Settings, list[str], dict[str, bytes]]:
+    """Load settings, order the nodes and render their configs.
+
+    `refresh=False` skips `ensure_images` entirely: no Image Factory call, no write to
+    `.talkub.yaml`. Rendering then uses whatever schematic IDs are already cached, and
+    raises `ValidationError` (via `Settings.installer_image`) if one is missing or outdated.
+    """
     settings = ctx.repo.load_settings()
     order = ordered_nodes(settings, names)
-    ensure_images(ctx, settings, order)
+    if refresh:
+        ensure_images(ctx, settings, order)
     return settings, order, render_configs(ctx, settings, order)
 
 

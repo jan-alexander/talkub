@@ -74,6 +74,30 @@ def test_not_bootstrapped(talos_repo, spy):
     assert "not bootstrapped" in status.render(report)
 
 
+def test_outdated_schematic_does_not_touch_factory_or_write_settings(talos_repo, spy, monkeypatch, capfd):
+    """status is read-only and works offline even if a schematic ID is stale."""
+    monkeypatch.setenv("TALKUB_FACTORY_URL", "http://127.0.0.1:9")  # nothing listens there
+    settings = talos_repo.load_settings()
+    settings.schematics["metal"].extensions.append("siderolabs/tailscale")
+    talos_repo.write_settings(settings)
+    before = talos_repo.settings_file.read_bytes()
+    _spies(spy)
+    report = status.collect(Context.open(talos_repo))
+    assert talos_repo.settings_file.read_bytes() == before
+    [node] = report.nodes
+    assert node.talos == "v1.14.0"
+    assert node.config == "unknown"
+    err = capfd.readouterr().err
+    assert "cannot render machine configs" in err
+    assert "config drift is unknown" in err
+
+
+def test_current_schematic_makes_no_factory_request(talos_repo, spy, factory_stub):
+    _spies(spy)
+    status.collect(Context.open(talos_repo))
+    assert factory_stub.requests == []
+
+
 def test_status_command(talos_repo, spy, capfd):
     _spies(spy)
     try:
