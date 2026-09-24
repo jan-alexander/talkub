@@ -120,6 +120,17 @@ def test_existing_etcd_member_skips_bootstrap(cluster, capfd):
     assert Context.open(repo).sops.decrypt(repo.kubeconfig).decode() == KUBECONFIG  # the rest still runs
 
 
+def test_hanging_etcd_members_times_out_and_bootstraps(cluster, monkeypatch, capfd):
+    # Before bootstrap etcd is not running and `talosctl etcd members` never returns (seen on a real node).
+    repo, spies = cluster
+    monkeypatch.setattr(bootstrap, "ETCD_PROBE_TIMEOUT", 0.5)
+    spies["talosctl"].rules.insert(0, {"match": ["etcd", "members"], "sleep": 30})
+    spies["talosctl"]._save()
+    bootstrap.run(Context.open(repo))
+    assert any("bootstrap" in a for a in spies["talosctl"].argvs)
+    assert "etcd on cp-01 did not answer within 0.5s" in capfd.readouterr().out
+
+
 def test_failing_or_empty_etcd_answer_still_bootstraps(cluster):
     repo, spies = cluster
     spies["talosctl"].rules.insert(0, {"match": ["etcd", "members"], "stdout": ETCD_MEMBERS, "stderr": "", "rc": 1})

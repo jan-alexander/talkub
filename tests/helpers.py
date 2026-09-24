@@ -37,7 +37,7 @@ class FakeRunner(Runner):
     on_run: Callable[[list[str]], None] | None = None
     calls: list[Call] = field(default_factory=list)
 
-    def run(self, argv, *, input=None, env=None, cwd=None, check=True, passthrough_stderr=False):
+    def run(self, argv, *, input=None, env=None, cwd=None, check=True, passthrough_stderr=False, timeout=None):
         self.calls.append(Call(list(argv), dict(env or {}), input, passthrough_stderr))
         if self.on_run is not None:
             self.on_run(list(argv))
@@ -83,6 +83,9 @@ for flag in ("--talosconfig", "--file", "-f", "--values", "--cert"):
         files[flag] = os.path.isfile(args[args.index(flag) + 1])
 kubeconfig = os.environ.get("KUBECONFIG", "")
 entry = {"args": args, "files": files, "kubeconfig": bool(kubeconfig) and os.path.isfile(kubeconfig)}
+if rule is not None and rule.get("sleep"):
+    import time
+    time.sleep(rule["sleep"])
 if rule is not None and rule.get("read_stdin"):
     entry["stdin"] = sys.stdin.read()
 with open(log_path, "a") as fh:

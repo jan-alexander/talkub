@@ -54,20 +54,29 @@ class Runner:
         cwd: Path | None = None,
         check: bool = True,
         passthrough_stderr: bool = False,
+        timeout: float | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         """Run non-interactively and capture stdout.
 
         `passthrough_stderr` lets prompts (e.g. "touch your YubiKey") reach the terminal.
+        After `timeout` seconds the child is killed and treated as exit code 124 (like timeout(1)).
         """
         require_tool(argv[0])
-        proc = subprocess.run(
-            list(argv),
-            input=input,
-            stdout=subprocess.PIPE,
-            stderr=None if passthrough_stderr else subprocess.PIPE,
-            env=child_env(env),
-            cwd=cwd,
-        )
+        try:
+            proc = subprocess.run(
+                list(argv),
+                input=input,
+                stdout=subprocess.PIPE,
+                stderr=None if passthrough_stderr else subprocess.PIPE,
+                env=child_env(env),
+                cwd=cwd,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            message = f"{Path(argv[0]).name} timed out after {timeout:g}s"
+            if check:
+                raise CommandFailed(message) from None
+            return subprocess.CompletedProcess(list(argv), 124, b"", message.encode())
         if check and proc.returncode != 0:
             stderr = (proc.stderr or b"").decode(errors="replace").strip()
             raise CommandFailed(

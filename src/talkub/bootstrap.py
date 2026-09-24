@@ -87,10 +87,17 @@ def run(ctx: Context) -> None:
     print("bootstrap complete — commit kubernetes/ and bootstrap/")
 
 
+# Before bootstrap etcd is not running and `talosctl etcd members` hangs instead of failing.
+ETCD_PROBE_TIMEOUT = 20.0
+
+
 def _etcd_member(talos: TalosSession, settings: Settings, controlplanes: list[str]) -> str | None:
     """The first control plane whose etcd already has members (bootstrapping again would split etcd)."""
     for name in controlplanes:
-        proc = talos.run(settings.mgmt_address(name), ["etcd", "members"], check=False)
+        proc = talos.run(settings.mgmt_address(name), ["etcd", "members"], check=False, timeout=ETCD_PROBE_TIMEOUT)
+        if proc.returncode == 124:
+            print(f"   etcd on {name} did not answer within {ETCD_PROBE_TIMEOUT:g}s; treating it as not bootstrapped", flush=True)
+            continue
         if proc.returncode == 0 and (etcd_member_count(proc.stdout.decode(errors="replace")) or 0) >= 1:
             return name
     return None

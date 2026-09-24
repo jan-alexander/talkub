@@ -46,6 +46,18 @@ def test_run_without_check_returns_returncode():
     assert Runner().run([sys.executable, "-c", "raise SystemExit(4)"], check=False).returncode == 4
 
 
+def test_run_timeout_without_check_returns_124():
+    proc = Runner().run([sys.executable, "-c", "import time; time.sleep(30)"], check=False, timeout=0.5)
+    assert proc.returncode == 124
+    assert b"timed out after 0.5s" in proc.stderr
+
+
+def test_run_timeout_with_check_raises():
+    with pytest.raises(CommandFailed) as exc:
+        Runner().run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+    assert "timed out after 0.5s" in str(exc.value)
+
+
 def test_run_child_does_not_inherit_key(monkeypatch):
     monkeypatch.setenv("SOPS_AGE_KEY", "secret")
     code = "import os; print(os.environ.get('SOPS_AGE_KEY', 'absent'))"

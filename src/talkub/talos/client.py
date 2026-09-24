@@ -25,8 +25,10 @@ class TalosSession:
     def call(self, node: str, args: Sequence[str]) -> int:
         return self.runner.call(self.argv(node, args))
 
-    def run(self, node: str, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[bytes]:
-        return self.runner.run(self.argv(node, args), check=check)
+    def run(
+        self, node: str, args: Sequence[str], *, check: bool = True, timeout: float | None = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        return self.runner.run(self.argv(node, args), check=check, timeout=timeout)
 
 
 @contextmanager
