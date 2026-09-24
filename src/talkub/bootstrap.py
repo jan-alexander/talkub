@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from talkub import sealing, tailscale
+from talkub import gitrepo, sealing, tailscale
 from talkub.context import Context
 from talkub.ephemeral import decrypted
 from talkub.errors import CommandFailed, ValidationError
@@ -81,8 +81,10 @@ def run(ctx: Context) -> None:
                     "existing SealedSecrets",
                     flush=True,
                 )
-        _step("applying gitops/root.yaml")
-        kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
+        _step("applying the repo credentials and gitops/root.yaml")
+        if warning := gitrepo.placeholder_warning(ctx.repo):
+            print(f"   warning: {warning}", flush=True)
+        gitrepo.apply(ctx, kube)
 
     print("bootstrap complete — commit kubernetes/ and bootstrap/")
 

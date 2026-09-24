@@ -16,10 +16,11 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from talkub import yamlio
 from talkub.context import Context
-from talkub.ephemeral import private_tempdir
+from talkub.ephemeral import decrypted, private_tempdir
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
-from talkub.repo import Repo
+from talkub.kube import KubeSession
+from talkub.repo import GitSpec, Repo
 from talkub.runner import Runner
 
 ARGOCD_KNOWN_HOSTS = frozenset(
@@ -243,3 +244,55 @@ def create_ssh_credentials(
 
 def create_https_credentials(ctx: Context, name: str, url: GitUrl, username: str, token: str) -> Path:
     return write_credentials(ctx, build_secret(name, url.url, username=username, password=token))
+
+
+@dataclass(frozen=True)
+class SetUrlResult:
+    changed: list[Path]
+    credentials_updated: bool
+    unchanged: bool
+
+
+def set_url(ctx: Context, url: str) -> SetUrlResult:
+    """Point settings, gitops repoURLs and stored credentials at `url`. Never touches the cluster."""
+    new = classify_url(url)
+    settings = ctx.repo.load_settings()
+    old = settings.git.url if settings.git is not None else placeholder_url(settings.name)
+    if old == new.url:
+        return SetUrlResult([], False, True)
+
+    creds = credentials_path(ctx.repo)
+    manifest = ctx.sops.decrypt(creds) if creds.is_file() else None
+    if manifest is not None and credentials_kind(manifest) != new.kind:
+        raise ValidationError(
+            f"the stored repo credentials are for {credentials_kind(manifest)} URLs, the new URL is {new.kind}",
+            hint="talkub repo credentials --remove, then set-url, then talkub repo credentials",
+        )
+
+    changed = rewrite_repo_urls(ctx.repo, old, new.url)
+    if not changed and settings.git is None:
+        raise ValidationError(
+            "no repoURL under gitops/ matches the placeholder URL",
+            hint="set the repoURLs by hand, then add `git: {url: ...}` to .talkub.yaml",
+        )
+    if manifest is not None:
+        write_credentials(ctx, replace_secret_url(manifest, new.url))
+    settings.git = GitSpec(url=new.url)
+    ctx.repo.write_settings(settings)
+    return SetUrlResult(changed, manifest is not None, False)
+
+
+def apply(ctx: Context, kube: KubeSession) -> None:
+    """Repo credentials first (server-side: no last-applied annotation with the key), then the root app."""
+    creds = credentials_path(ctx.repo)
+    if creds.is_file():
+        with decrypted(ctx.sops, {"repo-credentials.yaml": creds}) as plain:
+            kube.kubectl(["apply", "--server-side", "-f", str(plain["repo-credentials.yaml"])])
+    kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
+
+
+def placeholder_warning(repo: Repo) -> str | None:
+    root = repo.gitops_dir / "root.yaml"
+    if root.is_file() and "example.invalid/CHANGE-ME" in root.read_text():
+        return "gitops/root.yaml still points at the placeholder URL; run `talkub repo set-url <url>`"
+    return None

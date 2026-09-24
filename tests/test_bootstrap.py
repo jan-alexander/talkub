@@ -231,6 +231,19 @@ def test_helm_install_oci_chart(tmp_path):
     assert call.env == {"KUBECONFIG": "kc"}
 
 
+def test_bootstrap_applies_repo_credentials_before_root(cluster):
+    from talkub import gitrepo
+
+    repo, spies = cluster
+    ctx = Context.open(repo)
+    gitrepo.write_credentials(ctx, gitrepo.build_secret("test", "git@github.com:me/x.git", ssh_private_key="K\n"))
+    bootstrap.run(ctx)
+    applies = [c for c in spies["kubectl"].calls if c["args"][0] == "apply"]
+    root = [i for i, c in enumerate(applies) if c["args"] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]]
+    creds = [i for i, c in enumerate(applies) if c["args"][:2] == ["apply", "--server-side"]]
+    assert root and creds and max(creds) < root[0]
+
+
 def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
     from talkub import tailscale, yamlio
     from talkub.repo import NodeSpec, TailscaleSpec
