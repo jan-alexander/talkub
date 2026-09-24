@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,17 +90,7 @@ def _render(
         "--with-docs=false",
         "--with-examples=false",
     ]
-    sans = [n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt]
-    if settings.tailscale is not None:
-        # So the LAN `apply` recommended between `tailscale enable` and `tailscale lockdown`
-        # already issues certificates for the tailnet names lockdown will switch clients to.
-        tailnet = settings.tailscale.tailnet
-        for cp_name, cp in settings.nodes.items():
-            if cp.role != "controlplane":
-                continue
-            san = f"{cp_name}.{tailnet}"
-            if san not in sans:
-                sans.append(san)
+    sans = _cert_sans(settings, name)
     if sans:
         argv += ["--additional-sans", ",".join(sans)]
     for ref in refs:
@@ -108,6 +99,32 @@ def _render(
     config = runner.run(argv).stdout
     _validate(runner, name, config, VALIDATE_MODE[settings.node_platform(name)])
     return config
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _cert_sans(settings: Settings, name: str) -> list[str]:
+    """Extra certificate names for node `name`: the control planes' names (the Kubernetes
+    API and talosctl endpoints) plus the node's own names, since talkub connects to every
+    node by its management address (`-n/-e <mgmt>`), after lockdown `<node>.<tailnet>`."""
+    tailnet = settings.tailscale.tailnet if settings.tailscale is not None else None
+    sans = [n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt]
+    if tailnet is not None:
+        # So the LAN `apply` recommended between `tailscale enable` and `tailscale lockdown`
+        # already issues certificates for the tailnet names lockdown will switch clients to.
+        sans += [f"{cp_name}.{tailnet}" for cp_name, cp in settings.nodes.items() if cp.role == "controlplane"]
+    own = settings.node(name).mgmt
+    if own and not _is_ip(own):
+        sans.append(own)
+    if tailnet is not None:
+        sans.append(f"{name}.{tailnet}")
+    return list(dict.fromkeys(sans))
 
 
 def _validate(runner: Runner, name: str, config: bytes, mode: str) -> None:

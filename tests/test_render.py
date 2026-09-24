@@ -101,6 +101,45 @@ def test_render_does_not_duplicate_tailnet_san_already_used_as_mgmt(talos_repo):
             assert sans.count("cp-01.t.ts.net") == 1
 
 
+def _cert_sans(config: bytes) -> list[str]:
+    for doc in _docs(config):
+        if isinstance(doc, dict) and doc.get("version") == "v1alpha1":
+            return list((doc.get("machine") or {}).get("certSANs") or [])
+    return []
+
+
+@pytestmark_bins
+def test_render_worker_gets_its_own_tailnet_and_mgmt_names(talos_repo):
+    """After lockdown talkub connects to every node by its own name, so each node's
+    certificate must cover it, not only the control planes' names."""
+    from talkub.repo import TailscaleSpec
+
+    settings = talos_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.20", role="worker")
+    settings.nodes["w-02"] = NodeSpec(ip="10.0.0.21", role="worker", mgmt="w-02.lan")
+    settings.nodes["w-03"] = NodeSpec(ip="10.0.0.22", role="worker", mgmt="10.0.0.99")
+    for name in ("w-01", "w-02", "w-03"):
+        atomic_write(node_patch_path(talos_repo, name), render_node_patch(name).encode())
+    configs = render_configs(Context.open(talos_repo), settings, ["cp-01", "w-01", "w-02", "w-03"])
+    assert "w-01.t.ts.net" in _cert_sans(configs["w-01"])
+    assert "cp-01.t.ts.net" in _cert_sans(configs["w-01"])
+    w02 = _cert_sans(configs["w-02"])
+    assert "w-02.lan" in w02 and "w-02.t.ts.net" in w02
+    assert len(w02) == len(set(w02))
+    assert "10.0.0.99" not in _cert_sans(configs["w-03"])  # an IP mgmt is not added as a name
+    assert "w-01.t.ts.net" not in _cert_sans(configs["cp-01"])
+
+
+@pytestmark_bins
+def test_render_worker_without_tailscale_gets_its_mgmt_name(talos_repo):
+    settings = talos_repo.load_settings()
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.20", role="worker", mgmt="w-01.lan")
+    atomic_write(node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode())
+    configs = render_configs(Context.open(talos_repo), settings, ["w-01"])
+    assert "w-01.lan" in _cert_sans(configs["w-01"])
+
+
 @pytestmark_bins
 def test_invalid_patch_is_reported_with_node_name(talos_repo):
     patches = talos_repo.talos_dir / "patches"
