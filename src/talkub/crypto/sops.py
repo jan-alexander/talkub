@@ -15,7 +15,7 @@ from ruamel.yaml.error import YAMLError
 
 from talkub import yamlio
 from talkub.ephemeral import private_file
-from talkub.errors import CommandFailed, DecryptFailed
+from talkub.errors import CommandFailed, DecryptFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.runner import Runner, require_tool
 
@@ -64,6 +64,8 @@ class Sops:
         editor while `retry` says so; otherwise nothing is written and 1 is returned.
         """
         editor = shlex.split(os.environ.get("SOPS_EDITOR") or os.environ.get("EDITOR") or "vi")
+        if not editor:
+            raise ValidationError("$SOPS_EDITOR/$EDITOR is empty", hint="set it to an editor command, e.g. vi")
         require_tool(editor[0])
         original = self.decrypt(path) if path.exists() else b""
         with private_file(path.name, original) as plaintext:

@@ -194,10 +194,8 @@ def rewrite_kubeconfig_server(data: bytes, server: str) -> bytes:
     return yamlio.dump(doc).encode()
 
 
-def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = None) -> list[str]:
-    """Step 1: auth-key patch + extension in every used schematic. Addresses stay unchanged,
-    so a running cluster can still be upgraded and configured via LAN."""
-    repo = ctx.repo
+def check_can_enable(repo: Repo) -> Settings:
+    """Refuse `enable` when already enabled or half-enabled; called before the auth key is asked for."""
     settings = repo.load_settings()
     patch = extension_patch_path(repo)
     if settings.tailscale is not None:
@@ -210,6 +208,15 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
             f"{repo.rel(patch)} exists but tailscale is not enabled in .talkub.yaml",
             hint="a previous `tailscale enable` was interrupted; delete that file and run it again",
         )
+    return settings
+
+
+def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = None) -> list[str]:
+    """Step 1: auth-key patch + extension in every used schematic. Addresses stay unchanged,
+    so a running cluster can still be upgraded and configured via LAN."""
+    repo = ctx.repo
+    settings = check_can_enable(repo)
+    patch = extension_patch_path(repo)
     validate_tailnet(tailnet)
     authkey = validate_authkey(authkey)
     cidr = validate_cidr(node_cidr) if node_cidr else default_node_cidr(settings)

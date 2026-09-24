@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import sys
 from pathlib import Path
 
 import typer
@@ -14,13 +15,20 @@ app = typer.Typer(help="Tailscale as the only admin path to the Talos and Kubern
 NODE_CIDR = typer.Option(None, "--node-cidr", help="Node network for cluster-internal rules (default: /24 of the first node).")
 
 
-def read_authkey(path: Path | None) -> str:
+def read_authkey(path: Path | None, repo_root: Path | None = None) -> str:
     """From a file, or prompted without echo — never from the command line."""
     if path is not None:
         try:
-            return path.expanduser().read_text().strip()
+            key = path.expanduser().read_text().strip()
         except OSError as err:
             raise ValidationError(f"cannot read {path}: {err.strerror}") from None
+        if repo_root is not None and path.expanduser().resolve().is_relative_to(repo_root.resolve()):
+            print(
+                f"warning: {path} is inside the cluster repo; the plaintext auth key file must not be "
+                "committed — delete it after use",
+                file=sys.stderr,
+            )
+        return key
     return getpass.getpass("Tailscale auth key: ")
 
 
@@ -39,7 +47,9 @@ def enable(
     """Step 1: add the Tailscale extension and auth key (addresses stay on the LAN)."""
     context = ctx.obj.context()
     tailscale.validate_tailnet(tailnet)
-    print_notes(tailscale.enable(context, tailnet=tailnet, authkey=read_authkey(authkey_file), node_cidr=node_cidr))
+    tailscale.check_can_enable(context.repo)
+    authkey = read_authkey(authkey_file, repo_root=context.repo.root)
+    print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
 
 
 @app.command("lockdown")

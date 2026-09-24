@@ -193,7 +193,7 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
             f"({', '.join(source.extensions) or 'none'}); adjust with talkub image add/remove --platform {platform}"
         )
     if options.public_ingress and not (repo.talos_dir / "patches" / "firewall.yaml").exists():
-        warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale enable`)")
+        warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale lockdown`)")
     atomic_write(path, render_node_patch(name, options).encode())
     repo.write_settings(settings)
     return warnings

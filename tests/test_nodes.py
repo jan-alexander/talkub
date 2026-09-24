@@ -151,7 +151,7 @@ def test_add_node_rejects_duplicates_and_bad_input(empty_repo):
 
 def test_public_ingress_without_firewall_warns(empty_repo):
     warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions(public_ingress=True))
-    assert any("firewall" in w for w in warnings)
+    assert any("firewall" in w and "talkub tailscale lockdown" in w for w in warnings)
 
 
 def test_static_address_differs_from_ip_without_mgmt_warns(empty_repo):

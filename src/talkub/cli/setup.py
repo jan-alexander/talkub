@@ -116,7 +116,8 @@ def init(
         try:
             print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
         except TalkubError as err:
-            hint = f"cd {repo.root} && talkub tailscale enable --tailnet {tailnet} && talkub tailscale lockdown"
+            cidr = f" --node-cidr {node_cidr}" if node_cidr else ""
+            hint = f"cd {repo.root} && talkub tailscale enable --tailnet {tailnet}{cidr} && talkub tailscale lockdown"
             raise type(err)(
                 f"created {repo.root}, but the Tailscale setup failed: {err}",
                 hint=f"{hint}; {err.hint}" if err.hint else hint,

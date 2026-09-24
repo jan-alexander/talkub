@@ -104,3 +104,71 @@ def test_init_tailscale_lockdown_failure_hints_at_the_repo(tmp_path, software_id
     assert str(repo_dir.resolve()) in err
     assert "talkub tailscale lockdown" in err
     assert repo_dir.exists()
+
+
+def test_enable_refuses_before_asking_for_the_key(repo, tmp_path, monkeypatch, capfd):
+    import getpass
+
+    key_file = tmp_path / "key"
+    key_file.write_text(KEY)
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net", "--authkey-file", str(key_file)]) == 0
+    capfd.readouterr()
+    asked = []
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": asked.append(prompt) or KEY)
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"]) == 1
+    assert "already enabled" in capfd.readouterr().err
+    assert asked == []
+
+
+def test_enable_refuses_half_state_before_asking_for_the_key(repo, monkeypatch, capfd):
+    import getpass
+
+    tailscale.extension_patch_path(repo).parent.mkdir(parents=True, exist_ok=True)
+    tailscale.extension_patch_path(repo).write_text("stray: true\n")
+    asked = []
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": asked.append(prompt) or KEY)
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"]) == 1
+    assert "interrupted" in capfd.readouterr().err
+    assert asked == []
+
+
+def test_key_file_inside_the_repo_warns(repo, capfd):
+    key_file = repo.root / "authkey.txt"
+    key_file.write_text(KEY)
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net", "--authkey-file", str(key_file)]) == 0
+    err = capfd.readouterr().err
+    assert "authkey.txt" in err and "must not be committed" in err
+
+
+def test_read_authkey_warns_only_inside_the_repo(tmp_path, capfd):
+    from talkub.cli.tailscale import read_authkey
+
+    root = tmp_path / "repo"
+    (root / "sub").mkdir(parents=True)
+    inside = root / "sub" / "key"
+    outside = tmp_path / "key"
+    for path in (inside, outside):
+        path.write_text(KEY + "\n")
+    assert read_authkey(outside, repo_root=root) == KEY
+    assert read_authkey(inside) == KEY
+    assert capfd.readouterr().err == ""
+    assert read_authkey(inside, repo_root=root) == KEY
+    assert "must not be committed" in capfd.readouterr().err
+
+
+@need("talosctl")
+def test_init_tailscale_enable_failure_hint_keeps_node_cidr(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
+    fake_bin("helm", HELM)
+    monkeypatch.chdir(tmp_path)
+    key_file = tmp_path / "key"
+    key_file.write_text(KEY)
+
+    def _boom(ctx, **kwargs):
+        raise ValidationError("boom")
+
+    monkeypatch.setattr(tailscale, "enable", _boom)
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+                 "--node", "cp-01=10.0.0.10", "--tailscale", "--tailnet", "t.ts.net",
+                 "--tailscale-authkey-file", str(key_file), "--node-cidr", "10.0.0.0/16"])
+    assert code == 1
+    assert "talkub tailscale enable --tailnet t.ts.net --node-cidr 10.0.0.0/16" in capfd.readouterr().err

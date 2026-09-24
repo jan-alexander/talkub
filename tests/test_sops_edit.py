@@ -2,7 +2,7 @@ import pytest
 
 from helpers import need
 from talkub.context import Context
-from talkub.errors import ToolMissing
+from talkub.errors import ToolMissing, ValidationError
 from talkub.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops")
@@ -39,12 +39,28 @@ def test_invalid_yaml_reopens_editor(secret, fake_bin, tmp_path, monkeypatch):
 
 
 def test_declined_reopen_writes_nothing(secret, fake_bin, tmp_path, monkeypatch, capfd):
+    import tempfile
+
     ctx, path = secret
     _editor(fake_bin, tmp_path, monkeypatch)
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
     before = path.read_bytes()
     assert ctx.sops.edit(path, ctx.keyring.public_key(), retry=lambda q: False) == 1
     assert path.read_bytes() == before
     assert "discarded" in capfd.readouterr().err
+    assert list(temp.iterdir()) == []  # the decrypted plaintext's talkub-* directory is gone
+
+
+@pytest.mark.parametrize("variable", ["SOPS_EDITOR", "EDITOR"])
+def test_blank_editor_is_reported(secret, monkeypatch, variable):
+    ctx, path = secret
+    monkeypatch.delenv("SOPS_EDITOR", raising=False)
+    monkeypatch.setenv(variable, "   ")
+    with pytest.raises(ValidationError) as exc:
+        ctx.sops.edit(path, ctx.keyring.public_key())
+    assert "$SOPS_EDITOR/$EDITOR is empty" in str(exc.value)
 
 
 def test_missing_editor_is_reported_before_decrypting(keyed_repo, monkeypatch):
