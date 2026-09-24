@@ -81,3 +81,13 @@ def test_init_warns_when_static_address_differs(tmp_path, software_identity, fak
     ])
     assert code == 0
     assert "after install the node is reachable at 10.0.0.50" in capfd.readouterr().err
+
+
+def test_init_rejects_invalid_node_name(tmp_path, capfd, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    code = _run([
+        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
+        "--node", "a{x}=10.0.0.10", "--static", "10.0.0.10/24", "--gateway", "10.0.0.1",
+    ])
+    assert code == 1
+    assert "invalid node name" in capfd.readouterr().err

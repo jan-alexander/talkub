@@ -48,6 +48,26 @@ def fake_bin(tmp_path, monkeypatch):
     return install
 
 
+@pytest.fixture
+def spy(fake_bin, tmp_path):
+    """spy("kubectl") puts a logging fake `kubectl` in front of PATH and returns its Spy."""
+    import sys
+
+    from helpers import SPY_SCRIPT, Spy
+
+    directory = tmp_path / "spies"
+    directory.mkdir()
+    script = directory / "spy.py"
+    script.write_text(SPY_SCRIPT)
+
+    def make(name: str) -> Spy:
+        instance = Spy(name=name, directory=directory, real_path=shutil.which(name))
+        fake_bin(name, f'exec "{sys.executable}" "{script}" "{instance.log}" "{instance.rules_file}" "$@"\n')
+        return instance
+
+    return make
+
+
 def _require(*tools: str) -> None:
     missing = [tool for tool in tools if shutil.which(tool) is None]
     if missing:
