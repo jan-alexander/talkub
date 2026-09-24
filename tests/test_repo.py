@@ -168,3 +168,33 @@ def test_schematic_is_current_only_with_matching_hash():
     assert SchematicSpec(id="x", hash=customization_hash([], [])).is_current
     assert not SchematicSpec(id=None, hash=customization_hash([], [])).is_current
     assert not SchematicSpec(id="x", hash="other").is_current
+
+
+def test_git_block_round_trips(tmp_path):
+    from helpers import sample_settings
+    from talkub.repo import GitSpec, Repo
+
+    repo = Repo(tmp_path)
+    settings = sample_settings()
+    assert settings.git is None
+    repo.write_settings(settings)
+    assert "git:" not in repo.settings_file.read_text()  # absent block stays absent
+    settings.git = GitSpec(url="git@github.com:me/c.git")
+    repo.write_settings(settings)
+    assert repo.load_settings().git == GitSpec(url="git@github.com:me/c.git")
+
+
+@pytest.mark.parametrize("raw", ["git: nope\n", "git: {}\n", "git: {url: ''}\n"])
+def test_git_block_must_have_url(tmp_path, raw):
+    from helpers import sample_settings
+    from talkub import yamlio
+    from talkub.errors import ValidationError
+    from talkub.repo import Repo
+
+    repo = Repo(tmp_path)
+    repo.write_settings(sample_settings())
+    data = yamlio.load(repo.settings_file.read_text())
+    data["git"] = yamlio.load(raw)["git"]
+    repo.settings_file.write_text(yamlio.dump(data))
+    with pytest.raises(ValidationError):
+        repo.load_settings()

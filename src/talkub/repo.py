@@ -60,6 +60,11 @@ class TailscaleSpec:
     node_cidr: str
 
 
+@dataclass(frozen=True)
+class GitSpec:
+    url: str
+
+
 def parse_installer_image(image: str) -> tuple[str, str]:
     """Split 'factory.talos.dev/<platform>-installer/<id>' (without tag) into (platform, id)."""
     match = _INSTALLER.match(image)
@@ -106,6 +111,7 @@ class Settings:
     nodes: dict[str, NodeSpec] = field(default_factory=dict)
     charts: dict[str, ChartSpec] = field(default_factory=dict)
     tailscale: TailscaleSpec | None = None
+    git: GitSpec | None = None
 
     def node(self, name: str) -> NodeSpec:
         try:
@@ -151,6 +157,8 @@ class Settings:
         }
         if self.tailscale is not None:
             data["tailscale"] = {"tailnet": self.tailscale.tailnet, "nodeCidr": self.tailscale.node_cidr}
+        if self.git is not None:
+            data["git"] = {"url": self.git.url}
         return data
 
     @classmethod
@@ -245,6 +253,16 @@ class Settings:
                 raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet and nodeCidr")
             tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr)
 
+        git = None
+        raw_git = data.get("git")
+        if raw_git is not None:
+            if not isinstance(raw_git, Mapping):
+                raise ValidationError(f"{MARKER}: 'git' must be a mapping")
+            url = _optional_text(raw_git.get("url"), "git.url")
+            if url is None:
+                raise ValidationError(f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>")
+            git = GitSpec(url=url)
+
         return cls(
             name=text("name"),
             endpoint=endpoint,
@@ -255,6 +273,7 @@ class Settings:
             nodes=nodes,
             charts=charts,
             tailscale=tailscale,
+            git=git,
         )
 
 
