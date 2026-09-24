@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from string import Template
 
 import pytest
@@ -7,6 +9,7 @@ from talkub import gitrepo
 from talkub.cli.main import main
 from talkub.context import Context
 from talkub.fsutil import atomic_write
+from talkub.repo import ChartSpec
 from talkub.scaffold import TEMPLATES
 
 pytestmark = need("age", "age-keygen", "sops", "ssh-keygen")
@@ -88,3 +91,38 @@ def test_apply_warns_about_placeholder(repo, spy, capfd):
     assert _run(["--repo", str(repo.root), "repo", "apply"]) == 0
     assert "placeholder" in capfd.readouterr().err
     assert kubectl.argvs == [["apply", "-f", str(repo.gitops_dir / "root.yaml")]]
+
+
+def test_apply_upgrades_argocd_when_extra_hosts_present(repo, spy, capfd):
+    settings = repo.load_settings()
+    settings.charts["argocd"] = ChartSpec("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2")
+    repo.write_settings(settings)
+    (repo.gitops_dir / "values" / "argocd.yaml").write_text(
+        "configs:\n  ssh:\n    extraHosts: |\n      git.example.com ssh-ed25519 AAA\n"
+    )
+    helm = spy("helm")
+    kubectl = spy("kubectl")
+    assert _run(["--repo", str(repo.root), "repo", "apply"]) == 0
+    out = capfd.readouterr().out
+    assert "upgrading Argo CD with the known hosts from gitops/values/argocd.yaml" in out
+    assert helm.argvs and helm.argvs[0][:4] == ["upgrade", "--install", "argocd", "argo-cd"]
+    assert kubectl.argvs == [["apply", "-f", str(repo.gitops_dir / "root.yaml")]]
+    assert helm.log.stat().st_mtime_ns < kubectl.log.stat().st_mtime_ns
+
+
+def test_set_url_notes_credentials_need_refresh_on_host_change(repo, capfd):
+    _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"])
+    _run(["--repo", str(repo.root), "repo", "credentials"])
+    capfd.readouterr()
+    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@gitlab.com:me/test.git"]) == 0
+    out = capfd.readouterr().out
+    assert "run talkub repo credentials to trust the new host" in out
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_set_url_notes_git_remote_origin_when_missing(repo, capfd):
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo.root)], check=True)
+    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]) == 0
+    out = capfd.readouterr().out
+    assert "git remote origin is not set" in out
+    assert "git remote add origin git@github.com:me/test.git" in out

@@ -52,7 +52,7 @@ def classify_url(url: str) -> GitUrl:
             port = parts.port
         except ValueError:
             raise ValidationError("invalid git URL", hint=URL_HINT) from None
-        if parts.scheme == "https" and (parts.username or parts.password):
+        if parts.password or (parts.scheme == "https" and parts.username):
             raise ValidationError(
                 "the git URL must not contain credentials",
                 hint="use a plain https:// URL and store the token with `talkub repo credentials`",
@@ -82,6 +82,19 @@ def git_init(root: Path, url: str, runner: Runner) -> list[str]:
         if proc.returncode != 0:
             return [f"could not add remote origin: {(proc.stderr or b'').decode(errors='replace').strip()}"]
     return []
+
+
+def origin_hint(root: Path, url: str, runner: Runner) -> str | None:
+    """A note when the git `origin` remote does not (yet) point at `url`, or None if it already does."""
+    if shutil.which("git") is None:
+        return None
+    proc = runner.run(["git", "remote", "get-url", "origin"], cwd=root, check=False)
+    current = proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else None
+    if current == url:
+        return None
+    if current is None:
+        return f"note: git remote origin is not set; update it with git remote add origin {url}"
+    return f"note: git remote origin is {current}; update it with git remote set-url origin {url}"
 
 
 def _manifest_files(repo: Repo) -> list[Path]:
@@ -221,11 +234,20 @@ def fingerprint(line: str) -> str:
     return f"{keytype} SHA256:{base64.b64encode(digest).decode().rstrip('=')}"
 
 
+def _submap(data: CommentedMap, key: str) -> CommentedMap:
+    """data[key] as a mapping, replacing it with a fresh one if absent or null (e.g. `key:` with no value)."""
+    value = data.get(key)
+    if not isinstance(value, Mapping):
+        value = CommentedMap()
+        data[key] = value
+    return value
+
+
 def add_extra_hosts(repo: Repo, lines: list[str]) -> bool:
     """Append known-hosts lines to configs.ssh.extraHosts in gitops/values/argocd.yaml."""
     path = repo.gitops_dir / "values" / "argocd.yaml"
     data = (yamlio.load(path.read_text()) if path.is_file() else None) or CommentedMap()
-    ssh = data.setdefault("configs", CommentedMap()).setdefault("ssh", CommentedMap())
+    ssh = _submap(_submap(data, "configs"), "ssh")
     existing = [line for line in str(ssh.get("extraHosts") or "").splitlines() if line.strip()]
     new = [line for line in lines if line not in existing]
     if not new:
@@ -233,6 +255,27 @@ def add_extra_hosts(repo: Repo, lines: list[str]) -> bool:
     ssh["extraHosts"] = LiteralScalarString("\n".join(existing + new) + "\n")
     atomic_write(path, yamlio.dump(data).encode())
     return True
+
+
+def has_extra_hosts(repo: Repo) -> bool:
+    """True if gitops/values/argocd.yaml sets a non-empty configs.ssh.extraHosts."""
+    path = repo.gitops_dir / "values" / "argocd.yaml"
+    if not path.is_file():
+        return False
+    try:
+        data = yamlio.load(path.read_text())
+    except YAMLError:
+        return False
+    if not isinstance(data, Mapping):
+        return False
+    configs = data.get("configs")
+    if not isinstance(configs, Mapping):
+        return False
+    ssh = configs.get("ssh")
+    if not isinstance(ssh, Mapping):
+        return False
+    extra = ssh.get("extraHosts")
+    return isinstance(extra, str) and bool(extra.strip())
 
 
 @dataclass(frozen=True)
@@ -253,8 +296,8 @@ def create_ssh_credentials(
         if not confirm(f"SSH host keys of {url.host}:\n{shown}\nTrust them for Argo CD?"):
             raise ValidationError("host keys not confirmed; nothing was written")
     private, public = generate_ssh_key(ctx.runner, f"talkub-{name}")
-    path = write_credentials(ctx, build_secret(name, url.url, ssh_private_key=private))
     written = add_extra_hosts(ctx.repo, host_lines) if host_lines else False
+    path = write_credentials(ctx, build_secret(name, url.url, ssh_private_key=private))
     return SshCredentials(path, public, written)
 
 
@@ -267,6 +310,7 @@ class SetUrlResult:
     changed: list[Path]
     credentials_updated: bool
     unchanged: bool
+    credentials_need_refresh: bool = False
 
 
 def set_url(ctx: Context, url: str) -> SetUrlResult:
@@ -285,6 +329,15 @@ def set_url(ctx: Context, url: str) -> SetUrlResult:
             hint="talkub repo credentials --remove, then set-url, then talkub repo credentials",
         )
 
+    credentials_need_refresh = False
+    if manifest is not None:
+        try:
+            old_url = classify_url(old)
+        except ValidationError:
+            credentials_need_refresh = True
+        else:
+            credentials_need_refresh = (old_url.host, old_url.port) != (new.host, new.port)
+
     changed = rewrite_repo_urls(ctx.repo, old, new.url)
     if not changed and settings.git is None:
         raise ValidationError(
@@ -295,7 +348,7 @@ def set_url(ctx: Context, url: str) -> SetUrlResult:
         write_credentials(ctx, replace_secret_url(manifest, new.url))
     settings.git = GitSpec(url=new.url)
     ctx.repo.write_settings(settings)
-    return SetUrlResult(changed, manifest is not None, False)
+    return SetUrlResult(changed, manifest is not None, False, credentials_need_refresh)
 
 
 def apply(ctx: Context, kube: KubeSession) -> None:

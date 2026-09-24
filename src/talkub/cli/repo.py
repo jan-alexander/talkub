@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from talkub import gitrepo
+from talkub import bootstrap, gitrepo
 from talkub.cli.prompts import read_secret
 from talkub.errors import ValidationError
 from talkub.kube import kube_session
@@ -28,6 +28,14 @@ def set_url(ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTP
         print(f"updated {context.repo.rel(path)}")
     if result.credentials_updated:
         print(f"updated {context.repo.rel(gitrepo.credentials_path(context.repo))}")
+    if result.credentials_need_refresh:
+        print(
+            "note: the repo host changed — run talkub repo credentials to trust the new host "
+            "and register a deploy key or token there"
+        )
+    stored_url = context.repo.load_settings().git.url
+    if hint := gitrepo.origin_hint(context.repo.root, stored_url, context.runner):
+        print(hint)
     print(NEXT)
 
 
@@ -65,6 +73,7 @@ def credentials(
         print(f"wrote {repo.rel(result.path)}")
         if result.known_hosts_written:
             print("updated gitops/values/argocd.yaml (configs.ssh.extraHosts)")
+            print("talkub repo apply also upgrades Argo CD with the new known hosts")
         print("add this public key as a read-only deploy key to the repo:")
         print(result.public_key)
     else:
@@ -81,5 +90,8 @@ def apply(ctx: typer.Context) -> None:
     if warning := gitrepo.placeholder_warning(context.repo):
         print(f"warning: {warning}", file=sys.stderr)
     with kube_session(context) as kube:
+        if gitrepo.has_extra_hosts(context.repo):
+            print("upgrading Argo CD with the known hosts from gitops/values/argocd.yaml")
+            bootstrap.upgrade_argocd(context, kube)
         gitrepo.apply(context, kube)
     print("applied the repo credentials (if any) and gitops/root.yaml")

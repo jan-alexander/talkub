@@ -26,6 +26,16 @@ def _step(text: str) -> None:
     print(f"== {text}", flush=True)
 
 
+def upgrade_argocd(ctx: Context, kube: KubeSession) -> None:
+    """`helm upgrade` the argocd release with its values file (e.g. after configs.ssh.extraHosts changed)."""
+    require_tool("helm")
+    settings = ctx.repo.load_settings()
+    if "argocd" not in settings.charts:
+        raise ValidationError("missing chart settings in .talkub.yaml: argocd")
+    release, namespace, create = RELEASES["argocd"]
+    _helm_install(kube, ctx.repo, "argocd", release, settings.charts["argocd"], namespace, create)
+
+
 def run(ctx: Context) -> None:
     for tool in ("talosctl", "kubectl", "helm", "kubeseal"):
         require_tool(tool)

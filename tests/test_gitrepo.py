@@ -47,6 +47,18 @@ def test_classify_url_rejects_embedded_credentials_without_echoing_them():
     assert "talkub repo credentials" in (exc.value.hint or "")
 
 
+def test_classify_url_rejects_ssh_url_with_password_without_echoing_it():
+    with pytest.raises(ValidationError) as exc:
+        classify_url("ssh://git:hunter2@git.example.com/x.git")
+    assert "hunter2" not in str(exc.value)
+    assert "hunter2" not in (exc.value.hint or "")
+    assert "talkub repo credentials" in (exc.value.hint or "")
+
+
+def test_classify_url_allows_ssh_username_without_password():
+    assert classify_url("ssh://git@git.example.com/me/c.git").host == "git.example.com"
+
+
 def test_placeholder_url():
     assert gitrepo.placeholder_url("homelab") == "https://example.invalid/CHANGE-ME/homelab.git"
 
@@ -139,3 +151,57 @@ def test_git_init_without_git_warns(tmp_path, monkeypatch):
     monkeypatch.setattr(gitrepo.shutil, "which", lambda name: None)
     [warning] = gitrepo.git_init(tmp_path, NEW, Runner())
     assert "git init -b main" in warning
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_origin_hint_none_when_remote_matches(tmp_path):
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", NEW], check=True)
+    assert gitrepo.origin_hint(tmp_path, NEW, Runner()) is None
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_origin_hint_when_remote_missing(tmp_path):
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    hint = gitrepo.origin_hint(tmp_path, NEW, Runner())
+    assert "git remote origin is not set" in hint
+    assert f"git remote add origin {NEW}" in hint
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_origin_hint_when_remote_differs(tmp_path):
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", "git@other:x.git"], check=True)
+    hint = gitrepo.origin_hint(tmp_path, NEW, Runner())
+    assert "git@other:x.git" in hint
+    assert f"git remote set-url origin {NEW}" in hint
+
+
+def test_origin_hint_without_git_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(gitrepo.shutil, "which", lambda name: None)
+    assert gitrepo.origin_hint(tmp_path, NEW, Runner()) is None
+
+
+def test_has_extra_hosts_true_when_set(tmp_path):
+    repo = Repo(tmp_path)
+    atomic_write(
+        repo.gitops_dir / "values" / "argocd.yaml",
+        b"configs:\n  ssh:\n    extraHosts: |\n      git.example.com ssh-ed25519 AAA\n",
+    )
+    assert gitrepo.has_extra_hosts(repo) is True
+
+
+def test_has_extra_hosts_false_when_values_file_missing(tmp_path):
+    assert gitrepo.has_extra_hosts(Repo(tmp_path)) is False
+
+
+def test_has_extra_hosts_false_when_no_extra_hosts_configured(tmp_path):
+    repo = Repo(tmp_path)
+    atomic_write(repo.gitops_dir / "values" / "argocd.yaml", b"dex:\n  enabled: false\n")
+    assert gitrepo.has_extra_hosts(repo) is False
+
+
+def test_has_extra_hosts_false_when_extra_hosts_is_empty(tmp_path):
+    repo = Repo(tmp_path)
+    atomic_write(repo.gitops_dir / "values" / "argocd.yaml", b'configs:\n  ssh:\n    extraHosts: ""\n')
+    assert gitrepo.has_extra_hosts(repo) is False

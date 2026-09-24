@@ -123,6 +123,40 @@ def test_ssh_credentials_unreachable_host_fails_before_keygen(ctx, spy):
     assert not gitrepo.credentials_path(ctx.repo).exists()
 
 
+def test_add_extra_hosts_handles_null_configs_and_ssh(ctx):
+    values_path = ctx.repo.gitops_dir / "values" / "argocd.yaml"
+    values_path.write_text("configs:\n")
+    written = gitrepo.add_extra_hosts(ctx.repo, ["git.example.com ssh-ed25519 AAA"])
+    assert written
+    values = yamlio.load(values_path.read_text())
+    assert values["configs"]["ssh"]["extraHosts"].splitlines() == ["git.example.com ssh-ed25519 AAA"]
+
+
+def test_ssh_credentials_with_null_configs_in_values_file(ctx, spy, tmp_path):
+    (ctx.repo.gitops_dir / "values" / "argocd.yaml").write_text("configs:\n")
+    line = _host_line(tmp_path)
+    spy("ssh-keyscan").on("-p", "2222", "git.example.com", stdout=f"# git.example.com:2222 SSH-2.0\n{line}\n")
+    url = classify_url("ssh://git@git.example.com:2222/me/x.git")
+    result = gitrepo.create_ssh_credentials(ctx, "test", url, confirm=lambda q: True)
+    assert result.known_hosts_written
+    values_path = ctx.repo.gitops_dir / "values" / "argocd.yaml"
+    assert yamlio.load(values_path.read_text())["configs"]["ssh"]["extraHosts"].splitlines() == [line]
+
+
+def test_create_ssh_credentials_adds_extra_hosts_before_writing_secret(ctx, spy, tmp_path, monkeypatch):
+    order = []
+    monkeypatch.setattr(gitrepo, "add_extra_hosts", lambda repo, lines: order.append("hosts") or False)
+    real_write = gitrepo.write_credentials
+    monkeypatch.setattr(
+        gitrepo, "write_credentials", lambda context, manifest: order.append("secret") or real_write(context, manifest)
+    )
+    line = _host_line(tmp_path)
+    spy("ssh-keyscan").on("-p", "2222", "git.example.com", stdout=f"# git.example.com:2222 SSH-2.0\n{line}\n")
+    url = classify_url("ssh://git@git.example.com:2222/me/x.git")
+    gitrepo.create_ssh_credentials(ctx, "test", url, confirm=lambda q: True)
+    assert order == ["hosts", "secret"]
+
+
 def test_https_credentials(ctx):
     path = gitrepo.create_https_credentials(ctx, "test", classify_url("https://h.example/x.git"), "jam", "tok-123")
     assert path == gitrepo.credentials_path(ctx.repo)

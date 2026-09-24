@@ -116,6 +116,12 @@ Gemeinsame Funktion `gitrepo.apply(ctx, kube)`, auch von `bootstrap` genutzt:
 (Credentials vor Root-App). Warnung in `repo apply` und `bootstrap`, wenn `root.yaml` noch die
 Platzhalter-URL enthält.
 
+Ist `configs.ssh.extraHosts` in `gitops/values/argocd.yaml` gesetzt (`gitrepo.has_extra_hosts`),
+führt `talkub repo apply` zuerst `bootstrap.upgrade_argocd` aus (Helm-Upgrade des laufenden
+Argo-CD-Release mit dieser Values-Datei), bevor Credentials und `root.yaml` angewendet werden —
+sonst kennt ein bereits laufendes Argo CD die neuen Known-Hosts nie, weil es seine eigenen Values
+nur über die (noch nicht vertraute) Repo-Verbindung nachzieht.
+
 ## 7. `init` und Git
 
 Nach dem Befüllen (in `init_cluster`, vor dem Cleanup-Ende):

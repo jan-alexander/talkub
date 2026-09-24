@@ -54,6 +54,25 @@ def test_set_url_from_stored_url_updates_credentials(ctx):
     assert base64.b64decode(secret["data"]["url"]).decode() == "git@gitlab.com:me/test.git"
 
 
+def test_set_url_to_different_ssh_host_flags_credentials_need_refresh(ctx):
+    gitrepo.set_url(ctx, SSH_URL)
+    _creds(ctx, SSH_URL, ssh_private_key="KEY\n")
+    result = gitrepo.set_url(ctx, "git@gitlab.com:me/test.git")
+    assert result.credentials_need_refresh
+
+
+def test_set_url_same_host_different_path_keeps_credentials(ctx):
+    gitrepo.set_url(ctx, SSH_URL)
+    _creds(ctx, SSH_URL, ssh_private_key="KEY\n")
+    result = gitrepo.set_url(ctx, "git@github.com:me/other.git")
+    assert not result.credentials_need_refresh
+
+
+def test_set_url_without_stored_credentials_never_flags_refresh(ctx):
+    result = gitrepo.set_url(ctx, SSH_URL)
+    assert not result.credentials_need_refresh
+
+
 def test_set_url_kind_mismatch_changes_nothing(ctx):
     gitrepo.set_url(ctx, SSH_URL)
     _creds(ctx, SSH_URL, ssh_private_key="KEY\n")
