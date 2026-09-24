@@ -13,6 +13,11 @@ from collections import Counter
 _SERVER_TAG = re.compile(r"^Server:\s*$.*?^\s*Tag:\s*(\S+)", re.MULTILINE | re.DOTALL)
 
 
+def _dict(value: object) -> dict:
+    """Return value if it is a dict, else empty dict. Guards against non-dict nested lookups."""
+    return value if isinstance(value, dict) else {}
+
+
 def server_version(text: str) -> str | None:
     """Talos version of the node from `talosctl version` output."""
     match = _SERVER_TAG.search(text)
@@ -42,9 +47,9 @@ def extensions(text: str) -> dict[str, str]:
     for doc in json_documents(text):
         if not isinstance(doc, dict):
             continue
-        spec = doc.get("spec")
-        metadata = spec.get("metadata") if isinstance(spec, dict) else None
-        if isinstance(metadata, dict) and isinstance(metadata.get("name"), str):
+        spec = _dict(doc.get("spec"))
+        metadata = _dict(spec.get("metadata"))
+        if isinstance(metadata.get("name"), str):
             result[metadata["name"]] = str(metadata.get("version", ""))
     return result
 
@@ -75,8 +80,11 @@ def kubelet_versions(text: str) -> dict[str, str]:
     """node name -> kubelet version (without leading v) from `kubectl get nodes -o json`."""
     result: dict[str, str] = {}
     for item in _items(text):
-        name = (item.get("metadata") or {}).get("name")
-        version = ((item.get("status") or {}).get("nodeInfo") or {}).get("kubeletVersion")
+        metadata = _dict(item.get("metadata"))
+        status = _dict(item.get("status"))
+        nodeInfo = _dict(status.get("nodeInfo"))
+        name = metadata.get("name")
+        version = nodeInfo.get("kubeletVersion")
         if isinstance(name, str) and isinstance(version, str):
             result[name] = version.lstrip("v")
     return result
@@ -88,9 +96,14 @@ def application_summary(text: str) -> dict[str, int] | None:
     if len(docs) != 1 or not isinstance(docs[0], dict) or not isinstance(docs[0].get("items"), list):
         return None
     counts: Counter[str] = Counter()
-    for item in _items(text):
-        status = item.get("status") or {}
-        sync = (status.get("sync") or {}).get("status") or "Unknown"
-        health = (status.get("health") or {}).get("status") or "Unknown"
-        counts[f"{sync}/{health}"] += 1
+    items = docs[0].get("items", [])
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        status = _dict(item.get("status"))
+        sync = _dict(status.get("sync"))
+        health = _dict(status.get("health"))
+        sync_status = sync.get("status") or "Unknown"
+        health_status = health.get("status") or "Unknown"
+        counts[f"{sync_status}/{health_status}"] += 1
     return dict(counts)

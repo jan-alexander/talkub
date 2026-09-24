@@ -67,3 +67,19 @@ def test_application_summary():
     assert inspect.application_summary(APPS) == {"Synced/Healthy": 2, "OutOfSync/Unknown": 1}
     assert inspect.application_summary('{"items": []}') == {}
     assert inspect.application_summary("error: the server doesn't have a resource type") is None
+
+
+def test_kubelet_versions_defensive():
+    # Non-dict metadata should be skipped, not raise AttributeError
+    assert inspect.kubelet_versions('{"items": [{"metadata": "weird"}]}') == {}
+    # Non-dict status should be skipped, not raise AttributeError
+    assert inspect.kubelet_versions('{"items": [{"metadata": {"name": "n1"}, "status": "weird"}]}') == {}
+
+
+def test_application_summary_defensive():
+    # Non-dict status should count as Unknown/Unknown, not raise AttributeError
+    assert inspect.application_summary('{"items": [{"status": "weird"}]}') == {"Unknown/Unknown": 1}
+    # Non-dict sync should count as Unknown/Unknown
+    assert inspect.application_summary('{"items": [{"status": {"sync": "weird"}}]}') == {"Unknown/Unknown": 1}
+    # Non-dict health should count as Unknown/Unknown
+    assert inspect.application_summary('{"items": [{"status": {"health": 5}}]}') == {"Unknown/Unknown": 1}
