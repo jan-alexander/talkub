@@ -179,6 +179,24 @@ exit 0
     return log
 
 
+@pytest.fixture(scope="session")
+def sealing_cert(tmp_path_factory):
+    """A self-signed certificate kubeseal can encrypt to (stands in for the controller's cert)."""
+    import subprocess
+
+    _require("openssl")
+    directory = tmp_path_factory.mktemp("sealing")
+    subprocess.run(
+        [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-keyout", str(directory / "key.pem"), "-out", str(directory / "cert.pem"),
+            "-days", "1", "-subj", "/CN=sealed-secret",
+        ],
+        check=True, capture_output=True,
+    )
+    return (directory / "cert.pem").read_bytes()
+
+
 @pytest.fixture
 def factory_stub(monkeypatch):
     """Local stand-in for the Talos Image Factory; sets TALKUB_FACTORY_URL.
