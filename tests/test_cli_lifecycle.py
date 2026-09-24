@@ -33,7 +33,7 @@ def test_apply_declined_on_prompt(talos_repo, talosctl_spy, monkeypatch):
     monkeypatch.setattr(sys, "stdin", io.StringIO("n\n"))
     _run(["--repo", str(talos_repo.root), "apply"])
     calls = _calls(talosctl_spy)
-    assert len(calls) == 1 and calls[0].endswith("--dry-run")
+    assert len(calls) == 1 and calls[0].endswith("--dry-run --mode auto")
 
 
 def test_insecure_needs_exactly_one_node(talos_repo, talosctl_spy, capfd):

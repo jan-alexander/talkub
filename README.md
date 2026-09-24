@@ -61,6 +61,11 @@ Machine configs are rendered on the fly from `talos/secrets.sops.yaml`, `talos/p
 (`controlplane*` / `worker*` are role-specific, `*.sops.yaml` patches are decrypted) and
 `talos/nodes/<node>.yaml`; they are never written to the repo.
 
+**Warning:** `apply` does not wait for a rebooting node to become healthy before it moves on
+to the next one. With several control planes, use `--mode no-reboot` / `--mode staged`, or
+apply them one at a time (`talkub apply cp-01`) and check health in between
+(`talkub t health`). If `apply` fails, the error lists the nodes already applied in this run.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate

@@ -49,7 +49,55 @@ def test_apply_confirmed_and_declined(talos_repo, talosctl_spy):
     talosctl_spy.unlink()
     assert lifecycle.apply(Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: False) == []
     calls = _calls(talosctl_spy)
-    assert len(calls) == 1 and calls[0].endswith("--dry-run")
+    assert len(calls) == 1 and calls[0].endswith("--dry-run --mode no-reboot")
+
+
+def test_plan_dry_run_has_no_mode(talos_repo, talosctl_spy):
+    lifecycle.plan(Context.open(talos_repo), [])
+    assert "--mode" not in _calls(talosctl_spy)[0]
+
+
+def test_dry_run_failure_lists_applied_nodes(talos_repo, talosctl_spy):
+    _add_node(talos_repo, "w-bad", "10.0.0.99")
+    _add_node(talos_repo, "w-ok", "10.0.0.12")
+    with pytest.raises(CommandFailed) as exc:
+        lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert "dry-run failed for node 'w-bad'" in str(exc.value)
+    assert "already applied: cp-01; not touched: w-ok" in exc.value.hint
+
+
+def test_real_apply_failure_names_node_and_lists_applied(talos_repo, talosctl_spy):
+    _add_node(talos_repo, "w-98", "10.0.0.98")
+    _add_node(talos_repo, "w-ok", "10.0.0.12")
+    with pytest.raises(CommandFailed) as exc:
+        lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert str(exc.value) == "apply failed for node 'w-98'"
+    assert "already applied: cp-01; not touched: w-ok" in exc.value.hint
+    calls = _calls(talosctl_spy)
+    dry, real = [c for c in calls if "10.0.0.98" in c]  # dry-run passed, the real apply failed
+    assert dry.endswith("--dry-run --mode auto") and real.endswith("--mode auto") and "--dry-run" not in real
+    assert not any("10.0.0.12" in call for call in calls)
+
+
+def test_failure_on_first_node_says_none_applied(talos_repo, talosctl_spy):
+    settings = talos_repo.load_settings()
+    settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.98")
+    talos_repo.write_settings(settings)
+    with pytest.raises(CommandFailed) as exc:
+        lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert "already applied: none; not touched: none" in exc.value.hint
+
+
+def test_apply_insecure_refuses_unknown_image_or_disk(talos_repo, talosctl_spy, monkeypatch):
+    asked = []
+    for summary in (("unknown", "/dev/sda"), ("factory.talos.dev/metal-installer/x:v1.14.0", "unknown")):
+        monkeypatch.setattr(lifecycle, "install_summary", lambda config, s=summary: s)
+        with pytest.raises(ValidationError) as exc:
+            lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: asked.append(q) or True)
+        assert str(exc.value) == "cannot determine installer image/install disk from the rendered config for 'cp-01'"
+        assert "refusing to install" in exc.value.hint
+    assert asked == []
+    assert _calls(talosctl_spy) == []
 
 
 def test_apply_stops_at_failing_node(talos_repo, talosctl_spy):

@@ -47,11 +47,12 @@ def _prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], d
     return settings, order, render_configs(ctx, settings, order)
 
 
-def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes) -> None:
+def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str | None = None) -> None:
     address = settings.mgmt_address(name)
     print(f"== {name} ({address})", flush=True)
+    mode_args = ["--mode", mode] if mode else []
     with private_file(f"{name}.yaml", config) as path:
-        code = talos.call(address, ["apply-config", "--file", str(path), "--dry-run"])
+        code = talos.call(address, ["apply-config", "--file", str(path), "--dry-run", *mode_args])
     if code != 0:
         raise CommandFailed(
             f"dry-run failed for node '{name}'", hint=f"talosctl exited with {code}; is {address} reachable?"
@@ -71,21 +72,31 @@ def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Co
     settings, order, configs = _prepare(ctx, names)
     applied: list[str] = []
     with talos_session(ctx) as talos:
-        for name in order:
-            _dry_run(talos, settings, name, configs[name])
-            if not confirm(f"apply this configuration to {name}?"):
-                print(f"skipped {name}")
-                continue
-            address = settings.mgmt_address(name)
-            with private_file(f"{name}.yaml", configs[name]) as path:
-                code = talos.call(address, ["apply-config", "--file", str(path), "--mode", mode])
-            if code != 0:
-                raise CommandFailed(
-                    f"apply failed for node '{name}'",
-                    hint=f"talosctl exited with {code}; the remaining nodes were not touched",
+        for index, name in enumerate(order):
+            try:
+                _apply_one(talos, settings, name, configs[name], mode, confirm, applied)
+            except CommandFailed as err:
+                progress = (
+                    f"already applied: {', '.join(applied) or 'none'}; "
+                    f"not touched: {', '.join(order[index + 1:]) or 'none'}"
                 )
-            applied.append(name)
+                raise CommandFailed(str(err), hint=f"{err.hint}; {progress}") from None
     return applied
+
+
+def _apply_one(
+    talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str, confirm: Confirm, applied: list[str]
+) -> None:
+    _dry_run(talos, settings, name, config, mode)
+    if not confirm(f"apply this configuration to {name}?"):
+        print(f"skipped {name}")
+        return
+    address = settings.mgmt_address(name)
+    with private_file(f"{name}.yaml", config) as path:
+        code = talos.call(address, ["apply-config", "--file", str(path), "--mode", mode])
+    if code != 0:
+        raise CommandFailed(f"apply failed for node '{name}'", hint=f"talosctl exited with {code}")
+    applied.append(name)
 
 
 def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
@@ -93,6 +104,11 @@ def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
     settings, _, configs = _prepare(ctx, [name])
     node = settings.node(name)
     image, disk = install_summary(configs[name])
+    if "unknown" in (image, disk):
+        raise ValidationError(
+            f"cannot determine installer image/install disk from the rendered config for '{name}'",
+            hint="refusing to install; check talosctl version / the node patch",
+        )
     print(f"node:      {name} at {node.ip} (maintenance mode)")
     print(f"installer: {image}")
     print(f"disk:      {disk}")
