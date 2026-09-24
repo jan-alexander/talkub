@@ -161,3 +161,33 @@ def test_used_platform_without_schematic_fails_before_network(talos_repo, talosc
     assert factory_stub.requests == []
     assert _calls(talosctl_spy) == []
     assert "hcloud" not in talos_repo.load_settings().schematics
+
+
+def test_apply_waits_for_health_between_nodes(talos_repo, talosctl_spy):
+    _add_node(talos_repo, "w-01", "10.0.0.11")
+    lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    calls = _calls(talosctl_spy)
+    health = [i for i, c in enumerate(calls) if " health --wait-timeout 10m" in c]
+    assert len(health) == 1
+    assert "-n 10.0.0.10" in calls[health[0]]
+    assert "10.0.0.11" in calls[health[0] + 1]  # the worker comes after the wait
+
+
+def test_no_health_wait_without_reboot_mode_or_bootstrap(talos_repo, talosctl_spy):
+    _add_node(talos_repo, "w-01", "10.0.0.11")
+    lifecycle.apply(Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: True)
+    assert not any(" health " in c for c in _calls(talosctl_spy))
+    talos_repo.kubeconfig.unlink()
+    lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert not any(" health " in c for c in _calls(talosctl_spy))
+
+
+def test_health_failure_stops_and_reports_progress(talos_repo, spy):
+    _add_node(talos_repo, "w-01", "10.0.0.11")
+    talosctl = spy("talosctl").real("gen").real("validate").on("health", rc=1)
+    with pytest.raises(CommandFailed) as exc:
+        lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert "10.0.0.10" in str(exc.value)
+    assert "already applied: cp-01" in exc.value.hint
+    assert "not touched: w-01" in exc.value.hint
+    assert not any("10.0.0.11" in argv for argv in talosctl.argvs)

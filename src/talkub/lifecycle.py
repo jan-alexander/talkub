@@ -29,9 +29,11 @@ def ordered_nodes(settings: Settings, names: Sequence[str]) -> list[str]:
     return sorted(chosen, key=lambda n: (settings.nodes[n].role != "controlplane", n))
 
 
-def _prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], dict[str, bytes]]:
-    settings = ctx.repo.load_settings()
-    order = ordered_nodes(settings, names)
+HEALTH_TIMEOUT = "10m"
+
+
+def ensure_images(ctx: Context, settings: Settings, order: Sequence[str]) -> None:
+    """Every node's platform has a schematic; outdated IDs are resolved and saved."""
     for name in order:
         platform = settings.node_platform(name)
         if platform not in settings.schematics:
@@ -44,7 +46,24 @@ def _prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], d
     if images.refresh(settings, FactoryClient(), platforms):
         ctx.repo.write_settings(settings)
         print("talkub: updated schematic IDs in .talkub.yaml", file=sys.stderr)
+
+
+def prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], dict[str, bytes]]:
+    settings = ctx.repo.load_settings()
+    order = ordered_nodes(settings, names)
+    ensure_images(ctx, settings, order)
     return settings, order, render_configs(ctx, settings, order)
+
+
+def is_bootstrapped(ctx: Context) -> bool:
+    return ctx.repo.kubeconfig.is_file()
+
+
+def wait_healthy(talos: TalosSession, address: str) -> None:
+    print(f"   waiting for {address} to become healthy", flush=True)
+    code = talos.call(address, ["health", "--wait-timeout", HEALTH_TIMEOUT])
+    if code != 0:
+        raise CommandFailed(f"{address} did not become healthy", hint=f"talosctl health exited with {code}")
 
 
 def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str | None = None) -> None:
@@ -60,7 +79,7 @@ def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, 
 
 
 def plan(ctx: Context, names: Sequence[str]) -> None:
-    settings, order, configs = _prepare(ctx, names)
+    settings, order, configs = prepare(ctx, names)
     with talos_session(ctx) as talos:
         for name in order:
             _dry_run(talos, settings, name, configs[name])
@@ -69,12 +88,15 @@ def plan(ctx: Context, names: Sequence[str]) -> None:
 def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Confirm) -> list[str]:
     if mode not in MODES:
         raise ValidationError(f"unknown mode {mode!r}", hint=f"use one of: {', '.join(MODES)}")
-    settings, order, configs = _prepare(ctx, names)
+    settings, order, configs = prepare(ctx, names)
+    rolling = mode in ("auto", "try") and is_bootstrapped(ctx)
     applied: list[str] = []
     with talos_session(ctx) as talos:
         for index, name in enumerate(order):
             try:
                 _apply_one(talos, settings, name, configs[name], mode, confirm, applied)
+                if rolling and applied and applied[-1] == name and index < len(order) - 1:
+                    wait_healthy(talos, settings.mgmt_address(name))
             except CommandFailed as err:
                 progress = (
                     f"already applied: {', '.join(applied) or 'none'}; "
@@ -101,7 +123,7 @@ def _apply_one(
 
 def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
     """First install of a node booted into maintenance mode (no talosconfig, node's `ip`)."""
-    settings, _, configs = _prepare(ctx, [name])
+    settings, _, configs = prepare(ctx, [name])
     node = settings.node(name)
     image, disk = install_summary(configs[name])
     if "unknown" in (image, disk):
