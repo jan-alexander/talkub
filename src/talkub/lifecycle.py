@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 from collections.abc import Callable, Sequence
 
 from talkub import images
@@ -68,11 +70,55 @@ def is_bootstrapped(ctx: Context) -> bool:
     return ctx.repo.kubeconfig.is_file()
 
 
-def wait_healthy(talos: TalosSession, address: str) -> None:
-    print(f"   waiting for {address} to become healthy", flush=True)
+def health_target(settings: Settings, touched: str) -> str:
+    """Management address to run `talosctl health` against after `touched` was changed.
+
+    Workers do not serve the Kubernetes API, so health always goes through a control plane:
+    the first one other than `touched`; on a single-CP cluster that CP itself.
+    """
+    controlplanes = [n for n in ordered_nodes(settings, []) if settings.nodes[n].role == "controlplane"]
+    others = [n for n in controlplanes if n != touched]
+    if others:
+        return settings.mgmt_address(others[0])
+    if touched in controlplanes or not controlplanes:
+        return settings.mgmt_address(touched)
+    return settings.mgmt_address(controlplanes[0])
+
+
+def apply_settle_seconds() -> float:
+    """Pause after `apply-config --mode auto|try` so the node's reboot starts before health is checked."""
+    return float(os.environ.get("TALKUB_APPLY_SETTLE_SECONDS", "30"))
+
+
+def wait_healthy(talos: TalosSession, address: str, *, settle: float = 0.0) -> None:
+    if settle > 0:
+        print(f"   waiting {settle:g}s for the change to take effect", flush=True)
+        time.sleep(settle)
+    print(f"   waiting for the cluster to become healthy (via {address})", flush=True)
     code = talos.call(address, ["health", "--wait-timeout", HEALTH_TIMEOUT])
     if code != 0:
         raise CommandFailed(f"{address} did not become healthy", hint=f"talosctl health exited with {code}")
+
+
+def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool) -> Callable[[], None]:
+    """A callable that checks cluster health once, right before the first disruptive change."""
+    done = not enabled
+
+    def check() -> None:
+        nonlocal done
+        if done:
+            return
+        done = True
+        address = settings.mgmt_address(ordered_nodes(settings, [])[0])  # the first control plane
+        try:
+            wait_healthy(talos, address)
+        except CommandFailed as err:
+            raise CommandFailed(
+                "the cluster is not healthy; nothing was changed",
+                hint=f"{err} ({err.hint}); fix the cluster first (`talkub status`)",
+            ) from None
+
+    return check
 
 
 def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str | None = None) -> None:
@@ -101,11 +147,12 @@ def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Co
     rolling = mode in ("auto", "try") and is_bootstrapped(ctx)
     applied: list[str] = []
     with talos_session(ctx) as talos:
+        precheck = health_precheck(talos, settings, enabled=rolling)
         for index, name in enumerate(order):
             try:
-                _apply_one(talos, settings, name, configs[name], mode, confirm, applied)
+                _apply_one(talos, settings, name, configs[name], mode, confirm, applied, precheck)
                 if rolling and applied and applied[-1] == name and index < len(order) - 1:
-                    wait_healthy(talos, settings.mgmt_address(name))
+                    wait_healthy(talos, health_target(settings, name), settle=apply_settle_seconds())
             except CommandFailed as err:
                 progress = (
                     f"already applied: {', '.join(applied) or 'none'}; "
@@ -116,12 +163,20 @@ def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Co
 
 
 def _apply_one(
-    talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str, confirm: Confirm, applied: list[str]
+    talos: TalosSession,
+    settings: Settings,
+    name: str,
+    config: bytes,
+    mode: str,
+    confirm: Confirm,
+    applied: list[str],
+    precheck: Callable[[], None],
 ) -> None:
     _dry_run(talos, settings, name, config, mode)
     if not confirm(f"apply this configuration to {name}?"):
         print(f"skipped {name}")
         return
+    precheck()
     address = settings.mgmt_address(name)
     with private_file(f"{name}.yaml", config) as path:
         code = talos.call(address, ["apply-config", "--file", str(path), "--mode", mode])

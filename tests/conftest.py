@@ -30,6 +30,7 @@ def isolated_env(monkeypatch, tmp_path):
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("TALKUB_APPLY_SETTLE_SECONDS", "0")  # rolling apply must not really sleep
 
 
 @pytest.fixture

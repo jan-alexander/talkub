@@ -6,7 +6,15 @@ from collections.abc import Sequence
 
 from talkub.context import Context
 from talkub.errors import CommandFailed
-from talkub.lifecycle import Confirm, ensure_images, is_bootstrapped, ordered_nodes, wait_healthy
+from talkub.lifecycle import (
+    Confirm,
+    ensure_images,
+    health_precheck,
+    health_target,
+    is_bootstrapped,
+    ordered_nodes,
+    wait_healthy,
+)
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
 
@@ -23,6 +31,7 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
     rolling = is_bootstrapped(ctx)
     upgraded: list[str] = []
     with talos_session(ctx) as session:
+        precheck = health_precheck(session, settings, enabled=rolling)
         for index, name in enumerate(order):
             address = settings.mgmt_address(name)
             platform = settings.node_platform(name)
@@ -36,9 +45,13 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                         hint=(version.stderr or b"").decode().strip() or f"exit code {version.returncode}",
                     )
                 current = inspect.server_version(version.stdout.decode())
-                schematic = inspect.schematic_id(
-                    session.run(address, ["get", "extensions", "-o", "json"], check=False).stdout.decode()
-                )
+                extensions = session.run(address, ["get", "extensions", "-o", "json"], check=False)
+                if extensions.returncode != 0:
+                    raise CommandFailed(
+                        f"cannot read extensions of node '{name}'",
+                        hint=(extensions.stderr or b"").decode().strip() or f"exit code {extensions.returncode}",
+                    )
+                schematic = inspect.schematic_id(extensions.stdout.decode())
                 print(
                     f"== {name} ({address}): talos {current or 'unknown'} -> {settings.talos_version}, "
                     f"schematic {_short(schematic)} -> {_short(wanted)}",
@@ -50,12 +63,14 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                 if not confirm(f"upgrade {name} to {image}?"):
                     print(f"skipped {name}")
                     continue
+                precheck()
                 code = session.call(address, ["upgrade", "--image", image, "--wait"])
                 if code != 0:
                     raise CommandFailed(f"upgrade failed for node '{name}'", hint=f"talosctl exited with {code}")
                 upgraded.append(name)
                 if rolling and index < len(order) - 1:
-                    wait_healthy(session, address)
+                    # no settle: `upgrade --wait` already waited for the reboot
+                    wait_healthy(session, health_target(settings, name))
             except CommandFailed as err:
                 progress = (
                     f"already upgraded: {', '.join(upgraded) or 'none'}; "
