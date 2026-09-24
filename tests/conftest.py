@@ -21,6 +21,12 @@ def isolated_env(monkeypatch, tmp_path):
         "TALOSCONFIG",
         "KUBECONFIG",
         "TALKUB_SESSION",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
@@ -99,3 +105,56 @@ def repo_with_configs(keyed_repo):
     ):
         atomic_write(path, ctx.sops.encrypt(text, filename=path.name, public_key=public))
     return keyed_repo
+
+
+@pytest.fixture
+def factory_stub(monkeypatch):
+    """Local stand-in for the Talos Image Factory; sets TALKUB_FACTORY_URL.
+
+    POST /schematics answers {"id": sha256(body)}; GET .../extensions/official lists
+    `state.extensions`. `state.fail = True` makes every request return HTTP 500.
+    """
+    import hashlib
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from types import SimpleNamespace
+
+    state = SimpleNamespace(
+        requests=[],
+        extensions=["siderolabs/intel-ucode", "siderolabs/iscsi-tools", "siderolabs/tailscale"],
+        fail=False,
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def _reply(self, code, payload):
+            body = json.dumps(payload).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            state.requests.append(("POST", self.path, body))
+            if state.fail:
+                return self._reply(500, {"error": "boom"})
+            self._reply(201, {"id": hashlib.sha256(body).hexdigest()})
+
+        def do_GET(self):
+            state.requests.append(("GET", self.path, b""))
+            if state.fail:
+                return self._reply(500, {"error": "boom"})
+            self._reply(200, [{"name": name, "ref": f"ghcr.io/{name}:1"} for name in state.extensions])
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("TALKUB_FACTORY_URL", f"http://127.0.0.1:{server.server_address[1]}")
+    yield state
+    server.shutdown()
+    server.server_close()
