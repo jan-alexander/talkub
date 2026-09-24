@@ -99,6 +99,22 @@ def test_kubelet_versions_defensive():
     assert inspect.kubelet_versions('{"items": [{"metadata": {"name": "n1"}, "status": "weird"}]}') == {}
 
 
+ADDRESSES = """NODE              NAMESPACE   TYPE            ID                                          VERSION   ADDRESS                         LINK
+167.233.212.255   network     AddressStatus   cni0/10.244.0.1/24                          1         10.244.0.1/24                   cni0
+167.233.212.255   network     AddressStatus   eth0/167.233.212.255/32                     1         167.233.212.255/32              eth0
+167.233.212.255   network     AddressStatus   external/167.233.212.255/32                 1         167.233.212.255/32              external
+167.233.212.255   network     AddressStatus   lo/127.0.0.1/8                              1         127.0.0.1/8                     lo
+167.233.212.255   network     AddressStatus   tailscale0/100.100.148.20/32                1         100.100.148.20/32               tailscale0
+"""
+
+
+def test_tailnet_ipv4():
+    assert inspect.tailnet_ipv4(ADDRESSES) == "100.100.148.20"
+    assert inspect.tailnet_ipv4("NODE\n167.233.212.255   x\n") is None  # no ADDRESS column
+    assert inspect.tailnet_ipv4("error: connection refused") is None
+    assert inspect.tailnet_ipv4("") is None
+
+
 def test_application_summary_defensive():
     # Non-dict status should count as Unknown/Unknown, not raise AttributeError
     assert inspect.application_summary('{"items": [{"status": "weird"}]}') == {"Unknown/Unknown": 1}
@@ -106,3 +122,44 @@ def test_application_summary_defensive():
     assert inspect.application_summary('{"items": [{"status": {"sync": "weird"}}]}') == {"Unknown/Unknown": 1}
     # Non-dict health should count as Unknown/Unknown
     assert inspect.application_summary('{"items": [{"status": {"health": 5}}]}') == {"Unknown/Unknown": 1}
+
+
+def test_redact_diff_hides_key_and_token_values():
+    text = (
+        "         key: LS0tLS1CRUdJTiBFRDI1NTE5IFBSSVZBVEUgS0VZLS0tLS0K\n"
+        "+    - TS_AUTHKEY=tskey-auth-x\n"
+        "     token: abc.def\n"
+        "+certExtraSANs:\n"
+        "crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg==\n"
+    )
+    result = inspect.redact_diff(text)
+    assert "LS0tLS1CRUdJTiBFRDI1NTE5IFBSSVZBVEUgS0VZLS0tLS0K" not in result
+    assert "tskey-auth-x" not in result
+    assert "abc.def" not in result
+    assert "         key: <redacted>" in result
+    assert "+    - TS_AUTHKEY=<redacted>" in result
+    assert "     token: <redacted>" in result
+    assert "+certExtraSANs:" in result  # no value: untouched
+    assert "crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg==" in result  # certificates are public
+
+
+def test_redact_diff_matches_secret_boxencryption_and_bootstrap_keys():
+    text = (
+        "    secretboxEncryptionSecret: c2VjcmV0\n"
+        "    aescbcEncryptionSecret: c2VjcmV0\n"
+        "    bootstrapToken: dG9rZW4=\n"
+        "+   - TS_AUTHKEY=abc\n"
+        "+   - SOME_PASSWORD=hunter2\n"
+        "+   - UNRELATED=fine\n"
+    )
+    result = inspect.redact_diff(text)
+    assert "c2VjcmV0" not in result
+    assert "dG9rZW4=" not in result
+    assert "TS_AUTHKEY=abc" not in result and "TS_AUTHKEY=<redacted>" in result
+    assert "SOME_PASSWORD=hunter2" not in result and "SOME_PASSWORD=<redacted>" in result
+    assert "UNRELATED=fine" in result
+
+
+def test_redact_diff_empty_and_no_secrets():
+    assert inspect.redact_diff("") == ""
+    assert inspect.redact_diff("Dry run summary:\nNo changes.\n") == "Dry run summary:\nNo changes.\n"

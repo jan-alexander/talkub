@@ -21,6 +21,11 @@ def apply(
     mode: str = typer.Option("auto", "--mode", help="auto, no-reboot, staged or try."),
     yes: bool = typer.Option(False, "--yes", help="Do not ask before applying."),
     insecure: bool = typer.Option(False, "--insecure", help="First install of ONE node in maintenance mode."),
+    force_unhealthy: bool = typer.Option(
+        False,
+        "--force-unhealthy",
+        help="Skip the pre-apply health check (use when the pending change is what fixes the cluster).",
+    ),
 ) -> None:
     """Apply rendered configs to nodes (asks per node unless --yes)."""
     context = ctx.obj.context()
@@ -38,4 +43,4 @@ def apply(
         if not lifecycle.apply_insecure(context, nodes[0], confirm=confirm):
             raise typer.Exit(1)
         return
-    lifecycle.apply(context, nodes or [], mode=mode, confirm=confirm)
+    lifecycle.apply(context, nodes or [], mode=mode, confirm=confirm, skip_precheck=force_unhealthy)

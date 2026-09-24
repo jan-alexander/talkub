@@ -32,6 +32,31 @@ def test_plan_runs_dry_run_with_ephemeral_talosconfig(talos_repo, talosctl_spy, 
     assert "== cp-01 (10.0.0.10)" in capfd.readouterr().out
 
 
+def test_plan_redacts_secrets_in_the_dry_run_diff(talos_repo, spy, capfd):
+    spy("talosctl").real("gen").real("validate").on(
+        "apply-config", "--dry-run",
+        stdout="         key: LS0tLS1CRUdJTiBFRDI1NTE5IFBSSVZBVEUgS0VZLS0tLS0K\n+    - TS_AUTHKEY=tskey-auth-x\n",
+    )
+    lifecycle.plan(Context.open(talos_repo), [])
+    out = capfd.readouterr().out
+    assert "<redacted>" in out
+    assert "TS_AUTHKEY=tskey-auth-x" not in out
+    assert "LS0tLS1CRUdJTiBFRDI1NTE5IFBSSVZBVEUgS0VZLS0tLS0K" not in out
+    assert "== cp-01 (10.0.0.10)" in out  # unrelated output is unaffected
+
+
+def test_dry_run_failure_redacts_secrets_in_stderr(talos_repo, spy, capfd):
+    spy("talosctl").real("gen").real("validate").on(
+        "apply-config", "--dry-run", stderr="+    - TS_AUTHKEY=tskey-auth-x\n", rc=1
+    )
+    with pytest.raises(CommandFailed) as exc:
+        lifecycle.plan(Context.open(talos_repo), [])
+    assert "dry-run failed for node 'cp-01'" in str(exc.value)  # exit-code handling unchanged
+    err = capfd.readouterr().err
+    assert "<redacted>" in err
+    assert "TS_AUTHKEY=tskey-auth-x" not in err
+
+
 def test_plan_uses_mgmt_and_orders_controlplanes_first(talos_repo, talosctl_spy):
     _add_node(talos_repo, "a-worker", "10.0.0.11")
     settings = talos_repo.load_settings()
@@ -275,7 +300,20 @@ def test_apply_precheck_failure_changes_nothing(talos_repo, spy):
         lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
     assert str(exc.value) == "the cluster is not healthy; nothing was changed"
     assert "already applied: none" in exc.value.hint
+    assert "--force-unhealthy" in exc.value.hint
     assert _real_applies(talosctl.argvs) == []
+
+
+def test_apply_force_unhealthy_skips_only_the_precheck(talos_repo, spy):
+    """A single-controlplane apply: the only health call is the pre-check (no other node to
+    wait for afterwards), so --force-unhealthy lets it proceed despite `health` always failing."""
+    talosctl = spy("talosctl").real("gen").real("validate").on("health", rc=1)
+    with pytest.raises(CommandFailed):
+        lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    before = len(talosctl.argvs)
+    applied = lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True)
+    assert applied == ["cp-01"]
+    assert not any("health" in argv for argv in talosctl.argvs[before:])
 
 
 def test_declined_apply_does_not_precheck(talos_repo, spy):

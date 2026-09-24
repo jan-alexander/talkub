@@ -41,6 +41,13 @@ def test_enable_with_key_file_then_lockdown(repo, tmp_path, capfd):
     assert repo.load_settings().nodes["cp-01"].mgmt == "cp-01.t.ts.net"
 
 
+def test_lockdown_use_ips_flag(repo, capfd, monkeypatch):
+    calls = []
+    monkeypatch.setattr(tailscale, "lockdown", lambda ctx, **kw: calls.append(kw) or [])
+    assert _run(["--repo", str(repo.root), "tailscale", "lockdown", "--use-ips"]) == 0
+    assert calls == [{"node_cidr": None, "use_ips": True}]
+
+
 def test_enable_prompts_for_the_key(repo, monkeypatch):
     import getpass
 

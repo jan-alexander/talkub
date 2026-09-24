@@ -58,6 +58,7 @@ class SchematicSpec:
 class TailscaleSpec:
     tailnet: str
     node_cidr: str
+    use_ips: bool = False
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,8 @@ class Settings:
         }
         if self.tailscale is not None:
             data["tailscale"] = {"tailnet": self.tailscale.tailnet, "nodeCidr": self.tailscale.node_cidr}
+            if self.tailscale.use_ips:
+                data["tailscale"]["useIps"] = True
         if self.git is not None:
             data["git"] = {"url": self.git.url}
         return data
@@ -251,7 +254,10 @@ class Settings:
             node_cidr = _optional_text(raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr")
             if tailnet is None or node_cidr is None:
                 raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet and nodeCidr")
-            tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr)
+            use_ips = raw_tailscale.get("useIps", False)
+            if not isinstance(use_ips, bool):
+                raise ValidationError(f"{MARKER}: 'tailscale.useIps' must be a boolean")
+            tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr, use_ips=use_ips)
 
         git = None
         raw_git = data.get("git")

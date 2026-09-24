@@ -94,8 +94,9 @@ when the cluster is unreachable.
     talkub init homelab … --tailscale --tailnet tail1234.ts.net     # new cluster: both steps at once
     # existing cluster:
     talkub tailscale enable --tailnet tail1234.ts.net   # auth key via prompt or --authkey-file
-    talkub upgrade talos && talkub apply                # installs + configures the extension (via LAN)
+    talkub apply && talkub upgrade talos                # configures, then installs the extension (via LAN)
     talkub tailscale lockdown                           # firewall + tailnet names for talosctl/kubectl
+    talkub tailscale lockdown --use-ips                 # …or tailnet IPs, for clients without MagicDNS
     talkub apply                                        # activates the firewall (via the tailnet)
 
 The nodes keep their LAN/public cluster endpoint and do not use Tailscale DNS; only admin

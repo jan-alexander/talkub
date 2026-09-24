@@ -101,6 +101,25 @@ def test_full_settings_roundtrip(tmp_path):
     text = repo.settings_file.read_text()
     assert "installImage" not in text
     assert "kernelArgs" in text and "nodeCidr" in text
+    assert "useIps" not in text  # default False is not written
+
+
+def test_tailscale_use_ips_roundtrip(tmp_path):
+    settings = sample_settings()
+    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24", use_ips=True)
+    repo = Repo(tmp_path)
+    repo.write_settings(settings)
+    assert repo.load_settings() == settings
+    assert "useIps: true" in repo.settings_file.read_text()
+
+
+def test_tailscale_use_ips_defaults_false_and_parses_strictly():
+    data = sample_settings().to_dict()
+    data["tailscale"] = {"tailnet": "t.ts.net", "nodeCidr": "10.0.0.0/24"}
+    assert Settings.from_dict(data).tailscale.use_ips is False
+    data["tailscale"]["useIps"] = "true"  # not a bool
+    with pytest.raises(ValidationError):
+        Settings.from_dict(data)
 
 
 def test_phase1_install_image_is_migrated():

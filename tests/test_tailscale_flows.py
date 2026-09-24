@@ -55,6 +55,16 @@ def test_enable_keeps_addresses_and_encrypts_key(repo):
     assert any("upgrade talos" in n for n in notes)  # the repo has a kubeconfig → running cluster
 
 
+def test_enable_note_tells_apply_before_upgrade(repo):
+    """On a real node, upgrading Talos before `apply` hangs the boot waiting for the extension
+    service config; `apply` (which Talos accepts before the extension exists) must run first."""
+    notes = tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    note = next(n for n in notes if "running cluster" in n)
+    assert note.index("talkub apply") < note.index("talkub upgrade talos")
+    assert "talkub tailscale lockdown" in note
+    assert "--use-ips" in note
+
+
 def test_enable_twice_and_bad_input(repo):
     with pytest.raises(ValidationError):
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey="nope")
@@ -199,6 +209,52 @@ def test_lockdown_before_bootstrap_does_not_probe(repo, talosctl):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     tailscale.lockdown(Context.open(repo))
     assert talosctl.calls == []
+
+
+def _addresses_table(node_ip, tailnet_ip=None):
+    lines = [
+        "NODE              NAMESPACE   TYPE            ID                              VERSION   ADDRESS              LINK",
+        f"{node_ip}   network     AddressStatus   eth0/{node_ip}/32           1         {node_ip}/32         eth0",
+    ]
+    if tailnet_ip:
+        lines.append(
+            f"{node_ip}   network     AddressStatus   tailscale0/{tailnet_ip}/32   1         {tailnet_ip}/32      tailscale0"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def test_lockdown_use_ips_sets_mgmt_to_the_nodes_tailnet_ipv4(repo, talosctl):
+    talosctl.on("10.0.0.10", "get", "addresses", stdout=_addresses_table("10.0.0.10", "100.100.148.20"))
+    talosctl.on("10.0.0.12", "get", "addresses", stdout=_addresses_table("10.0.0.12", "100.100.148.21"))
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    notes = tailscale.lockdown(Context.open(repo), use_ips=True)
+    settings = repo.load_settings()
+    assert settings.nodes["cp-01"].mgmt == "100.100.148.20"
+    assert settings.nodes["cp-02"].mgmt == "100.100.148.21"
+    assert settings.nodes["w-01"].mgmt == "w-01.lan"  # explicit mgmt is kept
+    assert settings.tailscale.use_ips is True
+    assert tailscale.is_locked_down(repo)
+    non_tailnet_note = next(n for n in notes if "non-tailnet mgmt" in n)
+    assert "cp-01" not in non_tailnet_note and "cp-02" not in non_tailnet_note  # tailnet IPs count as tailnet
+    assert "w-01 (w-01.lan)" in non_tailnet_note  # explicit LAN mgmt is still flagged
+    queries = [call for call in talosctl.calls if "addresses" in call["args"]]
+    assert {call["args"][call["args"].index("-n") + 1] for call in queries} == {"10.0.0.10", "10.0.0.12"}
+
+
+def test_lockdown_use_ips_requires_a_tailnet_ip_for_every_bare_node(repo, talosctl):
+    talosctl.on("10.0.0.10", "get", "addresses", stdout=_addresses_table("10.0.0.10", "100.100.148.20"))
+    talosctl.on("10.0.0.12", "get", "addresses", stdout=_addresses_table("10.0.0.12"))  # no tailnet address yet
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    before_settings = repo.settings_file.read_bytes()
+    with pytest.raises(ValidationError) as exc:
+        tailscale.lockdown(Context.open(repo), use_ips=True)
+    assert "cp-02" in str(exc.value)
+    assert "cp-01" not in str(exc.value)
+    assert "talkub apply" in exc.value.hint
+    assert "upgrade talos" in exc.value.hint
+    assert "tailscale status" in exc.value.hint
+    assert not tailscale.firewall_patch_path(repo).exists()
+    assert repo.settings_file.read_bytes() == before_settings
 
 
 def test_lockdown_without_talosconfig(repo):

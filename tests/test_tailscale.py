@@ -125,6 +125,15 @@ def test_patches_validate_with_talosctl(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_is_tailnet_address():
+    assert tailscale.is_tailnet_address("cp-01.t.ts.net", "t.ts.net") is True
+    assert tailscale.is_tailnet_address("100.100.148.20", "t.ts.net") is True  # 100.64.0.0/10
+    assert tailscale.is_tailnet_address("fd7a:115c:a1e0::1", "t.ts.net") is True
+    assert tailscale.is_tailnet_address("10.0.0.10", "t.ts.net") is False  # LAN IP
+    assert tailscale.is_tailnet_address("cp-01.lan", "t.ts.net") is False
+    assert tailscale.is_tailnet_address("not-an-ip.other.net", "t.ts.net") is False
+
+
 def test_is_locked_down(empty_repo):
     assert tailscale.is_locked_down(empty_repo) is False
     tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True)

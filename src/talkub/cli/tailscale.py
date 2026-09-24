@@ -39,6 +39,14 @@ def enable(
 
 
 @app.command("lockdown")
-def lockdown(ctx: typer.Context, node_cidr: str = NODE_CIDR) -> None:
+def lockdown(
+    ctx: typer.Context,
+    node_cidr: str = NODE_CIDR,
+    use_ips: bool = typer.Option(
+        False,
+        "--use-ips",
+        help="Use the nodes' tailnet IPs instead of MagicDNS names (for clients without MagicDNS).",
+    ),
+) -> None:
     """Step 2: Talos firewall + tailnet addresses for talosctl/kubectl."""
-    print_notes(tailscale.lockdown(ctx.obj.context(), node_cidr=node_cidr))
+    print_notes(tailscale.lockdown(ctx.obj.context(), node_cidr=node_cidr, use_ips=use_ips))

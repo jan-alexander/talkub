@@ -21,6 +21,7 @@ from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
 from talkub.lifecycle import is_bootstrapped, ordered_nodes
 from talkub.repo import Repo, Settings, TailscaleSpec
+from talkub.talos import inspect
 from talkub.talos.client import talos_session
 
 EXTENSION = "siderolabs/tailscale"
@@ -97,6 +98,42 @@ def outside_node_network(settings: Settings, node_cidr: str) -> list[str]:
         if address not in network:
             outside.append(f"{name} ({node.ip})")
     return outside
+
+
+def is_tailnet_address(address: str, tailnet: str) -> bool:
+    """Whether `address` reaches a node via the tailnet: a `<name>.<tailnet>` MagicDNS name,
+    or an IP inside the tailnet ranges (used with `lockdown --use-ips`)."""
+    if address.endswith(f".{tailnet}"):
+        return True
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return ip in ipaddress.ip_network(TAILNET_V4) or ip in ipaddress.ip_network(TAILNET_V6)
+
+
+def _tailnet_ips_for_bare_nodes(ctx: Context, settings: Settings) -> dict[str, str]:
+    """Nodes without an explicit `mgmt` -> their tailnet IPv4, queried via `get addresses` at
+    each node's current (LAN/public) management address."""
+    targets = [name for name, node in settings.nodes.items() if not node.mgmt]
+    found: dict[str, str] = {}
+    missing: list[str] = []
+    if targets:
+        with talos_session(ctx) as session:
+            for name in targets:
+                address = settings.mgmt_address(name)
+                result = session.run(address, ["get", "addresses"], check=False)
+                ip = inspect.tailnet_ipv4(result.stdout.decode(errors="replace")) if result.returncode == 0 else None
+                if ip is None:
+                    missing.append(name)
+                else:
+                    found[name] = ip
+    if missing:
+        raise ValidationError(
+            f"no tailnet IP found for: {', '.join(missing)}",
+            hint="finish `talkub apply`/`upgrade talos` after `tailscale enable`, check `tailscale status`",
+        )
+    return found
 
 
 def unreachable_via_tailnet(ctx: Context, settings: Settings) -> list[str]:
@@ -233,23 +270,25 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
     notes = [f"node network for the firewall rules: {cidr} (change with `talkub tailscale lockdown --node-cidr`)"]
     if is_bootstrapped(ctx):
         notes.append(
-            "running cluster: `talkub upgrade talos` installs the extension, `talkub apply` configures it; "
-            "once `tailscale status` lists every node, run `talkub tailscale lockdown`"
+            "running cluster: `talkub apply` configures the extension (Talos accepts it before the "
+            "extension exists), then `talkub upgrade talos` installs it; once `tailscale status` lists "
+            "every node, run `talkub tailscale lockdown` (`--use-ips` if your client has no MagicDNS)"
         )
     notes.append("use a tagged, reusable, pre-approved auth key and disable key expiry for these nodes")
     return notes
 
 
-def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
-    """Step 2: firewall patch, mgmt = <node>.<tailnet>, client configs pointed at the tailnet."""
+def lockdown(ctx: Context, *, node_cidr: str | None = None, use_ips: bool = False) -> list[str]:
+    """Step 2: firewall patch, mgmt = <node>.<tailnet> (or the node's tailnet IP with
+    `use_ips`, for clients without MagicDNS), client configs pointed at the tailnet."""
     repo = ctx.repo
     settings = repo.load_settings()
     if settings.tailscale is None:
         raise ValidationError("tailscale is not enabled", hint="run `talkub tailscale enable` first")
     if is_locked_down(repo):
         raise ValidationError(f"{repo.rel(firewall_patch_path(repo))} already exists", hint="already locked down")
-    if node_cidr:
-        settings.tailscale = TailscaleSpec(tailnet=settings.tailscale.tailnet, node_cidr=validate_cidr(node_cidr))
+    cidr = validate_cidr(node_cidr) if node_cidr else settings.tailscale.node_cidr
+    settings.tailscale = TailscaleSpec(tailnet=settings.tailscale.tailnet, node_cidr=cidr, use_ips=use_ips)
     outside = outside_node_network(settings, settings.tailscale.node_cidr)
     if outside:
         raise ValidationError(
@@ -259,10 +298,17 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
     if not repo.talosconfig.is_file():
         raise ValidationError(f"{repo.rel(repo.talosconfig)} does not exist", hint="it is created by `talkub init`")
     tailnet = settings.tailscale.tailnet
-    settings.nodes = {
-        name: node if node.mgmt else dataclasses.replace(node, mgmt=f"{name}.{tailnet}")
-        for name, node in settings.nodes.items()
-    }
+    if use_ips:
+        ips = _tailnet_ips_for_bare_nodes(ctx, settings)
+        settings.nodes = {
+            name: node if node.mgmt else dataclasses.replace(node, mgmt=ips[name])
+            for name, node in settings.nodes.items()
+        }
+    else:
+        settings.nodes = {
+            name: node if node.mgmt else dataclasses.replace(node, mgmt=f"{name}.{tailnet}")
+            for name, node in settings.nodes.items()
+        }
     endpoints = [settings.mgmt_address(name) for name in controlplanes(settings)]
     if not endpoints:
         raise ValidationError("no controlplane node defined")
@@ -300,7 +346,7 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
         f"and the node network {settings.tailscale.node_cidr}",
     ]
     non_tailnet = [
-        f"{name} ({node.mgmt})" for name, node in settings.nodes.items() if not node.mgmt.endswith(f".{tailnet}")
+        f"{name} ({node.mgmt})" for name, node in settings.nodes.items() if not is_tailnet_address(node.mgmt, tailnet)
     ]
     if non_tailnet:
         notes.append(

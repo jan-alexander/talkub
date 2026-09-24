@@ -167,8 +167,16 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
     firewall = repo.talos_dir / "patches" / "firewall.yaml"
     locked_down = settings.tailscale is not None and firewall.is_file()
     if locked_down and spec.mgmt is None:
-        # Locked down: talkub reaches nodes only via the tailnet (see tailscale.lockdown).
-        spec = dataclasses.replace(spec, mgmt=f"{name}.{settings.tailscale.tailnet}")
+        if settings.tailscale.use_ips:
+            # lockdown --use-ips: no MagicDNS name to guess; keep the LAN ip until the node
+            # is in the tailnet and its IP is known.
+            warnings.append(
+                f"tailscale lockdown used --use-ips: once '{name}' is in the tailnet, "
+                f"set nodes.{name}.mgmt to its tailnet IP"
+            )
+        else:
+            # Locked down: talkub reaches nodes only via the tailnet (see tailscale.lockdown).
+            spec = dataclasses.replace(spec, mgmt=f"{name}.{settings.tailscale.tailnet}")
     if locked_down and _outside(spec.ip, settings.tailscale.node_cidr):
         warnings.append(
             f"{spec.ip} is outside the node network {settings.tailscale.node_cidr}: the firewall will block "
