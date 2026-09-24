@@ -66,6 +66,9 @@ to the next one. With several control planes, use `--mode no-reboot` / `--mode s
 apply them one at a time (`talkub apply cp-01`) and check health in between
 (`talkub t health`). If `apply` fails, the error lists the nodes already applied in this run.
 
+Version skew: repos written by this talkub version (`schematics` instead of `installImage` in
+`.talkub.yaml`) cannot be read by older talkub versions — all admins should upgrade together.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate

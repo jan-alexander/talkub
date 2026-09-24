@@ -152,3 +152,32 @@ def test_add_node_rejects_duplicates_and_bad_input(empty_repo):
 def test_public_ingress_without_firewall_warns(empty_repo):
     warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions(public_ingress=True))
     assert any("firewall" in w for w in warnings)
+
+
+def test_static_address_differs_from_ip_without_mgmt_warns(empty_repo):
+    options = NodeOptions(static="10.0.0.50/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff")
+    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="192.168.1.50", role="worker"), options)
+    assert warnings == ["after install the node is reachable at 10.0.0.50; add --mgmt 10.0.0.50 so plan/apply use it"]
+    same = NodeOptions(static="10.0.0.51/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff")
+    assert add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.51", role="worker"), same) == []
+    with_mgmt = NodeSpec(ip="192.168.1.52", role="worker", mgmt="10.0.0.52")
+    assert add_node(empty_repo, "w-03", with_mgmt, NodeOptions(static="10.0.0.52/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff")) == []
+
+
+@pytest.mark.parametrize(
+    "spec, flag",
+    [
+        (NodeSpec(ip=""), "--ip"),
+        (NodeSpec(ip="-n"), "--ip"),
+        (NodeSpec(ip="10.0.0.1 10.0.0.2"), "--ip"),
+        (NodeSpec(ip="10.0.0.11/24"), "--ip"),
+        (NodeSpec(ip="10.0.0.11", mgmt=""), "--mgmt"),
+        (NodeSpec(ip="10.0.0.11", mgmt="--talosconfig"), "--mgmt"),
+        (NodeSpec(ip="10.0.0.11", mgmt="w-01.tail\tts.net"), "--mgmt"),
+    ],
+)
+def test_add_node_rejects_bad_addresses(empty_repo, spec, flag):
+    with pytest.raises(ValidationError) as exc:
+        add_node(empty_repo, "w-01", spec, NodeOptions())
+    assert flag in str(exc.value)
+    assert "w-01" not in empty_repo.load_settings().nodes

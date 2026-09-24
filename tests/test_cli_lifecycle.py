@@ -50,3 +50,16 @@ def test_insecure_declined_exits_nonzero(talos_repo, talosctl_spy, monkeypatch):
 def test_insecure_yes(talos_repo, talosctl_spy):
     assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes"]) == 0
     assert "--insecure" in _calls(talosctl_spy)[0]
+
+
+def test_insecure_rejects_mode(talos_repo, talosctl_spy, capfd):
+    assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes", "--mode", "staged"]) == 1
+    assert "--mode" in capfd.readouterr().err
+    assert _calls(talosctl_spy) == []
+
+
+def test_apply_eof_at_confirm_sends_only_dry_run(talos_repo, talosctl_spy, monkeypatch):
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    assert _run(["--repo", str(talos_repo.root), "apply"]) != 0
+    calls = _calls(talosctl_spy)
+    assert len(calls) == 1 and "--dry-run" in calls[0]

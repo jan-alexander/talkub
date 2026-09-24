@@ -60,3 +60,24 @@ def test_init_with_platform_and_static_node(tmp_path, software_identity, fake_bi
     patch = (tmp_path / "demo" / "talos" / "nodes" / "cp-01.yaml").read_text()
     assert 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"' in patch
     assert "platform: hcloud" in (tmp_path / "demo" / ".talkub.yaml").read_text()
+
+
+@pytest.mark.parametrize("value", ["cp-01=-n", "cp-01=10.0.0.10/24", "cp-01=a b"])
+def test_init_rejects_bad_node_address(tmp_path, capfd, monkeypatch, value):
+    monkeypatch.chdir(tmp_path)
+    code = _run(["init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g", "--node", value])
+    assert code == 1
+    assert "--node" in capfd.readouterr().err
+    assert not (tmp_path / "demo").exists()
+
+
+@need("age", "age-keygen", "sops", "talosctl")
+def test_init_warns_when_static_address_differs(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
+    fake_bin("helm", HELM)
+    monkeypatch.chdir(tmp_path)
+    code = _run([
+        "init", "demo", "--endpoint", "https://10.0.0.50:6443", "--git-url", "https://g",
+        "--node", "cp-01=192.168.1.50", "--static", "10.0.0.50/24", "--gateway", "10.0.0.1", "--mac", "aa:bb:cc:dd:ee:ff",
+    ])
+    assert code == 0
+    assert "after install the node is reachable at 10.0.0.50" in capfd.readouterr().err

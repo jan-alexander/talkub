@@ -126,10 +126,34 @@ def validate_node_name(name: str) -> None:
         )
 
 
+def validate_address(value: str, flag: str) -> None:
+    """An IP or host name that is passed to talosctl as `-n`/`-e`."""
+    if not value or value.startswith("-") or "/" in value or any(char.isspace() for char in value):
+        raise ValidationError(
+            f"invalid address for {flag}: {value!r}", hint="use an IP address or host name without prefix length"
+        )
+
+
+def static_address_warning(spec: NodeSpec, options: NodeOptions, fix: str = "add --mgmt {address}") -> str | None:
+    """Warn when the node moves to its static address but plan/apply would still use `ip`."""
+    if options.static is None or spec.mgmt is not None:
+        return None
+    address = str(ipaddress.ip_interface(options.static).ip)
+    if address == spec.ip:
+        return None
+    return f"after install the node is reachable at {address}; {fix.format(address=address)} so plan/apply use it"
+
+
 def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> list[str]:
     """Write talos/nodes/<name>.yaml and the node entry. Returns warnings."""
     validate_node_name(name)
+    validate_address(spec.ip, "--ip")
+    if spec.mgmt is not None:
+        validate_address(spec.mgmt, "--mgmt")
     warnings = options.check()
+    moved = static_address_warning(spec, options)
+    if moved is not None:
+        warnings.append(moved)
     settings = repo.load_settings()
     if name in settings.nodes:
         raise ValidationError(f"node '{name}' already exists")

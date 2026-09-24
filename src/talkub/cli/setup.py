@@ -20,7 +20,7 @@ from talkub.cli.nodes import (
 )
 from talkub.errors import ValidationError
 from talkub.identity import create_identity, identities_dir, own_recipients
-from talkub.nodes import NodeOptions
+from talkub.nodes import NodeOptions, static_address_warning, validate_address
 from talkub.repo import NodeSpec
 from talkub.runner import Runner
 from talkub.scaffold import InitRequest, init_cluster
@@ -49,6 +49,7 @@ def _parse_node(value: str) -> tuple[str, NodeSpec]:
     name, sep, ip = value.partition("=")
     if not sep or not name or not ip:
         raise ValidationError(f"invalid --node {value!r}", hint="use name=ip, e.g. cp-01=10.0.0.10")
+    validate_address(ip, "--node")
     return name, NodeSpec(ip=ip)
 
 
@@ -76,8 +77,11 @@ def init(
                 "node options (--static, --mac, --dns, --disk-selector, --public-ingress) need exactly one --node",
                 hint="add further nodes with `talkub node add`",
             )
-        print_warnings(options.check())
-        node_opts = {next(iter(nodes)): options}
+        warnings = options.check()
+        node_name, spec = next(iter(nodes.items()))
+        moved = static_address_warning(spec, options, fix=f"set nodes.{node_name}.mgmt: {{address}} in .talkub.yaml")
+        print_warnings(warnings + ([moved] if moved else []))
+        node_opts = {node_name: options}
     request = InitRequest(
         target=(directory or Path.cwd() / name),
         name=name,

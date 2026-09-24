@@ -31,6 +31,10 @@ def apply(
     if insecure:
         if len(nodes or []) != 1:
             raise ValidationError("--insecure needs exactly one node", hint="e.g. talkub apply --insecure cp-01")
+        if mode != "auto":
+            raise ValidationError(
+                "--mode does not apply to --insecure", hint="the first install always reboots into the installed system"
+            )
         if not lifecycle.apply_insecure(context, nodes[0], confirm=confirm):
             raise typer.Exit(1)
         return

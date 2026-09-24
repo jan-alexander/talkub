@@ -57,3 +57,20 @@ def test_show_offline_with_current_cache(empty_repo, monkeypatch, capfd):
 
 def test_show_rejects_unknown_arch(empty_repo, capfd):
     assert _run(["--repo", str(empty_repo.root), "image", "show", "--arch", "riscv"]) == 1
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["image", "add", "--platform", "vmware", "x"],
+        ["image", "remove", "--platform", "vmware", "x"],
+        ["image", "extensions", "--platform", "vmware"],
+        ["image", "show", "--platform", "vmware"],
+    ],
+)
+def test_unknown_platform_fails_before_network(empty_repo, factory_stub, capfd, argv):
+    assert _run(["--repo", str(empty_repo.root), *argv]) == 1
+    err = capfd.readouterr().err
+    assert "unknown platform 'vmware'" in err
+    assert "metal, hcloud" in err
+    assert factory_stub.requests == []
