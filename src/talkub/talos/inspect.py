@@ -64,6 +64,18 @@ def bootstrap_already_done(stderr: str) -> bool:
     return "AlreadyExists" in stderr or "already bootstrapped" in stderr.lower()
 
 
+def etcd_member_count(text: str) -> int | None:
+    """Number of members in the `talosctl etcd members` table; None if there is no table.
+
+    The table starts with a header line beginning with "NODE"; every non-empty line after it
+    is one member.
+    """
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines or not lines[0].lstrip().startswith("NODE"):
+        return None
+    return len(lines) - 1
+
+
 def config_drift(text: str) -> str:
     """Classify `talosctl apply-config --dry-run` output."""
     lowered = text.lower()

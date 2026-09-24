@@ -9,10 +9,10 @@ from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.kube import KubeSession, kube_session
 from talkub.lifecycle import ordered_nodes
-from talkub.repo import ChartSpec, Repo
+from talkub.repo import ChartSpec, Repo, Settings
 from talkub.runner import require_tool
 from talkub.talos.client import TalosSession, talos_session
-from talkub.talos.inspect import bootstrap_already_done
+from talkub.talos.inspect import bootstrap_already_done, etcd_member_count
 
 BOOTSTRAP_HEALTH_TIMEOUT = "15m"
 # chart key in .talkub.yaml -> (Helm release, namespace, create namespace)
@@ -38,9 +38,15 @@ def run(ctx: Context) -> None:
         raise ValidationError("bootstrap needs a controlplane node")
     address = settings.mgmt_address(first)
 
+    controlplanes = [n for n in ordered_nodes(settings, []) if settings.nodes[n].role == "controlplane"]
+
     with talos_session(ctx) as talos:
         _step(f"bootstrapping etcd on {first} ({address})")
-        _bootstrap_etcd(talos, address)
+        member = _etcd_member(talos, settings, controlplanes)
+        if member is not None:
+            print(f"   etcd already has members on {member}; skipping bootstrap", flush=True)
+        else:
+            _bootstrap_etcd(talos, address)
         _step("waiting for the cluster to become healthy")
         code = talos.call(address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT])
         if code != 0:
@@ -67,6 +73,15 @@ def run(ctx: Context) -> None:
         kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
 
     print("bootstrap complete — commit kubernetes/ and bootstrap/")
+
+
+def _etcd_member(talos: TalosSession, settings: Settings, controlplanes: list[str]) -> str | None:
+    """The first control plane whose etcd already has members (bootstrapping again would split etcd)."""
+    for name in controlplanes:
+        proc = talos.run(settings.mgmt_address(name), ["etcd", "members"], check=False)
+        if proc.returncode == 0 and (etcd_member_count(proc.stdout.decode(errors="replace")) or 0) >= 1:
+            return name
+    return None
 
 
 def _bootstrap_etcd(talos: TalosSession, address: str) -> None:

@@ -59,6 +59,22 @@ def test_bootstrap_already_done():
     assert not inspect.bootstrap_already_done("")
 
 
+ETCD_MEMBERS = """NODE        ID                 HOSTNAME   PEER URLS                  CLIENT URLS                LEARNER
+10.0.0.10   43a0a9a8b4fc2e3d   cp-01      https://10.0.0.10:2380     https://10.0.0.10:2379     false
+10.0.0.10   8e1f0c2d3b4a5968   cp-02      https://10.0.0.13:2380     https://10.0.0.13:2379     false
+"""
+
+
+def test_etcd_member_count():
+    assert inspect.etcd_member_count(ETCD_MEMBERS) == 2
+    assert inspect.etcd_member_count(ETCD_MEMBERS.splitlines()[0] + "\n") == 0
+    assert inspect.etcd_member_count("\n" + ETCD_MEMBERS + "\n\n") == 2
+    assert inspect.etcd_member_count("") is None
+    assert inspect.etcd_member_count("   \n") is None
+    assert inspect.etcd_member_count("error: connection refused") is None
+    assert inspect.etcd_member_count("\x00garbage\nmore") is None
+
+
 def test_config_drift():
     assert inspect.config_drift("Dry run summary:\nNo changes.\n") == "in sync"
     assert inspect.config_drift("Dry run summary:\nConfig diff:\n\n--- a\n+++ b\n+x\n") == "changes"

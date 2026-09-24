@@ -43,8 +43,8 @@ def test_fresh_bootstrap(cluster):
     repo, spies = cluster
     bootstrap.run(Context.open(repo))
     talos = spies["talosctl"].argvs
-    assert [a[a.index("-e") + 2] for a in talos] == ["bootstrap", "health", "kubeconfig"]
-    assert "15m" in talos[1]
+    assert [a[a.index("-e") + 2] for a in talos] == ["etcd", "bootstrap", "health", "kubeconfig"]
+    assert "15m" in talos[2]
     ctx = Context.open(repo)
     assert ctx.sops.decrypt(repo.kubeconfig).decode() == KUBECONFIG
     helm = spies["helm"].argvs
@@ -76,6 +76,55 @@ def test_rerun_is_idempotent_and_restores_key_first(cluster):
     assert kubectl[0]["args"][2] != str(repo.gitops_dir / "root.yaml")  # the decrypted key comes first
     assert not any(a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs)  # no new backup
     assert len(spies["helm"].argvs) == 2
+
+
+ETCD_MEMBERS = (
+    "NODE        ID                 HOSTNAME   PEER URLS               CLIENT URLS             LEARNER\n"
+    "10.0.0.13   8e1f0c2d3b4a5968   cp-02      https://10.0.0.13:2380  https://10.0.0.13:2379  false\n"
+)
+
+
+def _add_controlplane(repo, name, ip):
+    from talkub.nodes import node_patch_path, render_node_patch
+    from talkub.repo import NodeSpec
+
+    settings = repo.load_settings()
+    settings.nodes[name] = NodeSpec(ip=ip, role="controlplane")
+    repo.write_settings(settings)
+    atomic_write(node_patch_path(repo, name), render_node_patch(name).encode())
+
+
+def test_etcd_members_are_checked_on_every_controlplane(cluster):
+    repo, spies = cluster
+    _add_controlplane(repo, "cp-02", "10.0.0.13")
+    bootstrap.run(Context.open(repo))
+    talos = spies["talosctl"].argvs
+    members = [a[a.index("-n") + 1] for a in talos if a[a.index("-e") + 2:] == ["etcd", "members"]]
+    assert members == ["10.0.0.10", "10.0.0.13"]
+    [call] = [a for a in talos if "bootstrap" in a]
+    assert call[call.index("-n") + 1] == "10.0.0.10"
+    assert talos.index(call) > max(i for i, a in enumerate(talos) if "members" in a)
+
+
+def test_existing_etcd_member_skips_bootstrap(cluster, capfd):
+    repo, spies = cluster
+    _add_controlplane(repo, "cp-02", "10.0.0.13")
+    spies["talosctl"].rules.insert(
+        0, {"match": ["-n", "10.0.0.13", "etcd", "members"], "stdout": ETCD_MEMBERS, "stderr": "", "rc": 0}
+    )
+    spies["talosctl"]._save()
+    bootstrap.run(Context.open(repo))
+    assert not any("bootstrap" in a for a in spies["talosctl"].argvs)
+    assert "etcd already has members on cp-02; skipping bootstrap" in capfd.readouterr().out
+    assert Context.open(repo).sops.decrypt(repo.kubeconfig).decode() == KUBECONFIG  # the rest still runs
+
+
+def test_failing_or_empty_etcd_answer_still_bootstraps(cluster):
+    repo, spies = cluster
+    spies["talosctl"].rules.insert(0, {"match": ["etcd", "members"], "stdout": ETCD_MEMBERS, "stderr": "", "rc": 1})
+    spies["talosctl"]._save()
+    bootstrap.run(Context.open(repo))
+    assert any("bootstrap" in a for a in spies["talosctl"].argvs)
 
 
 def test_health_failure_stops_before_kubeconfig(cluster):
