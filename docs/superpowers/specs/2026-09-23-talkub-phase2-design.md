@@ -125,8 +125,11 @@ Fehler → `ValidationError` mit der talosctl-Meldung, es wird nichts gesendet.
 
 ## 5. Tailscale
 
-- `init --tailscale --tailnet <tailnet> [--tailscale-authkey-file <f>] [--node-cidr <cidr>]` und
-  `tailscale enable --tailnet … [--node-cidr …]` für bestehende Repos (gleicher Codepfad).
+- `init --tailscale --tailnet <tailnet> [--tailscale-authkey-file <f>] [--node-cidr <cidr>]` macht beide Schritte.
+  Bestehende Repos in zwei Schritten (Korrektur 2026-09-24, sonst wären laufende Nodes vor der Extension
+  unerreichbar): `tailscale enable --tailnet … [--authkey-file …] [--node-cidr …]` (Auth-Key-Patch +
+  Extension in den Schematics, Adressen unverändert) → `upgrade talos` + `apply` über LAN →
+  `tailscale lockdown [--node-cidr …]` (firewall.yaml, mgmt, Client-Configs) → `apply` über das Tailnet.
 - Auth-Key: ohne `--tailscale-authkey-file` interaktiv per `getpass` (kein Echo).
 - Schreibt:
   - `talos/patches/tailscale.sops.yaml`: `ExtensionServiceConfig` `tailscale` mit
