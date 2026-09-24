@@ -132,6 +132,20 @@ def test_sealing_cert_no_warning_when_stored_cert_matches(repo_with_configs, sea
     assert "differs from" not in capfd.readouterr().err
 
 
+def test_warn_if_cert_changed(tmp_path, capfd):
+    from talkub.repo import Repo
+
+    repo = Repo(tmp_path)
+    live = b"-----BEGIN CERTIFICATE-----\nlive\n-----END CERTIFICATE-----\n"
+    assert sealing.warn_if_cert_changed(repo, live) is True  # pem missing
+    assert "differs from bootstrap/sealed-secrets.pem" in capfd.readouterr().err
+    atomic_write(sealing.cert_path(repo), live)
+    assert sealing.warn_if_cert_changed(repo, live) is False
+    assert capfd.readouterr().err == ""
+    assert sealing.warn_if_cert_changed(repo, live.replace(b"live", b"new")) is True
+    assert "run `talkub secret backup-sealing-key` and commit bootstrap/" in capfd.readouterr().err
+
+
 @pytestmark_keys
 def test_seal_without_any_cert(keyed_repo):
     with pytest.raises(ValidationError) as exc:

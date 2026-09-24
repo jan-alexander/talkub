@@ -92,6 +92,19 @@ def check_secret_manifest(manifest: bytes) -> None:
         raise ValidationError("the Secret needs metadata.namespace", hint="sealed secrets are bound to their namespace")
 
 
+def warn_if_cert_changed(repo: Repo, live_cert: bytes) -> bool:
+    """Warn (and return True) when the live certificate differs from bootstrap/sealed-secrets.pem."""
+    stored = cert_path(repo)
+    if stored.is_file() and stored.read_bytes() == live_cert:
+        return False
+    print(
+        f"talkub: the controller's certificate differs from {repo.rel(stored)} — "
+        "run `talkub secret backup-sealing-key` and commit bootstrap/",
+        file=sys.stderr,
+    )
+    return True
+
+
 def sealing_cert(ctx: Context) -> bytes:
     """The controller's live certificate; bootstrap/sealed-secrets.pem when the cluster is unreachable."""
     reason = "the cluster is not bootstrapped yet"
@@ -103,15 +116,8 @@ def sealing_cert(ctx: Context) -> bytes:
             reason = str(err)
         else:
             if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
-                live = proc.stdout
-                stored = cert_path(ctx.repo)
-                if not stored.is_file() or stored.read_bytes() != live:
-                    print(
-                        f"talkub: the controller's certificate differs from {ctx.repo.rel(stored)} — "
-                        "run `talkub secret backup-sealing-key` and commit bootstrap/",
-                        file=sys.stderr,
-                    )
-                return live
+                warn_if_cert_changed(ctx.repo, proc.stdout)
+                return proc.stdout
             reason = (proc.stderr or b"").decode().strip() or f"kubeseal exited with {proc.returncode}"
     fallback = cert_path(ctx.repo)
     if fallback.is_file():

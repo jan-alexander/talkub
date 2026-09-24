@@ -64,6 +64,8 @@ def run(ctx: Context) -> None:
         for key, (release, namespace, create) in RELEASES.items():
             _step(f"installing {release}")
             _helm_install(kube, ctx.repo, key, release, settings.charts[key], namespace, create)
+            if key == "sealed-secrets" and had_backup:
+                _warn_if_restored_key_is_stale(ctx, kube)
             if key == "sealed-secrets" and not had_backup:
                 # kube's own session stays open; backup_sealing_key opens a second one to talk
                 # to the just-installed controller (a second kubeconfig decryption, harmless).
@@ -93,6 +95,13 @@ def _bootstrap_etcd(talos: TalosSession, address: str) -> None:
         print("   etcd is already bootstrapped", flush=True)
         return
     raise CommandFailed("talosctl bootstrap failed", hint=stderr.strip() or f"exit code {proc.returncode}")
+
+
+def _warn_if_restored_key_is_stale(ctx: Context, kube: KubeSession) -> None:
+    """The controller may have rotated its key since the backup; warn, but do not back up automatically."""
+    proc = ctx.runner.run(["kubeseal", "--fetch-cert", *sealing.CONTROLLER], env=kube.env, check=False)
+    if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
+        sealing.warn_if_cert_changed(ctx.repo, proc.stdout)
 
 
 def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:

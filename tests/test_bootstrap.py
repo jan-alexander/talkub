@@ -127,6 +127,40 @@ def test_failing_or_empty_etcd_answer_still_bootstraps(cluster):
     assert any("bootstrap" in a for a in spies["talosctl"].argvs)
 
 
+def _rerun(repo, spies):
+    spies["talosctl"].rules.insert(0, {"match": ["bootstrap"], "stdout": "", "rc": 1,
+                                       "stderr": "error: rpc error: code = AlreadyExists desc = etcd data directory is not empty"})
+    spies["talosctl"]._save()
+    for fake in spies.values():
+        fake.log.unlink(missing_ok=True)
+    bootstrap.run(Context.open(repo))
+
+
+def test_rerun_warns_when_restored_key_is_stale(cluster, capfd):
+    repo, spies = cluster
+    bootstrap.run(Context.open(repo))
+    capfd.readouterr()
+    other = CERT.replace("MIIB", "MIIC")
+    spies["kubeseal"].rules.insert(0, {"match": ["--fetch-cert"], "stdout": other, "stderr": "", "rc": 0})
+    spies["kubeseal"]._save()
+    _rerun(repo, spies)
+    err = capfd.readouterr().err
+    assert "differs from bootstrap/sealed-secrets.pem" in err
+    assert "talkub secret backup-sealing-key" in err
+    assert any("--fetch-cert" in a for a in spies["kubeseal"].argvs)
+    assert all(call["kubeconfig"] for call in spies["kubeseal"].calls)
+    assert not any(a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs)  # still no automatic backup
+    assert sealing.cert_path(repo).read_text() == CERT
+
+
+def test_rerun_with_matching_cert_does_not_warn(cluster, capfd):
+    repo, spies = cluster
+    bootstrap.run(Context.open(repo))
+    capfd.readouterr()
+    _rerun(repo, spies)
+    assert "differs from" not in capfd.readouterr().err
+
+
 def test_health_failure_stops_before_kubeconfig(cluster):
     repo, spies = cluster
     spies["talosctl"].rules.insert(0, {"match": ["health"], "stdout": "", "stderr": "", "rc": 1})
