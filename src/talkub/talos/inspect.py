@@ -114,7 +114,7 @@ def tailnet_ipv4(text: str) -> str | None:
 
 
 _MARKER_CHARS = (" ", "+", "-")
-_YAML_KV = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z][\w]*):(?P<sep>[ \t]+)(?P<value>\S.*)$")
+_YAML_KV = re.compile(r"^(?P<indent>[ \t]*(?:-[ \t]+)*)(?P<key>[A-Za-z][\w]*):(?P<sep>[ \t]+)(?P<value>\S.*)$")
 _BLOCK_SCALAR = re.compile(r"^[|>][+\-0-9]*\s*$")
 _SENSITIVE_KEY_SUFFIXES = ("key", "secret", "token", "password", "auth")
 

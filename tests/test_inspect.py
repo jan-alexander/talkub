@@ -215,6 +215,25 @@ def test_redact_diff_block_scalar_with_diff_markers_and_chomping_indicator():
     assert "+            aescbcEncryptionSecret: <redacted>" in result  # redacted on its own, not swallowed
 
 
+def test_redact_diff_sensitive_list_item_keys():
+    text = "+  - key: SECRET12\n    - token: SECRET_B\n"
+    result = inspect.redact_diff(text)
+    assert "SECRET12" not in result
+    assert "SECRET_B" not in result
+    assert "+  - key: <redacted>" in result
+    assert "    - token: <redacted>" in result
+
+
+def test_redact_diff_block_scalar_under_a_list_item_key():
+    text = "-  - privateKey: |\n-      SECRET_C\n-  - nextField: value\n"
+    result = inspect.redact_diff(text)
+    assert "SECRET_C" not in result
+    lines = result.split("\n")
+    assert lines[0] == "-  - privateKey: <redacted>"
+    assert lines[1] == "-      <redacted>"
+    assert lines[2] == "-  - nextField: value"  # dedented back to the list-item column: block ended
+
+
 def test_redact_diff_password_and_scalar_auth_but_not_mapping_valued_auth():
     text = (
         "            password: hunter2\n"

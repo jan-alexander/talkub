@@ -104,6 +104,14 @@ def test_k8s_dry_run_redacts_secrets(talos_repo, spy, capfd):
     assert "tskey-auth-x" not in out
 
 
+def test_k8s_dry_run_prints_progress_before_the_output(talos_repo, spy, capfd):
+    spy("talosctl").on("--dry-run", stdout="Dry run summary:\nNo changes.\n")
+    assert upgrade.k8s(Context.open(talos_repo), confirm=lambda q: True) is True
+    out = capfd.readouterr().out
+    assert "dry-run" in out.lower()
+    assert out.index("dry-run") < out.index("Dry run summary")  # progress line precedes the output
+
+
 def test_k8s_declined_or_failing_dry_run(talos_repo, spy):
     talosctl = spy("talosctl")
     assert upgrade.k8s(Context.open(talos_repo), confirm=lambda q: False) is False
