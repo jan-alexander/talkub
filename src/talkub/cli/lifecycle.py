@@ -40,6 +40,11 @@ def apply(
             raise ValidationError(
                 "--mode does not apply to --insecure", hint="the first install always reboots into the installed system"
             )
+        if force_unhealthy:
+            raise ValidationError(
+                "--force-unhealthy does not apply to --insecure",
+                hint="the first install has no health pre-check to skip",
+            )
         if not lifecycle.apply_insecure(context, nodes[0], confirm=confirm):
             raise typer.Exit(1)
         return

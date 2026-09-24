@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -12,6 +13,12 @@ from talkub.context import Context
 from talkub.ephemeral import decrypted
 from talkub.errors import ValidationError
 from talkub.runner import Runner, require_tool
+from talkub.talos import inspect
+
+
+def _print_redacted(text: str, *, file=None) -> None:
+    if text:
+        print(inspect.redact_diff(text), end="" if text.endswith("\n") else "\n", file=file, flush=True)
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,15 @@ class TalosSession:
         self, node: str, args: Sequence[str], *, check: bool = True, timeout: float | None = None
     ) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(self.argv(node, args), check=check, timeout=timeout)
+
+    def call_redacted(self, node: str, args: Sequence[str]) -> int:
+        """Like `call`, but captures the output and redacts secrets (`inspect.redact_diff`)
+        before printing it, instead of letting talosctl write straight to the terminal — some
+        talosctl output (config diffs, dry-runs) can contain machine CA keys, auth tokens, …"""
+        result = self.run(node, args, check=False)
+        _print_redacted(result.stdout.decode(errors="replace"))
+        _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
+        return result.returncode
 
 
 @contextmanager

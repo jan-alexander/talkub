@@ -87,7 +87,7 @@ def k8s(ctx: Context, *, confirm: Confirm) -> bool:
     address = settings.mgmt_address(first)
     target = ["upgrade-k8s", "--to", settings.kubernetes_version]
     with talos_session(ctx) as session:
-        code = session.call(address, [*target, "--dry-run"])
+        code = session.call_redacted(address, [*target, "--dry-run"])
         if code != 0:
             raise CommandFailed("upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}")
         if not confirm(f"upgrade Kubernetes to {settings.kubernetes_version}?"):

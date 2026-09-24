@@ -14,7 +14,6 @@ from talkub.errors import CommandFailed, ValidationError
 from talkub.factory import FactoryClient
 from talkub.repo import Settings
 from talkub.runner import require_tool
-from talkub.talos import inspect
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.render import install_summary, render_configs
 
@@ -124,15 +123,10 @@ def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool) -
             raise CommandFailed(
                 "the cluster is not healthy; nothing was changed",
                 hint=f"{err} ({err.hint}); fix the cluster first (`talkub status`), "
-                "or `apply --force-unhealthy` if the pending change is the fix",
+                "or `talkub apply --force-unhealthy` if the pending change is the fix",
             ) from None
 
     return check
-
-
-def _print_redacted(text: str, *, file=None) -> None:
-    if text:
-        print(inspect.redact_diff(text), end="" if text.endswith("\n") else "\n", file=file, flush=True)
 
 
 def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str | None = None) -> None:
@@ -140,15 +134,10 @@ def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, 
     print(f"== {name} ({address})", flush=True)
     mode_args = ["--mode", mode] if mode else []
     with private_file(f"{name}.yaml", config) as path:
-        result = talos.run(address, ["apply-config", "--file", str(path), "--dry-run", *mode_args], check=False)
-    # The diff can contain secrets (machine CA key, TS_AUTHKEY, …), so it is captured and
-    # redacted rather than let talosctl print it straight to the terminal.
-    _print_redacted(result.stdout.decode(errors="replace"))
-    _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
-    if result.returncode != 0:
+        code = talos.call_redacted(address, ["apply-config", "--file", str(path), "--dry-run", *mode_args])
+    if code != 0:
         raise CommandFailed(
-            f"dry-run failed for node '{name}'",
-            hint=f"talosctl exited with {result.returncode}; is {address} reachable?",
+            f"dry-run failed for node '{name}'", hint=f"talosctl exited with {code}; is {address} reachable?"
         )
 
 

@@ -257,6 +257,20 @@ def test_lockdown_use_ips_requires_a_tailnet_ip_for_every_bare_node(repo, talosc
     assert repo.settings_file.read_bytes() == before_settings
 
 
+def test_lockdown_use_ips_reports_a_failed_probe_separately_from_no_tailnet_ip(repo, talosctl):
+    talosctl.on("10.0.0.10", "get", "addresses", stdout=_addresses_table("10.0.0.10", "100.100.148.20"))
+    talosctl.on("10.0.0.12", "get", "addresses", rc=1, stderr="connection refused\nsecond line\n")
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    before_settings = repo.settings_file.read_bytes()
+    with pytest.raises(ValidationError) as exc:
+        tailscale.lockdown(Context.open(repo), use_ips=True)
+    assert "cp-02 (talosctl exited 1: connection refused)" in str(exc.value)
+    assert "second line" not in str(exc.value)
+    assert "cp-01" not in str(exc.value)
+    assert not tailscale.firewall_patch_path(repo).exists()
+    assert repo.settings_file.read_bytes() == before_settings
+
+
 def test_lockdown_without_talosconfig(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     repo.talosconfig.unlink()

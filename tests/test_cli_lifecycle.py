@@ -59,6 +59,12 @@ def test_insecure_rejects_mode(talos_repo, talosctl_spy, capfd):
     assert _calls(talosctl_spy) == []
 
 
+def test_insecure_rejects_force_unhealthy(talos_repo, talosctl_spy, capfd):
+    assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes", "--force-unhealthy"]) == 1
+    assert "--force-unhealthy" in capfd.readouterr().err
+    assert _calls(talosctl_spy) == []
+
+
 def test_apply_force_unhealthy_flag_reaches_lifecycle(talos_repo, talosctl_spy, monkeypatch):
     calls = []
     monkeypatch.setattr(lifecycle, "apply", lambda ctx, nodes, **kw: calls.append(kw) or [])

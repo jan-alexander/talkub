@@ -115,6 +115,23 @@ def test_tailnet_ipv4():
     assert inspect.tailnet_ipv4("") is None
 
 
+def test_tailnet_ipv4_prefers_the_tailscale_link_over_an_earlier_cgnat_row():
+    text = (
+        "NODE       NAMESPACE   TYPE            ID                    VERSION   ADDRESS           LINK\n"
+        "10.0.0.5   network     AddressStatus   eth0/100.72.0.5/32    1         100.72.0.5/32     eth0\n"
+        "10.0.0.5   network     AddressStatus   ts0/100.100.148.20/32 1         100.100.148.20/32 tailscale0\n"
+    )
+    assert inspect.tailnet_ipv4(text) == "100.100.148.20"
+
+
+def test_tailnet_ipv4_falls_back_to_the_first_match_without_a_tailscale_link():
+    text = (
+        "NODE       NAMESPACE   TYPE            ID                  VERSION   ADDRESS         LINK\n"
+        "10.0.0.5   network     AddressStatus   eth0/100.72.0.5/32   1         100.72.0.5/32   eth0\n"
+    )
+    assert inspect.tailnet_ipv4(text) == "100.72.0.5"
+
+
 def test_application_summary_defensive():
     # Non-dict status should count as Unknown/Unknown, not raise AttributeError
     assert inspect.application_summary('{"items": [{"status": "weird"}]}') == {"Unknown/Unknown": 1}
@@ -163,3 +180,76 @@ def test_redact_diff_matches_secret_boxencryption_and_bootstrap_keys():
 def test_redact_diff_empty_and_no_secrets():
     assert inspect.redact_diff("") == ""
     assert inspect.redact_diff("Dry run summary:\nNo changes.\n") == "Dry run summary:\nNo changes.\n"
+
+
+def test_redact_diff_block_scalar_hides_every_indented_line():
+    text = (
+        "             key: |\n"
+        "                 -----BEGIN ED25519 PRIVATE KEY-----\n"
+        "                 MC4CAQAwBQYDK2VwBCIEIKZ0V2plQVJTVEFHSVNTVUUK\n"
+        "                 -----END ED25519 PRIVATE KEY-----\n"
+        "             hostname: cp-01\n"
+    )
+    result = inspect.redact_diff(text)
+    assert "BEGIN ED25519 PRIVATE KEY" not in result
+    assert "MC4CAQAwBQYDK2VwBCIEIKZ0V2plQVJTVEFHSVNTVUUK" not in result
+    lines = result.split("\n")
+    assert lines[0] == "             key: <redacted>"
+    assert lines[1] == "                 <redacted>"
+    assert lines[2] == "                 <redacted>"
+    assert lines[3] == "                 <redacted>"
+    assert lines[4] == "             hostname: cp-01"  # dedented: block scalar has ended
+
+
+def test_redact_diff_block_scalar_with_diff_markers_and_chomping_indicator():
+    text = (
+        "+            secretboxEncryptionSecret: |-\n"
+        "+                c2VjcmV0LWJveC1lbmNyeXB0aW9uLXNlY3JldA==\n"
+        "+            aescbcEncryptionSecret: c2VjcmV0\n"  # same indent as the block's key: ends the block
+    )
+    result = inspect.redact_diff(text)
+    assert "c2VjcmV0LWJveC1lbmNyeXB0aW9uLXNlY3JldA==" not in result
+    assert "c2VjcmV0" not in result
+    assert "+            secretboxEncryptionSecret: <redacted>" in result
+    assert "+                <redacted>" in result
+    assert "+            aescbcEncryptionSecret: <redacted>" in result  # redacted on its own, not swallowed
+
+
+def test_redact_diff_password_and_scalar_auth_but_not_mapping_valued_auth():
+    text = (
+        "            password: hunter2\n"
+        "            auth: dXNlcjpwYXNz\n"
+        "            username: admin\n"
+        "            auth:\n"
+        "                username: admin\n"
+    )
+    result = inspect.redact_diff(text)
+    assert "hunter2" not in result
+    assert "dXNlcjpwYXNz" not in result
+    assert "            password: <redacted>" in result
+    assert "            auth: <redacted>" in result
+    assert "            username: admin" in result
+    assert "            auth:\n" in result  # mapping-valued auth: (no scalar) is untouched
+
+
+def test_redact_diff_env_value_forms():
+    text = (
+        "+    - TS_AUTHKEY='tskey-auth-x'\n"
+        '+    - TS_AUTHKEY="tskey-auth-y"\n'
+        "+    - TS_EXTRA_ARGS=--authkey=verysecret\n"
+        "    environment: [TS_AUTHKEY=plainvalue, UNRELATED=fine]\n"
+        "    ca: {crt: cert-value, key: key-value}\n"
+    )
+    result = inspect.redact_diff(text)
+    assert "tskey-auth-x" not in result
+    assert "tskey-auth-y" not in result
+    assert "verysecret" not in result
+    assert "plainvalue" not in result
+    assert "key-value" not in result
+    assert "TS_AUTHKEY='<redacted>'" in result
+    assert 'TS_AUTHKEY="<redacted>"' in result
+    assert "TS_EXTRA_ARGS=--authkey=<redacted>" in result
+    assert "TS_AUTHKEY=<redacted>" in result  # inside the flow-sequence
+    assert "UNRELATED=fine" in result
+    assert "crt: cert-value" in result  # certificates stay
+    assert "key: <redacted>" in result  # nested inside the flow mapping

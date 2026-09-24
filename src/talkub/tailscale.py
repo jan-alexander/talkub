@@ -123,7 +123,12 @@ def _tailnet_ips_for_bare_nodes(ctx: Context, settings: Settings) -> dict[str, s
             for name in targets:
                 address = settings.mgmt_address(name)
                 result = session.run(address, ["get", "addresses"], check=False)
-                ip = inspect.tailnet_ipv4(result.stdout.decode(errors="replace")) if result.returncode == 0 else None
+                if result.returncode != 0:
+                    stderr = result.stderr.decode(errors="replace").strip().splitlines()
+                    detail = stderr[0] if stderr else "no output"
+                    missing.append(f"{name} (talosctl exited {result.returncode}: {detail})")
+                    continue
+                ip = inspect.tailnet_ipv4(result.stdout.decode(errors="replace"))
                 if ip is None:
                     missing.append(name)
                 else:

@@ -316,6 +316,16 @@ def test_apply_force_unhealthy_skips_only_the_precheck(talos_repo, spy):
     assert not any("health" in argv for argv in talosctl.argvs[before:])
 
 
+def test_apply_force_unhealthy_skips_precheck_but_keeps_the_rolling_health_wait(talos_repo, spy):
+    """Two nodes: --force-unhealthy must skip only the pre-check, not the health wait between
+    applying cp-01 and w-01."""
+    _add_node(talos_repo, "w-01", "10.0.0.11")
+    talosctl = spy("talosctl").real("gen").real("validate")
+    applied = lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True)
+    assert applied == ["cp-01", "w-01"]
+    assert len(_health(talosctl.argvs)) == 1  # only the wait between the two applies
+
+
 def test_declined_apply_does_not_precheck(talos_repo, spy):
     talosctl = spy("talosctl").real("gen").real("validate")
     lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: False)
