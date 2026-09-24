@@ -37,7 +37,7 @@ Erfolgskriterien:
 
 ```yaml
 name: homelab
-endpoint: https://cp-01.tail1234.ts.net:6443
+endpoint: https://10.0.0.10:6443           # Cluster-Endpoint (Nodes); Admins gehen über mgmt
 talosVersion: v1.14.0
 kubernetesVersion: 1.37.0
 platform: metal                      # Cluster-Default
