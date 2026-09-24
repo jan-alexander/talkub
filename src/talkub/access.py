@@ -17,10 +17,7 @@ from talkub.errors import ValidationError
 from talkub.runner import require_tool
 
 TALOSCONFIG_HINT = "it is created by `talkub init`"
-KUBECONFIG_HINT = (
-    "it is created by `talkub bootstrap` (coming in phase 2); until then place a kubeconfig "
-    "with `talkub sops edit kubernetes/kubeconfig.sops.yaml`"
-)
+KUBECONFIG_HINT = "it is created by `talkub bootstrap`"
 
 
 def _existing(ctx: Context, path: Path, hint: str) -> Path:

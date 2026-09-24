@@ -47,7 +47,6 @@ def test_kubectl_without_kubeconfig_explains(keyed_repo):
     with pytest.raises(ValidationError) as exc:
         access.kubectl(Context.open(keyed_repo), ["get", "pods"])
     assert "bootstrap" in exc.value.hint
-    assert "talkub sops edit kubernetes/kubeconfig.sops.yaml" in exc.value.hint
 
 
 @pytest.mark.parametrize("command", ["talosctl", "kubectl"])

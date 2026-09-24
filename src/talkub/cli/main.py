@@ -10,6 +10,7 @@ import typer
 
 from talkub import __version__, access
 from talkub.cli import admin, check, image, keys, secret, session, setup
+from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import lifecycle as lifecycle_cli
 from talkub.cli import nodes as nodes_cli
 from talkub.cli import sops as sops_cli
@@ -52,6 +53,7 @@ app.add_typer(nodes_cli.app, name="node")
 app.command("check")(check.check)
 app.command("plan")(lifecycle_cli.plan)
 app.command("apply")(lifecycle_cli.apply)
+app.command("bootstrap")(bootstrap_cli.bootstrap)
 
 PASSTHROUGH = {"t": access.talosctl, "talosctl": access.talosctl, "k": access.kubectl, "kubectl": access.kubectl}
 
