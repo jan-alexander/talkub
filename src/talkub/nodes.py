@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import re
 from dataclasses import dataclass
@@ -155,6 +156,10 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
     if moved is not None:
         warnings.append(moved)
     settings = repo.load_settings()
+    firewall = repo.talos_dir / "patches" / "firewall.yaml"
+    if spec.mgmt is None and settings.tailscale is not None and firewall.is_file():
+        # Locked down: talkub reaches nodes only via the tailnet (see tailscale.lockdown).
+        spec = dataclasses.replace(spec, mgmt=f"{name}.{settings.tailscale.tailnet}")
     if name in settings.nodes:
         raise ValidationError(f"node '{name}' already exists")
     path = node_patch_path(repo, name)

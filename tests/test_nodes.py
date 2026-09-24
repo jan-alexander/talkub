@@ -181,3 +181,21 @@ def test_add_node_rejects_bad_addresses(empty_repo, spec, flag):
         add_node(empty_repo, "w-01", spec, NodeOptions())
     assert flag in str(exc.value)
     assert "w-01" not in empty_repo.load_settings().nodes
+
+
+def test_add_node_after_lockdown_uses_tailnet_mgmt(empty_repo):
+    from talkub import tailscale
+    from talkub.repo import TailscaleSpec
+
+    settings = empty_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    empty_repo.write_settings(settings)
+    add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions())
+    assert empty_repo.load_settings().nodes["w-01"].mgmt is None  # enabled, not locked down
+    tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True, exist_ok=True)
+    tailscale.firewall_patch_path(empty_repo).write_text("x")
+    add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
+    add_node(empty_repo, "w-03", NodeSpec(ip="10.0.0.13", role="worker", mgmt="w3.lan"), NodeOptions())
+    nodes = empty_repo.load_settings().nodes
+    assert nodes["w-02"].mgmt == "w-02.t.ts.net"
+    assert nodes["w-03"].mgmt == "w3.lan"

@@ -218,3 +218,22 @@ def test_helm_install_oci_chart(tmp_path):
     assert "--repo" not in call.argv
     assert call.argv[call.argv.index("--version") + 1] == "10.9.2"
     assert call.env == {"KUBECONFIG": "kc"}
+
+
+def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
+    from talkub import tailscale, yamlio
+    from talkub.repo import NodeSpec, TailscaleSpec
+
+    repo, spies = cluster
+    settings = repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
+    repo.write_settings(settings)
+    tailscale.firewall_patch_path(repo).parent.mkdir(parents=True, exist_ok=True)
+    tailscale.firewall_patch_path(repo).write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
+    spies["talosctl"].rules.insert(0, {"match": ["kubeconfig"], "rc": 0, "stderr": "",
+                                       "stdout": "apiVersion: v1\nkind: Config\nclusters:\n- name: c\n  cluster:\n    server: https://10.0.0.10:6443\n"})
+    spies["talosctl"]._save()
+    bootstrap.run(Context.open(repo))
+    stored = yamlio.load(Context.open(repo).sops.decrypt(repo.kubeconfig).decode())
+    assert stored["clusters"][0]["cluster"]["server"] == "https://cp-01.t.ts.net:6443"

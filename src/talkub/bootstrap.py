@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from talkub import sealing
+from talkub import sealing, tailscale
 from talkub.context import Context
 from talkub.ephemeral import decrypted
 from talkub.errors import CommandFailed, ValidationError
@@ -51,6 +51,8 @@ def run(ctx: Context) -> None:
         if code != 0:
             raise CommandFailed("the cluster did not become healthy", hint=f"talosctl health exited with {code}")
         kubeconfig = talos.run(address, ["kubeconfig", "-", "--merge=false"]).stdout
+    if tailscale.is_locked_down(ctx.repo):
+        kubeconfig = tailscale.rewrite_kubeconfig_server(kubeconfig, tailscale.admin_server(settings))
     _store_kubeconfig(ctx, kubeconfig)
 
     backup = sealing.key_backup_path(ctx.repo)
