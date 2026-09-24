@@ -76,6 +76,8 @@ def seal(
             raise ValidationError("--namespace is required with --from-literal/--from-file/--prompt")
         if from_file:
             _check_from_files(context.repo, from_file)
+        for key in prompt or []:
+            sealing.check_key(key)  # before asking for any value
         prompted = {key: getpass.getpass(f"{key}: ") for key in prompt or []}
         manifest = sealing.secret_manifest(source, namespace, literal or [], from_file or [], prompted=prompted)
     else:

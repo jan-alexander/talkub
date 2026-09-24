@@ -72,8 +72,9 @@ def test_rerun_is_idempotent_and_restores_key_first(cluster):
     bootstrap.run(Context.open(repo))
     assert repo.kubeconfig.read_bytes() == kubeconfig_bytes  # unchanged content → not rewritten
     kubectl = spies["kubectl"].calls
-    assert kubectl[0]["args"][:2] == ["apply", "-f"] and kubectl[0]["files"]["-f"]
-    assert kubectl[0]["args"][2] != str(repo.gitops_dir / "root.yaml")  # the decrypted key comes first
+    # server-side apply: no last-applied-configuration annotation with the private key
+    assert kubectl[0]["args"][:3] == ["apply", "--server-side", "-f"] and kubectl[0]["files"]["-f"]
+    assert kubectl[0]["args"][3] != str(repo.gitops_dir / "root.yaml")  # the decrypted key comes first
     assert not any(a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs)  # no new backup
     assert len(spies["helm"].argvs) == 2
 
@@ -189,3 +190,31 @@ def test_missing_chart_settings(cluster):
     with pytest.raises(ValidationError) as exc:
         bootstrap.run(Context.open(repo))
     assert "argocd" in str(exc.value)
+
+
+def test_commit_reminder_right_after_key_backup(cluster, capfd):
+    repo, _ = cluster
+    bootstrap.run(Context.open(repo))
+    out = capfd.readouterr().out
+    reminder = out.index("commit bootstrap/ now")
+    assert out.index("backing up the new sealed-secrets key") < reminder < out.index("installing argocd")
+    assert out.rstrip().endswith("bootstrap complete — commit kubernetes/ and bootstrap/")
+
+
+def test_helm_install_oci_chart(tmp_path):
+    from pathlib import Path
+
+    from helpers import FakeRunner
+    from talkub.kube import KubeSession
+    from talkub.repo import Repo
+
+    repo = Repo(tmp_path)
+    atomic_write(repo.gitops_dir / "values" / "argocd.yaml", b"{}\n")
+    runner = FakeRunner()
+    chart = ChartSpec("oci://ghcr.io/argoproj/argo-helm/", "argo-cd", "10.9.2")
+    bootstrap._helm_install(KubeSession(runner, Path("kc")), repo, "argocd", "argocd", chart, "argocd", True)
+    [call] = runner.calls
+    assert call.argv[:5] == ["helm", "upgrade", "--install", "argocd", "oci://ghcr.io/argoproj/argo-helm/argo-cd"]
+    assert "--repo" not in call.argv
+    assert call.argv[call.argv.index("--version") + 1] == "10.9.2"
+    assert call.env == {"KUBECONFIG": "kc"}

@@ -1,7 +1,10 @@
+from contextlib import contextmanager
+
 from helpers import DEFAULT_SCHEMATIC_ID, need
 from talkub import status
 from talkub.cli.main import main
 from talkub.context import Context
+from talkub.errors import TalkubError
 from talkub.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
 from talkub.repo import NodeSpec
@@ -105,3 +108,32 @@ def test_status_command(talos_repo, spy, capfd):
     except SystemExit as exc:
         assert exc.code == 0
     assert "cp-01" in capfd.readouterr().out
+
+
+def test_kubectl_calls_have_a_request_timeout(talos_repo, spy):
+    _, kubectl = _spies(spy)
+    status.collect(Context.open(talos_repo))
+    assert len(kubectl.argvs) == 2
+    assert all("--request-timeout=10s" in argv for argv in kubectl.argvs)
+
+
+def test_failing_kube_session_gives_unavailable(talos_repo, spy, monkeypatch):
+    _spies(spy)
+
+    @contextmanager
+    def broken(ctx):
+        raise TalkubError("kubectl is not installed")
+        yield
+
+    monkeypatch.setattr(status, "kube_session", broken)
+    report = status.collect(Context.open(talos_repo))
+    assert report.kube == "unavailable"
+    assert report.nodes[0].talos == "v1.14.0"
+    assert "kubernetes: unavailable" in status.render(report)
+
+
+def test_undecryptable_kubeconfig_gives_unavailable(talos_repo, spy):
+    _spies(spy)
+    talos_repo.kubeconfig.write_bytes(b"not: sops\n")
+    report = status.collect(Context.open(talos_repo))
+    assert report.kube == "unavailable"

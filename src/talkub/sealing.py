@@ -36,9 +36,14 @@ def key_backup_path(repo: Repo) -> Path:
     return repo.root / "bootstrap" / "sealed-secrets-key.sops.yaml"
 
 
-def _add(data: dict[str, str], key: str, value: bytes) -> None:
+def check_key(key: str) -> None:
+    """Secret data keys: letters, digits, '-', '_' and '.' (the Kubernetes rule)."""
     if not _KEY.fullmatch(key):
         raise ValidationError(f"invalid secret key {key!r}", hint="use letters, digits, '-', '_' and '.'")
+
+
+def _add(data: dict[str, str], key: str, value: bytes) -> None:
+    check_key(key)
     if key in data:
         raise ValidationError(f"duplicate secret key {key!r}")
     data[key] = base64.b64encode(value).decode()
@@ -88,7 +93,8 @@ def check_secret_manifest(manifest: bytes) -> None:
         raise ValidationError("input is not valid YAML") from None
     if len(docs) != 1 or not isinstance(docs[0], Mapping) or docs[0].get("kind") != "Secret":
         raise ValidationError("input must be exactly one `kind: Secret` manifest")
-    if not (docs[0].get("metadata") or {}).get("namespace"):
+    metadata = docs[0].get("metadata")
+    if not isinstance(metadata, Mapping) or not metadata.get("namespace"):
         raise ValidationError("the Secret needs metadata.namespace", hint="sealed secrets are bound to their namespace")
 
 

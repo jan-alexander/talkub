@@ -33,12 +33,11 @@ def run(ctx: Context) -> None:
     missing = [key for key in RELEASES if key not in settings.charts]
     if missing:
         raise ValidationError(f"missing chart settings in .talkub.yaml: {', '.join(missing)}")
-    first = ordered_nodes(settings, [])[0]
-    if settings.node(first).role != "controlplane":
-        raise ValidationError("bootstrap needs a controlplane node")
-    address = settings.mgmt_address(first)
-
     controlplanes = [n for n in ordered_nodes(settings, []) if settings.nodes[n].role == "controlplane"]
+    if not controlplanes:
+        raise ValidationError("bootstrap needs a controlplane node")
+    first = controlplanes[0]
+    address = settings.mgmt_address(first)
 
     with talos_session(ctx) as talos:
         _step(f"bootstrapping etcd on {first} ({address})")
@@ -60,17 +59,26 @@ def run(ctx: Context) -> None:
         if had_backup:
             _step("restoring the sealed-secrets key")
             with decrypted(ctx.sops, {"sealing-key.yaml": backup}) as plain:
-                kube.kubectl(["apply", "-f", str(plain["sealing-key.yaml"])])
+                # server-side: no last-applied-configuration annotation carrying the private key
+                kube.kubectl(["apply", "--server-side", "-f", str(plain["sealing-key.yaml"])])
         for key, (release, namespace, create) in RELEASES.items():
             _step(f"installing {release}")
             _helm_install(kube, ctx.repo, key, release, settings.charts[key], namespace, create)
-            if key == "sealed-secrets" and had_backup:
+            if key != "sealed-secrets":
+                continue
+            if had_backup:
                 _warn_if_restored_key_is_stale(ctx, kube)
-            if key == "sealed-secrets" and not had_backup:
+            else:
                 # kube's own session stays open; backup_sealing_key opens a second one to talk
                 # to the just-installed controller (a second kubeconfig decryption, harmless).
                 _step("backing up the new sealed-secrets key")
-                sealing.backup_sealing_key(ctx)
+                for path in sealing.backup_sealing_key(ctx):
+                    print(f"   wrote {ctx.repo.rel(path)}")
+                print(
+                    "   commit bootstrap/ now — without the key backup, a rebuilt cluster cannot decrypt "
+                    "existing SealedSecrets",
+                    flush=True,
+                )
         _step("applying gitops/root.yaml")
         kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
 

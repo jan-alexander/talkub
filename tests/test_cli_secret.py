@@ -74,3 +74,14 @@ def test_seal_argument_errors(keyed_repo, sealing_cert, capfd, extra, message):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     assert _run(["--repo", str(keyed_repo.root), "secret", "seal", *extra]) == 1
     assert message in capfd.readouterr().err
+
+
+def test_seal_rejects_invalid_prompt_key_before_asking(keyed_repo, sealing_cert, tmp_path, monkeypatch, capfd):
+    atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
+    asked = []
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": asked.append(prompt) or "hunter2")
+    code = _run(["--repo", str(keyed_repo.root), "secret", "seal", "db", "-n", "app",
+                 "--prompt", "ok", "--prompt", "bad key", "-o", str(tmp_path / "db.sealed.yaml")])
+    assert code == 1
+    assert "invalid secret key 'bad key'" in capfd.readouterr().err
+    assert asked == []

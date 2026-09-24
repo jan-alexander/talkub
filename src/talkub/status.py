@@ -14,6 +14,8 @@ from talkub.repo import Settings
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
 
+KUBECTL_TIMEOUT = "--request-timeout=10s"
+
 
 @dataclass
 class NodeStatus:
@@ -63,9 +65,15 @@ def collect(ctx: Context) -> StatusReport:
 
     if not is_bootstrapped(ctx):
         return StatusReport(settings, nodes, kube="not bootstrapped")
-    with kube_session(ctx) as kube:
-        kubelets = kube.kubectl(["get", "nodes", "-o", "json"], check=False)
-        apps = kube.kubectl(["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"], check=False)
+    try:
+        with kube_session(ctx) as kube:
+            kubelets = kube.kubectl(["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False)
+            apps = kube.kubectl(
+                ["get", "applications.argoproj.io", "-n", "argocd", "-o", "json", KUBECTL_TIMEOUT], check=False
+            )
+    except TalkubError as err:
+        print(f"talkub: cannot query Kubernetes ({err})", file=sys.stderr)
+        return StatusReport(settings, nodes, kube="unavailable")
     if kubelets.returncode != 0:
         return StatusReport(settings, nodes, kube="unavailable")
     versions = inspect.kubelet_versions(kubelets.stdout.decode())

@@ -75,6 +75,8 @@ def test_secret_manifest_prompted_duplicate_rejected():
         ("apiVersion: v1\nkind: Secret\nmetadata: {name: x}\n", "namespace"),
         ("kind: Secret\nmetadata: {name: x, namespace: a}\n---\nkind: Secret\nmetadata: {name: y, namespace: a}\n", "exactly one"),
         ("{not yaml", "YAML"),
+        ("apiVersion: v1\nkind: Secret\nmetadata: just-a-string\n", "namespace"),
+        ("apiVersion: v1\nkind: Secret\nmetadata: [a, b]\n", "namespace"),
     ],
 )
 def test_check_secret_manifest(text, message):
