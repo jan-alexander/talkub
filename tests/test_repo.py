@@ -1,8 +1,19 @@
 import pytest
+from helpers import DEFAULT_SCHEMATIC_ID, sample_settings
 
-from helpers import sample_settings
 from talkub.errors import RepoNotFound, ValidationError
-from talkub.repo import MARKER, ChartSpec, NodeSpec, Repo, Settings, find_repo
+from talkub.repo import (
+    MARKER,
+    ChartSpec,
+    NodeSpec,
+    Repo,
+    SchematicSpec,
+    Settings,
+    TailscaleSpec,
+    find_repo,
+    parse_installer_image,
+)
+from talkub.schematic import customization_hash
 
 
 def test_settings_roundtrip(tmp_path):
@@ -74,3 +85,86 @@ def test_sops_files_excludes_sops_config_and_git(tmp_path):
 def test_node_defaults_to_controlplane():
     settings = Settings.from_dict(_data(nodes={"cp-01": {"ip": "10.0.0.10"}}))
     assert settings.nodes["cp-01"] == NodeSpec(ip="10.0.0.10", role="controlplane")
+
+
+def test_full_settings_roundtrip(tmp_path):
+    settings = sample_settings()
+    settings.platform = "hcloud"
+    settings.schematics["hcloud"] = SchematicSpec(
+        extensions=["siderolabs/tailscale"], kernel_args=["console=ttyS0"], id="abc", hash="def"
+    )
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net", platform="metal", arch="arm64")
+    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24")
+    repo = Repo(tmp_path)
+    repo.write_settings(settings)
+    assert repo.load_settings() == settings
+    text = repo.settings_file.read_text()
+    assert "installImage" not in text
+    assert "kernelArgs" in text and "nodeCidr" in text
+
+
+def test_phase1_install_image_is_migrated():
+    data = sample_settings().to_dict()
+    del data["platform"]
+    del data["schematics"]
+    data["installImage"] = f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}"
+    settings = Settings.from_dict(data)
+    assert settings.platform == "metal"
+    assert settings.schematics["metal"].id == DEFAULT_SCHEMATIC_ID
+    assert settings.schematics["metal"].is_current
+    assert "installImage" not in settings.to_dict()
+
+
+def test_phase1_install_image_must_be_a_factory_image():
+    data = sample_settings().to_dict()
+    del data["schematics"]
+    data["installImage"] = "ghcr.io/siderolabs/installer"
+    with pytest.raises(ValidationError):
+        Settings.from_dict(data)
+
+
+def test_parse_installer_image():
+    assert parse_installer_image("factory.talos.dev/hcloud-installer/abc123") == ("hcloud", "abc123")
+
+
+def test_unknown_platform_and_arch_rejected():
+    with pytest.raises(ValidationError):
+        Settings.from_dict(_data(platform="vmware"))
+    with pytest.raises(ValidationError):
+        Settings.from_dict(_data(nodes={"n1": {"ip": "10.0.0.2", "arch": "riscv"}}))
+
+
+def test_installer_image_and_node_helpers():
+    settings = sample_settings()
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud")
+    assert settings.installer_image("metal") == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    assert settings.node_platform("cp-01") == "metal"
+    assert settings.node_platform("w-01") == "hcloud"
+    assert settings.mgmt_address("cp-01") == "10.0.0.10"
+    assert settings.mgmt_address("w-01") == "w-01.ts"
+    with pytest.raises(ValidationError):
+        settings.node("nope")
+
+
+def test_installer_image_refuses_outdated_schematic():
+    settings = sample_settings()
+    settings.schematics["metal"].extensions.append("siderolabs/tailscale")
+    assert not settings.schematics["metal"].is_current
+    with pytest.raises(ValidationError) as exc:
+        settings.installer_image("metal")
+    assert "outdated" in str(exc.value)
+
+
+def test_ensure_schematic_adds_empty_entry():
+    settings = sample_settings()
+    spec = settings.ensure_schematic("hcloud")
+    assert spec == SchematicSpec()
+    assert settings.schematics["hcloud"] is spec
+    with pytest.raises(ValidationError):
+        settings.ensure_schematic("vmware")
+
+
+def test_schematic_is_current_only_with_matching_hash():
+    assert SchematicSpec(id="x", hash=customization_hash([], [])).is_current
+    assert not SchematicSpec(id=None, hash=customization_hash([], [])).is_current
+    assert not SchematicSpec(id="x", hash="other").is_current

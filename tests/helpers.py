@@ -46,14 +46,19 @@ class FakeRunner(Runner):
         return self.exit_code
 
 
+DEFAULT_SCHEMATIC_ID = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+
+
 def sample_settings():
-    from talkub.repo import NodeSpec, Settings
+    from talkub.repo import NodeSpec, SchematicSpec, Settings
+    from talkub.schematic import customization_hash
 
     return Settings(
         name="test",
         endpoint="https://10.0.0.10:6443",
         talos_version="v1.14.0",
         kubernetes_version="1.37.0",
-        install_image="factory.talos.dev/metal-installer/abc",
+        platform="metal",
+        schematics={"metal": SchematicSpec(id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], []))},
         nodes={"cp-01": NodeSpec(ip="10.0.0.10")},
     )

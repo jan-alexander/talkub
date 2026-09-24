@@ -17,7 +17,7 @@ pytestmark = need("age", "age-keygen", "sops", "talosctl")
 HELM = "printf 'apiVersion: v2\\nname: x\\nversion: 1.2.3\\n'\n"
 
 
-def _request(target, public):
+def _request(target, public, platform="metal"):
     return InitRequest(
         target=target,
         name="demo",
@@ -25,6 +25,7 @@ def _request(target, public):
         git_url="https://git.example.com/demo.git",
         nodes={"cp-01": NodeSpec(ip="10.0.0.10")},
         recipients=[Recipient("me", public)],
+        platform=platform,
     )
 
 
@@ -37,6 +38,9 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     assert settings.nodes == {"cp-01": NodeSpec(ip="10.0.0.10")}
     assert settings.charts["argocd"].version == "1.2.3"
     assert settings.talos_version.startswith("v")
+    assert settings.platform == "metal"
+    assert settings.schematics["metal"].is_current
+    assert settings.installer_image("metal").startswith("factory.talos.dev/metal-installer/")
 
     for rel in (
         ".gitignore", ".sops.yaml", "README.md",
@@ -149,3 +153,16 @@ def test_needs_a_controlplane_node(tmp_path, software_identity):
     request.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", role="worker")
     with pytest.raises(ValidationError):
         init_cluster(request, Runner())
+
+
+def test_init_with_hcloud_platform(tmp_path, software_identity, fake_bin):
+    fake_bin("helm", HELM)
+    repo = init_cluster(_request(tmp_path / "demo", software_identity[1], platform="hcloud"), Runner())
+    settings = repo.load_settings()
+    assert settings.platform == "hcloud"
+    assert settings.installer_image("hcloud").startswith("factory.talos.dev/hcloud-installer/")
+
+
+def test_init_rejects_unknown_platform(tmp_path, software_identity):
+    with pytest.raises(ValidationError):
+        init_cluster(_request(tmp_path / "demo", software_identity[1], platform="vmware"), Runner())

@@ -17,8 +17,16 @@ from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
 from talkub.keyring import Keyring
 from talkub.recipients import Recipient
-from talkub.repo import NodeSpec, Repo, Settings
+from talkub.repo import (
+    PLATFORMS,
+    NodeSpec,
+    Repo,
+    SchematicSpec,
+    Settings,
+    parse_installer_image,
+)
 from talkub.runner import Runner
+from talkub.schematic import customization_hash
 from talkub.talos import gen
 
 TEMPLATES = resources.files("talkub") / "templates"
@@ -34,6 +42,7 @@ class InitRequest:
     git_url: str
     nodes: dict[str, NodeSpec]
     recipients: list[Recipient]
+    platform: str = "metal"
 
 
 def render_node_patch(node: str) -> str:
@@ -66,6 +75,10 @@ def _validate(request: InitRequest) -> None:
         )
     if not request.endpoint.startswith("https://"):
         raise ValidationError("endpoint must start with https://", hint="e.g. https://10.0.0.10:6443")
+    if request.platform not in PLATFORMS:
+        raise ValidationError(
+            f"unknown platform {request.platform!r}", hint=f"use one of: {', '.join(PLATFORMS)}"
+        )
     if not any(n.role == "controlplane" for n in request.nodes.values()):
         raise ValidationError("at least one controlplane node is required")
     if not request.recipients:
@@ -103,12 +116,16 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
         for source, target in ((secrets, repo.talos_secrets), (talosconfig, repo.talosconfig)):
             atomic_write(target, sops.encrypt(source.read_bytes(), filename=target.name, public_key=public))
 
+    # The schematic ID depends only on the customization, not on the platform, so the
+    # default (empty) schematic from talosctl is valid for every platform.
+    _, default_id = parse_installer_image(defaults.install_image)
     settings = Settings(
         name=request.name,
         endpoint=request.endpoint,
         talos_version=defaults.talos_version,
         kubernetes_version=defaults.kubernetes_version,
-        install_image=defaults.install_image,
+        platform=request.platform,
+        schematics={request.platform: SchematicSpec(id=default_id, hash=customization_hash([], []))},
         nodes=dict(request.nodes),
         charts=chart_specs,
     )
