@@ -8,6 +8,7 @@ from pathlib import Path
 
 import typer
 
+from talkub import tailscale
 from talkub.cli.nodes import (
     DISK,
     DNS,
@@ -18,6 +19,8 @@ from talkub.cli.nodes import (
     node_options,
     print_warnings,
 )
+from talkub.cli.tailscale import print_notes, read_authkey
+from talkub.context import Context
 from talkub.errors import ValidationError
 from talkub.identity import create_identity, identities_dir, own_recipients
 from talkub.nodes import NodeOptions, static_address_warning, validate_address, validate_node_name
@@ -67,8 +70,22 @@ def init(
     dns: list[str] = DNS,
     disk_selector: str = DISK,
     public_ingress: bool = PUBLIC,
+    use_tailscale: bool = typer.Option(False, "--tailscale", help="Tailscale as the only admin path."),
+    tailnet: str = typer.Option(None, "--tailnet", help="Tailnet DNS name (with --tailscale)."),
+    tailscale_authkey_file: Path = typer.Option(None, "--tailscale-authkey-file", help="Auth key file (default: prompt)."),
+    node_cidr: str = typer.Option(None, "--node-cidr", help="Node network for the firewall (with --tailscale)."),
 ) -> None:
     """Create a new cluster repo with keys, Talos secrets and the GitOps skeleton."""
+    authkey = None
+    if use_tailscale:
+        if not tailnet:
+            raise ValidationError("--tailscale needs --tailnet", hint="e.g. --tailnet tail1234.ts.net")
+        tailscale.validate_tailnet(tailnet)
+        if node_cidr:
+            tailscale.validate_cidr(node_cidr)
+        authkey = tailscale.validate_authkey(read_authkey(tailscale_authkey_file))
+    elif tailnet or tailscale_authkey_file or node_cidr:
+        raise ValidationError("--tailnet/--tailscale-authkey-file/--node-cidr need --tailscale")
     nodes = dict(_parse_node(value) for value in node)
     options = node_options(static, gateway, mac, dns, disk_selector, public_ingress)
     node_opts: dict[str, NodeOptions] = {}
@@ -94,5 +111,9 @@ def init(
         node_options=node_opts,
     )
     repo = init_cluster(request, Runner())
+    if authkey is not None:
+        context = Context.open(repo)
+        print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
+        print_notes(tailscale.lockdown(Context.open(repo)))
     print(f"created {repo.root}")
     print("next: add a second admin or backup key (talkub admin add), then git add/commit")

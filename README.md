@@ -89,6 +89,18 @@ Version skew: repos written by this talkub version (`schematics` instead of `ins
 Sealing uses the controller's live certificate and falls back to `bootstrap/sealed-secrets.pem`
 when the cluster is unreachable.
 
+## Tailscale as the only admin path
+
+    talkub init homelab … --tailscale --tailnet tail1234.ts.net     # new cluster: both steps at once
+    # existing cluster:
+    talkub tailscale enable --tailnet tail1234.ts.net   # auth key via prompt or --authkey-file
+    talkub upgrade talos && talkub apply                # installs + configures the extension (via LAN)
+    talkub tailscale lockdown                           # firewall + tailnet names for talosctl/kubectl
+    talkub apply                                        # activates the firewall (via the tailnet)
+
+The nodes keep their LAN/public cluster endpoint and do not use Tailscale DNS; only admin
+clients go through the tailnet. Use a tagged, reusable, pre-approved auth key.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate
