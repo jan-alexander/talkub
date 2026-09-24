@@ -282,3 +282,13 @@ def test_declined_apply_does_not_precheck(talos_repo, spy):
     talosctl = spy("talosctl").real("gen").real("validate")
     lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: False)
     assert _health(talosctl.argvs) == []
+
+
+def test_invalid_settle_value_fails_before_any_change(talos_repo, spy, monkeypatch):
+    monkeypatch.setenv("TALKUB_APPLY_SETTLE_SECONDS", "soon")
+    _add_node(talos_repo, "w-01", "10.0.0.11")
+    talosctl = spy("talosctl").real("gen").real("validate")
+    with pytest.raises(ValidationError) as exc:
+        lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert "TALKUB_APPLY_SETTLE_SECONDS" in str(exc.value)
+    assert _real_applies(talosctl.argvs) == []

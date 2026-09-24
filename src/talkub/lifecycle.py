@@ -87,7 +87,14 @@ def health_target(settings: Settings, touched: str) -> str:
 
 def apply_settle_seconds() -> float:
     """Pause after `apply-config --mode auto|try` so the node's reboot starts before health is checked."""
-    return float(os.environ.get("TALKUB_APPLY_SETTLE_SECONDS", "30"))
+    raw = os.environ.get("TALKUB_APPLY_SETTLE_SECONDS", "30")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not 0 <= value < float("inf"):
+        raise ValidationError(f"invalid TALKUB_APPLY_SETTLE_SECONDS {raw!r}", hint="use a number of seconds >= 0")
+    return value
 
 
 def wait_healthy(talos: TalosSession, address: str, *, settle: float = 0.0) -> None:
@@ -145,6 +152,7 @@ def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Co
         raise ValidationError(f"unknown mode {mode!r}", hint=f"use one of: {', '.join(MODES)}")
     settings, order, configs = prepare(ctx, names)
     rolling = mode in ("auto", "try") and is_bootstrapped(ctx)
+    settle = apply_settle_seconds() if rolling else 0.0
     applied: list[str] = []
     with talos_session(ctx) as talos:
         precheck = health_precheck(talos, settings, enabled=rolling)
@@ -152,7 +160,7 @@ def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Co
             try:
                 _apply_one(talos, settings, name, configs[name], mode, confirm, applied, precheck)
                 if rolling and applied and applied[-1] == name and index < len(order) - 1:
-                    wait_healthy(talos, health_target(settings, name), settle=apply_settle_seconds())
+                    wait_healthy(talos, health_target(settings, name), settle=settle)
             except CommandFailed as err:
                 progress = (
                     f"already applied: {', '.join(applied) or 'none'}; "
