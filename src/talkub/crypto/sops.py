@@ -7,13 +7,17 @@ from __future__ import annotations
 
 import os
 import shlex
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from ruamel.yaml.error import YAMLError
+
+from talkub import yamlio
 from talkub.ephemeral import private_file
 from talkub.errors import CommandFailed, DecryptFailed
 from talkub.fsutil import atomic_write
-from talkub.runner import Runner
+from talkub.runner import Runner, require_tool
 
 
 def render_sops_config(public_key: str) -> str:
@@ -50,23 +54,40 @@ class Sops:
         ]
         return self.runner.run(argv, input=plaintext).stdout
 
-    def edit(self, path: Path, public_key: str) -> int:
+    def edit(
+        self, path: Path, public_key: str, *, retry: Callable[[str], bool] = lambda message: False
+    ) -> int:
         """Edit `path` in $SOPS_EDITOR/$EDITOR; a missing file starts out empty.
 
-        Not `sops edit`: sops would start the editor with SOPS_AGE_KEY in its
-        environment. Here the editor runs via Runner.call, which strips key material.
-        Returns the editor's exit code; nothing is written unless it succeeded and
-        the content changed.
+        Not `sops edit`: sops would start the editor with SOPS_AGE_KEY in its environment.
+        The editor is checked before anything is decrypted. Invalid YAML re-opens the
+        editor while `retry` says so; otherwise nothing is written and 1 is returned.
         """
-        original = self.decrypt(path) if path.exists() else b""
         editor = shlex.split(os.environ.get("SOPS_EDITOR") or os.environ.get("EDITOR") or "vi")
+        require_tool(editor[0])
+        original = self.decrypt(path) if path.exists() else b""
         with private_file(path.name, original) as plaintext:
-            code = self.runner.call([*editor, str(plaintext)])
-            if code != 0:
-                return code
-            edited = plaintext.read_bytes()
-            if edited == original:
-                return 0
+            while True:
+                code = self.runner.call([*editor, str(plaintext)])
+                if code != 0:
+                    return code
+                edited = plaintext.read_bytes()
+                if edited == original:
+                    return 0
+                problem = _yaml_problem(edited)
+                if problem is None:
+                    break
+                if not retry(f"the edited file is not valid YAML ({problem}); re-open the editor?"):
+                    print("talkub: changes discarded, nothing was written", file=sys.stderr)
+                    return 1
             ciphertext = self.encrypt(edited, filename=path.name, public_key=public_key)
         atomic_write(path, ciphertext)
         return 0
+
+
+def _yaml_problem(data: bytes) -> str | None:
+    try:
+        yamlio.load_all(data.decode())
+    except (YAMLError, UnicodeDecodeError) as err:
+        return str(err).strip().splitlines()[0] if str(err).strip() else type(err).__name__
+    return None
