@@ -90,6 +90,16 @@ def _render(
         "--with-examples=false",
     ]
     sans = [n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt]
+    if settings.tailscale is not None:
+        # So the LAN `apply` recommended between `tailscale enable` and `tailscale lockdown`
+        # already issues certificates for the tailnet names lockdown will switch clients to.
+        tailnet = settings.tailscale.tailnet
+        for cp_name, cp in settings.nodes.items():
+            if cp.role != "controlplane":
+                continue
+            san = f"{cp_name}.{tailnet}"
+            if san not in sans:
+                sans.append(san)
     if sans:
         argv += ["--additional-sans", ",".join(sans)]
     for ref in refs:

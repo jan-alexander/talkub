@@ -78,6 +78,30 @@ def test_render_hcloud_worker_and_sans(talos_repo):
 
 
 @pytestmark_bins
+def test_render_adds_tailnet_sans_for_controlplanes(talos_repo):
+    from talkub.repo import TailscaleSpec
+
+    settings = talos_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    configs = render_configs(Context.open(talos_repo), settings, ["cp-01"])
+    assert "cp-01.t.ts.net" in configs["cp-01"].decode()
+
+
+@pytestmark_bins
+def test_render_does_not_duplicate_tailnet_san_already_used_as_mgmt(talos_repo):
+    from talkub.repo import TailscaleSpec
+
+    settings = talos_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
+    configs = render_configs(Context.open(talos_repo), settings, ["cp-01"])
+    for doc in yamlio.load_all(configs["cp-01"].decode()):
+        if isinstance(doc, dict) and doc.get("version") == "v1alpha1":
+            sans = ((doc.get("machine") or {}).get("certSANs")) or []
+            assert sans.count("cp-01.t.ts.net") == 1
+
+
+@pytestmark_bins
 def test_invalid_patch_is_reported_with_node_name(talos_repo):
     patches = talos_repo.talos_dir / "patches"
     patches.mkdir(parents=True, exist_ok=True)

@@ -172,10 +172,16 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
     so a running cluster can still be upgraded and configured via LAN."""
     repo = ctx.repo
     settings = repo.load_settings()
-    if settings.tailscale is not None or extension_patch_path(repo).exists():
+    patch = extension_patch_path(repo)
+    if settings.tailscale is not None:
         raise ValidationError(
             "tailscale is already enabled",
             hint="change the auth key with `talkub sops edit talos/patches/tailscale.sops.yaml`",
+        )
+    if patch.exists():
+        raise ValidationError(
+            f"{repo.rel(patch)} exists but tailscale is not enabled in .talkub.yaml",
+            hint="a previous `tailscale enable` was interrupted; delete that file and run it again",
         )
     validate_tailnet(tailnet)
     authkey = validate_authkey(authkey)
@@ -185,7 +191,6 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
         spec = settings.ensure_schematic(platform)
         if EXTENSION not in spec.extensions:
             spec.extensions = sorted([*spec.extensions, EXTENSION])
-    patch = extension_patch_path(repo)
     encrypted = ctx.sops.encrypt(
         render_extension_patch(authkey), filename=patch.name, public_key=ctx.keyring.public_key()
     )
@@ -220,7 +225,9 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
     if not endpoints:
         raise ValidationError("no controlplane node defined")
     public = ctx.keyring.public_key()
-    # Everything is computed in memory first; files are written only when all of it worked.
+    # Everything is computed in memory first; files are written only once all of it worked,
+    # and the firewall.yaml marker (lockdown ⇔ its presence) is written last, so a failure
+    # midway leaves a retryable, not-locked-down repo.
     talosconfig = ctx.sops.encrypt(
         rewrite_talosconfig(ctx.sops.decrypt(repo.talosconfig), endpoints, endpoints[0]),
         filename=repo.talosconfig.name, public_key=public,
@@ -231,13 +238,22 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None) -> list[str]:
             rewrite_kubeconfig_server(ctx.sops.decrypt(repo.kubeconfig), admin_server(settings)),
             filename=repo.kubeconfig.name, public_key=public,
         )
-    atomic_write(firewall_patch_path(repo), render_firewall_patch(settings.tailscale.node_cidr).encode())
     atomic_write(repo.talosconfig, talosconfig)
     if kubeconfig is not None:
         atomic_write(repo.kubeconfig, kubeconfig)
     repo.write_settings(settings)
-    return [
+    atomic_write(firewall_patch_path(repo), render_firewall_patch(settings.tailscale.node_cidr).encode())
+    notes = [
         f"talkub now reaches the nodes via: {', '.join(settings.mgmt_address(n) for n in settings.nodes)}",
         "run `talkub apply` to activate the firewall; afterwards 50000/6443 are open only to the tailnet "
         f"and the node network {settings.tailscale.node_cidr}",
     ]
+    non_tailnet = [
+        f"{name} ({node.mgmt})" for name, node in settings.nodes.items() if not node.mgmt.endswith(f".{tailnet}")
+    ]
+    if non_tailnet:
+        notes.append(
+            "these nodes keep a non-tailnet mgmt and are reachable only from the node network after "
+            f"`apply`: {', '.join(non_tailnet)}"
+        )
+    return notes

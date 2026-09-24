@@ -59,6 +59,17 @@ def test_enable_twice_and_bad_input(repo):
     assert "already enabled" in str(exc.value)
 
 
+def test_enable_reports_interrupted_half_state(repo):
+    ctx = Context.open(repo)
+    patch = tailscale.extension_patch_path(repo)
+    atomic_write(patch, ctx.sops.encrypt(b"stray: true\n", filename=patch.name, public_key=ctx.keyring.public_key()))
+    assert repo.load_settings().tailscale is None
+    with pytest.raises(ValidationError) as exc:
+        tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    assert "interrupted" in exc.value.hint
+    assert str(patch.relative_to(repo.root)) in str(exc.value)
+
+
 def test_lockdown_switches_clients_to_the_tailnet(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     notes = tailscale.lockdown(Context.open(repo))
@@ -76,6 +87,7 @@ def test_lockdown_switches_clients_to_the_tailnet(repo):
     assert tailscale.is_locked_down(repo)
     assert "10.0.0.0/24" in tailscale.firewall_patch_path(repo).read_text()
     assert any("talkub apply" in n for n in notes)
+    assert any("w-01 (w-01.lan)" in n for n in notes)
 
 
 def test_lockdown_requires_enable_and_runs_once(repo):
@@ -93,3 +105,19 @@ def test_lockdown_without_kubeconfig(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     tailscale.lockdown(Context.open(repo))
     assert not repo.kubeconfig.exists()
+
+
+def test_lockdown_leaves_repo_retryable_on_failure(repo):
+    """firewall.yaml (the lockdown marker) is written last: a failure midway must not lock down."""
+    ctx = Context.open(repo)
+    public = ctx.keyring.public_key()
+    bad_kubeconfig = b"apiVersion: v1\nkind: Config\n"  # no clusters
+    atomic_write(repo.kubeconfig, ctx.sops.encrypt(bad_kubeconfig, filename=repo.kubeconfig.name, public_key=public))
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    before_talosconfig = repo.talosconfig.read_bytes()
+    before_settings = repo.settings_file.read_bytes()
+    with pytest.raises(ValidationError):
+        tailscale.lockdown(Context.open(repo))
+    assert not tailscale.firewall_patch_path(repo).exists()
+    assert repo.talosconfig.read_bytes() == before_talosconfig
+    assert repo.settings_file.read_bytes() == before_settings
