@@ -108,6 +108,29 @@ def repo_with_configs(keyed_repo):
 
 
 @pytest.fixture
+def talos_repo(repo_with_configs):
+    """repo_with_configs plus real SOPS-encrypted Talos secrets and the cp-01 node patch."""
+    _require("talosctl")
+    from talkub.context import Context
+    from talkub.ephemeral import private_tempdir
+    from talkub.fsutil import atomic_write
+    from talkub.nodes import node_patch_path, render_node_patch
+    from talkub.runner import Runner
+    from talkub.talos import gen
+
+    ctx = Context.open(repo_with_configs)
+    public = ctx.keyring.public_key()
+    with private_tempdir() as work:
+        secrets = gen.gen_secrets(Runner(), work)
+        atomic_write(
+            repo_with_configs.talos_secrets,
+            ctx.sops.encrypt(secrets.read_bytes(), filename="secrets.sops.yaml", public_key=public),
+        )
+    atomic_write(node_patch_path(repo_with_configs, "cp-01"), render_node_patch("cp-01").encode())
+    return repo_with_configs
+
+
+@pytest.fixture
 def factory_stub(monkeypatch):
     """Local stand-in for the Talos Image Factory; sets TALKUB_FACTORY_URL.
 
