@@ -33,7 +33,7 @@ def upgrade_argocd(ctx: Context, kube: KubeSession) -> None:
     if "argocd" not in settings.charts:
         raise ValidationError("missing chart settings in .talkub.yaml: argocd")
     release, namespace, create = RELEASES["argocd"]
-    _helm_install(kube, ctx.repo, "argocd", release, settings.charts["argocd"], namespace, create)
+    helm_install(kube, ctx.repo, "argocd", release, settings.charts["argocd"], namespace, create)
 
 
 def run(ctx: Context) -> None:
@@ -75,7 +75,7 @@ def run(ctx: Context) -> None:
                 kube.kubectl(["apply", "--server-side", "-f", str(plain["sealing-key.yaml"])])
         for key, (release, namespace, create) in RELEASES.items():
             _step(f"installing {release}")
-            _helm_install(kube, ctx.repo, key, release, settings.charts[key], namespace, create)
+            helm_install(kube, ctx.repo, key, release, settings.charts[key], namespace, create)
             if key != "sealed-secrets":
                 continue
             if had_backup:
@@ -142,7 +142,7 @@ def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
     print(f"   wrote {ctx.repo.rel(target)}")
 
 
-def _helm_install(
+def helm_install(
     kube: KubeSession, repo: Repo, key: str, release: str, chart: ChartSpec, namespace: str, create: bool
 ) -> None:
     values = repo.gitops_dir / "values" / f"{key}.yaml"

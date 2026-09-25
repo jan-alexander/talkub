@@ -253,6 +253,22 @@ def kubelet_versions(text: str) -> dict[str, str]:
     return result
 
 
+def endpoint_pod_names(text: str) -> list[str]:
+    """Pod names behind the ready addresses of `kubectl get endpoints <name> -o json`."""
+    docs = json_documents(text)
+    if len(docs) != 1 or not isinstance(docs[0], dict):
+        return []
+    names: list[str] = []
+    subsets = docs[0].get("subsets")
+    for subset in subsets if isinstance(subsets, list) else []:
+        addresses = _dict(subset).get("addresses")
+        for address in addresses if isinstance(addresses, list) else []:
+            name = _dict(_dict(address).get("targetRef")).get("name")
+            if isinstance(name, str):
+                names.append(name)
+    return names
+
+
 def machine_ca(text: str) -> tuple[str, str]:
     """(crt, key) of machine.ca from `talosctl get machineconfig -o yaml`; never printed by callers."""
     for resource in yamlio.load_all(text):

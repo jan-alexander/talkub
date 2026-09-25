@@ -223,7 +223,7 @@ def test_helm_install_oci_chart(tmp_path):
     atomic_write(repo.gitops_dir / "values" / "argocd.yaml", b"{}\n")
     runner = FakeRunner()
     chart = ChartSpec("oci://ghcr.io/argoproj/argo-helm/", "argo-cd", "10.9.2")
-    bootstrap._helm_install(KubeSession(runner, Path("kc")), repo, "argocd", "argocd", chart, "argocd", True)
+    bootstrap.helm_install(KubeSession(runner, Path("kc")), repo, "argocd", "argocd", chart, "argocd", True)
     [call] = runner.calls
     assert call.argv[:5] == ["helm", "upgrade", "--install", "argocd", "oci://ghcr.io/argoproj/argo-helm/argo-cd"]
     assert "--repo" not in call.argv
