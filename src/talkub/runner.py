@@ -153,8 +153,34 @@ class Runner:
             close_fds=True,
         )
         assert proc.stdin is not None
-        proc.stdin.write(input)
-        proc.stdin.close()
+        try:
+            proc.stdin.write(input)
+            proc.stdin.close()
+        except BrokenPipeError as exc:
+            raise CommandFailed(f"{Path(argv[0]).name} closed its stdin before receiving input") from exc
+        # We deliberately never wait() on a detached child; mark it as already reaped so
+        # Popen.__del__ does not emit a ResourceWarning about it still running.
+        proc.returncode = 0
+
+    def feed(
+        self, argv: Sequence[str], *, input: bytes, env: Mapping[str, str] | None = None
+    ) -> int:
+        """Run `argv`, feeding it `input` on stdin, and return its exit code.
+
+        Unlike `run`, stdout/stderr are discarded rather than captured with a pipe. Some tools
+        (clipboard copy tools: xclip always, wl-copy usually) fork a background process that
+        holds the selection and inherits stdout/stderr; capturing with a pipe would then hang
+        waiting for that background child's stdout to close.
+        """
+        require_tool(argv[0])
+        proc = subprocess.run(
+            list(argv),
+            input=input,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=child_env(env),
+        )
+        return proc.returncode
 
     def call(
         self,

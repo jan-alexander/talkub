@@ -184,3 +184,39 @@ def test_spawn_detached_writes_stdin_to_the_child_and_does_not_wait(tmp_path):
 def test_spawn_detached_requires_the_tool():
     with pytest.raises(ToolMissing):
         Runner().spawn_detached(["definitely-not-a-real-tool-xyz"], input=b"")
+
+
+def test_spawn_detached_does_not_warn_about_the_unwaited_child(recwarn):
+    Runner().spawn_detached([sys.executable, "-c", "import time; time.sleep(0.2)"], input=b"")
+    assert not any(issubclass(w.category, ResourceWarning) for w in recwarn.list)
+
+
+def test_spawn_detached_raises_command_failed_on_a_broken_pipe(monkeypatch):
+    class FakeStdin:
+        def write(self, data):
+            raise BrokenPipeError("boom")
+
+        def close(self):
+            pass
+
+    class FakeProc:
+        def __init__(self):
+            self.stdin = FakeStdin()
+            self.returncode = None
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProc())
+    with pytest.raises(CommandFailed):
+        Runner().spawn_detached([sys.executable, "-c", "pass"], input=b"x")
+
+
+def test_feed_returns_the_exit_code():
+    assert Runner().feed([sys.executable, "-c", "import sys; sys.exit(5)"], input=b"") == 5
+
+
+def test_feed_does_not_wait_for_a_backgrounded_child_holding_stdout(fake_bin):
+    """xclip (always) and wl-copy (usually) fork a background owner of the selection that
+    inherits stdout/stderr; capturing with a pipe (as `run` does) would hang on it."""
+    fake_bin("slow-bg", "sh -c 'sleep 5' & exit 0\n")
+    started = time.monotonic()
+    assert Runner().feed(["slow-bg"], input=b"") == 0
+    assert time.monotonic() - started < 2.0

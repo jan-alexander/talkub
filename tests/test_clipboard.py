@@ -10,10 +10,21 @@ import time
 
 import pytest
 
-from talkub.errors import ValidationError
+from talkub.errors import CommandFailed, ValidationError
 from talkub.runner import Runner
 
 SECRET = b"top-secret-value"
+
+
+def _bin_dir_with(tmp_path, *names):
+    """A PATH-able dir holding no-op executables named `names` only (no real tools reachable)."""
+    directory = tmp_path / "onlybin"
+    directory.mkdir()
+    for name in names:
+        path = directory / name
+        path.write_text("#!/bin/sh\nexit 0\n")
+        path.chmod(0o755)
+    return directory
 
 
 def _hide_real_tools(monkeypatch, tmp_path):
@@ -32,6 +43,34 @@ def test_tool_prefers_pbcopy_when_several_are_on_path(spy):
     assert found is not None
     assert found.copy == ["pbcopy"]
     assert found.paste == ["pbpaste"]
+
+
+def test_tool_pins_pbcopy_argv(tmp_path, monkeypatch):
+    from talkub import clipboard
+
+    monkeypatch.setenv("PATH", str(_bin_dir_with(tmp_path, "pbcopy", "pbpaste")))
+    assert clipboard.tool() == clipboard.ClipboardTool(copy=["pbcopy"], paste=["pbpaste"], clear=["pbcopy"])
+
+
+def test_tool_pins_wlcopy_argv(tmp_path, monkeypatch):
+    """wl-paste appends a newline by default; `-n` suppresses it so the clearer's hash matches."""
+    from talkub import clipboard
+
+    monkeypatch.setenv("PATH", str(_bin_dir_with(tmp_path, "wl-copy", "wl-paste")))
+    assert clipboard.tool() == clipboard.ClipboardTool(
+        copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"]
+    )
+
+
+def test_tool_pins_xclip_argv(tmp_path, monkeypatch):
+    from talkub import clipboard
+
+    monkeypatch.setenv("PATH", str(_bin_dir_with(tmp_path, "xclip")))
+    assert clipboard.tool() == clipboard.ClipboardTool(
+        copy=["xclip", "-selection", "clipboard"],
+        paste=["xclip", "-selection", "clipboard", "-o"],
+        clear=["xclip", "-selection", "clipboard"],
+    )
 
 
 def test_tool_returns_none_when_nothing_is_on_path(monkeypatch, tmp_path):
@@ -61,6 +100,26 @@ def test_copy_raises_a_validation_error_when_no_tool_is_found(monkeypatch, tmp_p
     assert "--print" in exc.value.hint
 
 
+def test_copy_raises_command_failed_when_the_tool_exits_non_zero(fake_bin):
+    from talkub import clipboard
+
+    fake_bin("pbcopy", "exit 7\n")
+    with pytest.raises(CommandFailed):
+        clipboard.copy(Runner(), SECRET)
+
+
+def test_copy_does_not_hang_on_a_backgrounded_child_holding_stdout(fake_bin):
+    """xclip (always) and wl-copy (usually) fork a background owner of the selection that
+    inherits stdout/stderr; capturing with a pipe (as Runner.run does) would hang waiting for
+    that background child's stdout to close."""
+    from talkub import clipboard
+
+    fake_bin("pbcopy", "sh -c 'sleep 5' & exit 0\n")
+    started = time.monotonic()
+    clipboard.copy(Runner(), SECRET)
+    assert time.monotonic() - started < 2.0
+
+
 def test_schedule_clear_spawns_the_clearer_with_only_the_digest_on_stdin(monkeypatch):
     from talkub import clipboard
 
@@ -72,7 +131,7 @@ def test_schedule_clear_spawns_the_clearer_with_only_the_digest_on_stdin(monkeyp
 
     clipboard.schedule_clear(RecordingRunner(), SECRET)
     [(argv, sent)] = calls
-    assert argv == [sys.executable, "-m", "talkub.clipboard_clear"]
+    assert argv == [sys.executable, "-I", "-m", "talkub.clipboard_clear"]  # -I: cwd not on sys.path
     assert sent == hashlib.sha256(SECRET).hexdigest().encode()
     assert SECRET not in sent
     assert SECRET.decode() not in argv
@@ -123,6 +182,40 @@ def test_clipboard_clear_leaves_the_clipboard_alone_when_it_changed(monkeypatch,
     clipboard_clear.main()
 
     assert pbcopy.calls == []
+
+
+def test_clipboard_clear_clears_wayland_with_the_dash_dash_clear_flag(monkeypatch, spy):
+    from talkub import clipboard, clipboard_clear
+
+    wl_tool = clipboard.ClipboardTool(copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"])
+    monkeypatch.setattr(clipboard, "tool", lambda: wl_tool)
+    spy("wl-paste").on(stdout=SECRET.decode())
+    wlcopy = spy("wl-copy").on(read_stdin=True)
+    monkeypatch.setenv("TALKUB_CLIPBOARD_CLEAR_SECONDS", "0")
+    monkeypatch.setattr(sys, "stdin", io.StringIO(hashlib.sha256(SECRET).hexdigest()))
+
+    clipboard_clear.main()
+
+    [call] = wlcopy.calls
+    assert call["args"] == ["--clear"]
+
+
+def test_clipboard_clear_end_to_end_via_schedule_clear(monkeypatch, spy):
+    """A real detached child (python -I -m talkub.clipboard_clear) actually clears the clipboard."""
+    from talkub import clipboard
+
+    monkeypatch.setenv("TALKUB_CLIPBOARD_CLEAR_SECONDS", "0")
+    spy("pbpaste").on(stdout=SECRET.decode())
+    pbcopy = spy("pbcopy").on(read_stdin=True)
+
+    clipboard.schedule_clear(Runner(), SECRET)
+
+    deadline = time.monotonic() + 5
+    while not pbcopy.calls and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    [call] = pbcopy.calls
+    assert call["stdin"] == ""
 
 
 def test_clipboard_clear_does_nothing_when_no_tool_is_found(monkeypatch, tmp_path):

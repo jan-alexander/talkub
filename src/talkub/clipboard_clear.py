@@ -25,7 +25,7 @@ def main() -> None:
         return
     current = Runner().run(found.paste, check=False).stdout
     if hashlib.sha256(current).hexdigest() == digest:
-        Runner().run(found.copy, input=b"")
+        Runner().feed(found.clear, input=b"")
 
 
 if __name__ == "__main__":
