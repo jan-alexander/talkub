@@ -106,3 +106,31 @@ def egress_remove(ctx: typer.Context, name: str = typer.Argument(..., help="Egre
     context = ctx.obj.context()
     tailscale_operator.egress_remove(context, name)
     print(f"note: {tailscale_operator.EGRESS_COMMIT_NOTE}")
+
+
+@app.command("expose")
+def expose(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Ingress name; becomes the tailnet device name."),
+    service: str = typer.Option(..., "--service", help="Backend as <namespace>/<service>."),
+    port: str = typer.Option(..., "--port", help="Backend port number or name."),
+    path: str = typer.Option(None, "--path", help="Path-based rule (starting with '/') instead of a default backend."),
+) -> None:
+    """Expose a Service in the tailnet at https://<name>.<tailnet> via a Tailscale Ingress."""
+    context = ctx.obj.context()
+    tailscale_operator.expose(context, name, service=service, port=port, path=path)
+    print_notes(
+        [
+            tailscale_operator.INGRESS_BACKEND_NOTE,
+            tailscale_operator.INGRESS_CERT_NOTE,
+            tailscale_operator.INGRESS_COMMIT_NOTE,
+        ]
+    )
+
+
+@app.command("unexpose")
+def unexpose(ctx: typer.Context, name: str = typer.Argument(..., help="Ingress name.")) -> None:
+    """Delete the Ingress manifest written by `expose`."""
+    context = ctx.obj.context()
+    tailscale_operator.unexpose(context, name)
+    print(f"note: {tailscale_operator.INGRESS_COMMIT_NOTE}")

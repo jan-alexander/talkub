@@ -174,24 +174,34 @@ nameserver: `talkub k -n tailscale delete pod -l app=nameserver`.
 
 ### Ingress
 
-Not automated by talkub — configure it directly in your app manifests:
+    talkub tailscale expose grafana --service monitoring/grafana --port 80
+    talkub tailscale expose grafana --service monitoring/grafana --port 80 --path /api
+    talkub tailscale unexpose grafana
 
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: web
-    spec:
-      loadBalancerClass: tailscale     # publishes the Service in the tailnet under its own MagicDNS name
-    ---
-    apiVersion: networking.k8s.io/v1
-    kind: Ingress
-    metadata:
-      name: web
-    spec:
-      ingressClassName: tailscale      # served by the operator's ingress proxy, also under a MagicDNS name
+Writes (or removes) `gitops/manifests/tailscale/ingress/<name>.yaml`: an Ingress
+(`ingressClassName: tailscale`) that publishes the Service at `https://<name>.<tailnet>`, either as
+a `defaultBackend` or, with `--path`, a single path-based rule. `--service` is `<namespace>/<service>`
+(a Service in another namespace than the Ingress's own is not supported by Kubernetes); `--port` is
+a number (1-65535) or the Service's named port. The backend must speak HTTP — the Tailscale proxy
+terminates TLS in front of it — and HTTPS certificates must be enabled for the tailnet in the admin
+console. After writing the file, commit and push `gitops/`.
+
+For an app installed via its own Helm chart (e.g. Argo CD itself), configure the ingress through the
+chart's values instead of `talkub tailscale expose`. Observed working with the Argo CD chart:
+
+    configs:
+      params:
+        server.insecure: true      # argocd-server would otherwise redirect HTTP to HTTPS and loop,
+                                    # since the Tailscale proxy terminates TLS and talks HTTP to it
+    server:
+      ingress:
+        enabled: true
+        ingressClassName: tailscale
+        hostname: argocd
+        tls: true
 
 See the operator's own docs for `tailscale.com/experimental-forward-cluster-traffic-via-ingress`
-if cluster-internal clients also need to reach the Ingress by that MagicDNS name.
+if cluster-internal clients also need to reach the Ingress by its MagicDNS name.
 
 ## Rotating the Talos CA
 

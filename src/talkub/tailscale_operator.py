@@ -9,22 +9,20 @@ before anything touches disk (`sealing.seal`)."""
 from __future__ import annotations
 
 import ipaddress
-import re
 from pathlib import Path
 
 from talkub import apps, charts, coredns, sealing, yamlio
 from talkub.context import Context
 from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
-from talkub.repo import ChartSpec, Repo, Settings
+from talkub.repo import ChartSpec, Repo, Settings, valid_label
 
 NAMESPACE = "tailscale"
 CHART_KEY = "tailscale-operator"
 _VALUES_HEADER = "# Helm values for the Tailscale operator (chart tailscale-operator). Used by talkub and by Argo CD.\n"
 _NAMESPACE_HEADER = "# Managed by talkub. The Tailscale proxies need privileged pods (sysctl, NET_ADMIN).\n"
+_INGRESS_HEADER = "# Managed by talkub (talkub tailscale expose).\n"
 
-# DNS-1123 label: lowercase letters, digits and '-', max 63 characters, not starting/ending with '-'.
-_EGRESS_NAME = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
 _TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 _TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 
@@ -35,6 +33,10 @@ SCOPES_NOTE = (
     "create the OAuth client with scopes Devices Core, Auth Keys, Services (write) and tag tag:k8s-operator"
 )
 COMMIT_NOTE = "commit and push gitops/ — Argo CD installs the operator"
+
+INGRESS_BACKEND_NOTE = "the backend must speak HTTP — TLS ends at the Tailscale proxy"
+INGRESS_CERT_NOTE = "HTTPS certificates must be enabled in the tailnet"
+INGRESS_COMMIT_NOTE = "commit and push gitops/"
 
 
 def app_path(repo: Repo) -> Path:
@@ -71,6 +73,14 @@ def egress_dir(repo: Repo) -> Path:
 
 def egress_path(repo: Repo, name: str) -> Path:
     return egress_dir(repo) / f"{name}.yaml"
+
+
+def ingress_dir(repo: Repo) -> Path:
+    return manifests_dir(repo) / "ingress"
+
+
+def ingress_path(repo: Repo, name: str) -> Path:
+    return ingress_dir(repo) / f"{name}.yaml"
 
 
 def values(cluster: str) -> str:
@@ -189,7 +199,7 @@ def enable(ctx: Context, *, client_id: str, client_secret: str, rotate_credentia
 
 
 def _check_egress_name(name: str) -> str:
-    if len(name) > 63 or not _EGRESS_NAME.fullmatch(name):
+    if not valid_label(name):
         raise ValidationError(
             f"invalid egress name {name!r}",
             hint="lowercase letters, digits and '-', max 63 characters (it becomes the Service name)",
@@ -259,6 +269,94 @@ def egress_remove(ctx: Context, name: str) -> Path:
     """Delete the egress Service manifest written by `egress_add`."""
     repo = ctx.repo
     path = egress_path(repo, name)
+    if not path.exists():
+        raise ValidationError(f"{repo.rel(path)} does not exist")
+    path.unlink()
+    print(f"   removed {repo.rel(path)}")
+    return path
+
+
+def _check_service(service: str) -> tuple[str, str]:
+    parts = service.split("/")
+    if len(parts) != 2 or not valid_label(parts[0]) or not valid_label(parts[1]):
+        raise ValidationError(
+            f"invalid --service {service!r}", hint="expected <namespace>/<service>, both DNS-1123 labels"
+        )
+    return parts[0], parts[1]
+
+
+def _check_port(port: str) -> int | str:
+    if port.isdigit():
+        number = int(port)
+        if not (1 <= number <= 65535):
+            raise ValidationError(
+                f"invalid --port {port!r}", hint="1-65535, or a port name (lowercase letters, digits and '-')"
+            )
+        return number
+    if not valid_label(port):
+        raise ValidationError(
+            f"invalid --port {port!r}", hint="1-65535, or a port name (lowercase letters, digits and '-')"
+        )
+    return port
+
+
+def _check_path(path: str) -> str:
+    if not path.startswith("/"):
+        raise ValidationError(f"--path must start with '/': {path!r}")
+    return path
+
+
+def ingress(name: str, namespace: str, service: str, port: int | str, path: str | None = None) -> str:
+    """Render a Tailscale-Ingress manifest exposing `service` (in `namespace`) at
+    `https://<name>.<tailnet>`, either as a `defaultBackend` or, with `path`, a single
+    path-based rule."""
+    port_field = {"number": port} if isinstance(port, int) else {"name": port}
+    backend = {"service": {"name": service, "port": port_field}}
+    spec: dict = {"ingressClassName": "tailscale"}
+    if path is None:
+        spec["defaultBackend"] = backend
+    else:
+        spec["rules"] = [{"http": {"paths": [{"path": path, "pathType": "Prefix", "backend": backend}]}}]
+    spec["tls"] = [{"hosts": [name]}]
+    doc = {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {"name": f"tailscale-{name}", "namespace": namespace},
+        "spec": spec,
+    }
+    return _INGRESS_HEADER + yamlio.dump(doc)
+
+
+def expose(ctx: Context, name: str, *, service: str, port: str, path: str | None = None) -> Path:
+    """Write an Ingress in `gitops/manifests/tailscale/ingress/<name>.yaml` that exposes a
+    Service in the tailnet at `https://<name>.<tailnet>`. The backend must speak HTTP: the
+    Tailscale proxy terminates TLS."""
+    repo = ctx.repo
+    if not app_path(repo).exists():
+        raise ValidationError("the Tailscale operator is not enabled", hint="talkub tailscale operator enable")
+    settings = repo.load_settings()
+    if not valid_label(name):
+        raise ValidationError(
+            f"invalid name {name!r}",
+            hint="lowercase letters, digits and '-', max 63 characters (it becomes the tailnet device name)",
+        )
+    namespace, svc = _check_service(service)
+    port_value = _check_port(port)
+    if path is not None:
+        path = _check_path(path)
+    target = ingress_path(repo, name)
+    if target.exists():
+        raise ValidationError(f"{repo.rel(target)} already exists", hint=f"talkub tailscale unexpose {name}")
+    atomic_write(target, ingress(name, namespace, svc, port_value, path).encode())
+    print(f"   wrote {repo.rel(target)}")
+    print(f"URL: https://{name}.{settings.tailscale.tailnet}")
+    return target
+
+
+def unexpose(ctx: Context, name: str) -> Path:
+    """Delete the Ingress manifest written by `expose`."""
+    repo = ctx.repo
+    path = ingress_path(repo, name)
     if not path.exists():
         raise ValidationError(f"{repo.rel(path)} does not exist")
     path.unlink()

@@ -447,3 +447,159 @@ def test_cli_egress_add_and_remove(operator_repo, capfd):
     assert not path.exists()
     out = capfd.readouterr().out
     assert "commit and push gitops/" in out
+
+
+# --- expose/unexpose ------------------------------------------------------------------------------
+
+
+def test_ingress_renders_default_backend_with_numeric_port():
+    text = tailscale_operator.ingress("web", "app", "web", 80)
+    assert text.startswith("# Managed by talkub (talkub tailscale expose).\n")
+    doc = yamlio.load(text)
+    assert doc == {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {"name": "tailscale-web", "namespace": "app"},
+        "spec": {
+            "ingressClassName": "tailscale",
+            "defaultBackend": {"service": {"name": "web", "port": {"number": 80}}},
+            "tls": [{"hosts": ["web"]}],
+        },
+    }
+
+
+def test_ingress_renders_default_backend_with_named_port():
+    doc = yamlio.load(tailscale_operator.ingress("web", "app", "web", "http"))
+    assert doc["spec"]["defaultBackend"]["service"]["port"] == {"name": "http"}
+
+
+def test_ingress_renders_path_rule_instead_of_default_backend():
+    doc = yamlio.load(tailscale_operator.ingress("web", "app", "web", 80, path="/api"))
+    assert "defaultBackend" not in doc["spec"]
+    assert doc["spec"]["rules"] == [
+        {
+            "http": {
+                "paths": [
+                    {
+                        "path": "/api",
+                        "pathType": "Prefix",
+                        "backend": {"service": {"name": "web", "port": {"number": 80}}},
+                    }
+                ]
+            }
+        }
+    ]
+    assert doc["spec"]["tls"] == [{"hosts": ["web"]}]
+
+
+def test_expose_requires_operator_enabled(repo):
+    ctx = Context.open(repo)
+    with pytest.raises(ValidationError) as exc:
+        tailscale_operator.expose(ctx, "web", service="app/web", port="80")
+    assert "operator" in str(exc.value)
+    assert "operator enable" in exc.value.hint
+
+
+@pytest.mark.parametrize("name", ["WEB", "-web", "web-", "has_underscore", "a b", "", "a" * 64])
+def test_expose_rejects_invalid_name(operator_repo, name):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.expose(ctx, name, service="app/web", port="80")
+
+
+@pytest.mark.parametrize("service", ["web", "app/web/extra", "APP/web", "app/WEB", "app/", "/web"])
+def test_expose_rejects_invalid_service(operator_repo, service):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.expose(ctx, "web", service=service, port="80")
+
+
+@pytest.mark.parametrize("port", ["0", "65536", "-1", "HTTP", "has_underscore", ""])
+def test_expose_rejects_invalid_port(operator_repo, port):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.expose(ctx, "web", service="app/web", port=port)
+
+
+def test_expose_accepts_named_port(operator_repo):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.expose(ctx, "web", service="app/web", port="http")
+    doc = yamlio.load(path.read_text())
+    assert doc["spec"]["defaultBackend"]["service"]["port"] == {"name": "http"}
+
+
+def test_expose_rejects_path_without_leading_slash(operator_repo):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.expose(ctx, "web", service="app/web", port="80", path="api")
+
+
+def test_expose_existing_file_errors_with_unexpose_hint(operator_repo):
+    ctx = Context.open(operator_repo)
+    tailscale_operator.expose(ctx, "web", service="app/web", port="80")
+    with pytest.raises(ValidationError) as exc:
+        tailscale_operator.expose(ctx, "web", service="app/web", port="80")
+    assert "unexpose web" in exc.value.hint
+
+
+def test_expose_writes_ingress_and_prints_url(operator_repo, capfd):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.expose(ctx, "web", service="app/web", port="80")
+    assert path == tailscale_operator.manifests_dir(operator_repo) / "ingress" / "web.yaml"
+    doc = yamlio.load(path.read_text())
+    assert doc["metadata"] == {"name": "tailscale-web", "namespace": "app"}
+    out = capfd.readouterr().out
+    assert f"wrote {operator_repo.rel(path)}" in out
+    assert f"URL: https://web.{TAILNET}" in out
+
+
+def test_expose_with_path_writes_rules_variant(operator_repo):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.expose(ctx, "web", service="app/web", port="80", path="/api")
+    doc = yamlio.load(path.read_text())
+    assert "defaultBackend" not in doc["spec"]
+    assert doc["spec"]["rules"][0]["http"]["paths"][0]["path"] == "/api"
+
+
+def test_unexpose_missing_errors(operator_repo):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.unexpose(ctx, "web")
+
+
+def test_unexpose_deletes_file(operator_repo):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.expose(ctx, "web", service="app/web", port="80")
+    assert path.exists()
+    result = tailscale_operator.unexpose(ctx, "web")
+    assert result == path
+    assert not path.exists()
+
+
+def test_check_stays_clean_after_expose(operator_repo):
+    ctx = Context.open(operator_repo)
+    tailscale_operator.expose(ctx, "web", service="app/web", port="80")
+    assert [f.message for f in run_checks(operator_repo) if f.level == "error"] == []
+
+
+def test_cli_expose_and_unexpose(operator_repo, capfd):
+    code = _run(
+        [
+            "--repo", str(operator_repo.root), "tailscale", "expose", "web",
+            "--service", "app/web", "--port", "80",
+        ]
+    )
+    assert code == 0
+    path = tailscale_operator.manifests_dir(operator_repo) / "ingress" / "web.yaml"
+    assert path.exists()
+    out = capfd.readouterr().out
+    assert f"URL: https://web.{TAILNET}" in out
+    assert "TLS ends at the Tailscale proxy" in out or "speak HTTP" in out
+    assert "certificates" in out
+    assert "commit and push gitops/" in out
+
+    code = _run(["--repo", str(operator_repo.root), "tailscale", "unexpose", "web"])
+    assert code == 0
+    assert not path.exists()
+    out = capfd.readouterr().out
+    assert "commit and push gitops/" in out
