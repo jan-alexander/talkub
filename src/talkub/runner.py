@@ -103,27 +103,31 @@ class Runner:
         """
         require_tool(argv[0])
         fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        try:
-            proc = subprocess.Popen(
-                list(argv), stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT,
-                env=child_env(env), start_new_session=True,
-            )
-        finally:
-            os.close(fd)
-        if threading.current_thread() is not threading.main_thread():
-            return proc.wait()
+        on_main_thread = threading.current_thread() is threading.main_thread()
         received: list[int] = []
 
         def hold(signum, frame):
             if not received:
-                print(
-                    f"{Path(argv[0]).name} is still running; waiting for it to finish (do not kill it)",
-                    file=sys.stderr, flush=True,
-                )
+                try:
+                    print(
+                        f"{Path(argv[0]).name} is still running; waiting for it to finish (do not kill it)",
+                        file=sys.stderr, flush=True,
+                    )
+                except OSError:
+                    pass  # e.g. the terminal hung up (EIO); keep waiting regardless
             received.append(signum)
 
-        previous = {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS}
+        previous = {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS} if on_main_thread else {}
         try:
+            try:
+                proc = subprocess.Popen(
+                    list(argv), stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT,
+                    env=child_env(env), start_new_session=True,
+                )
+            finally:
+                os.close(fd)
+            if not on_main_thread:
+                return proc.wait()
             code = proc.wait()  # the handler does not raise, so wait() resumes after each signal
         finally:
             for sig, old in previous.items():

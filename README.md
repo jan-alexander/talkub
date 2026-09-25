@@ -130,11 +130,12 @@ Before you start:
 - Every other talosconfig for this cluster stops working after the rotation, for example
   `~/.talos/config` or copies held by other admins. Hand out the new one from the repo.
 - Do not interrupt the rotation. `talosctl rotate-ca` can take several minutes. On Ctrl-C,
-  SIGTERM or a closed terminal, talkub waits for talosctl to finish and keeps its output before it
-  stops. If talkub is killed hard (SIGKILL), talosctl keeps running on its own.
-- In every case the printed temp directory holds the new talosconfig and `rotate-ca.out`, the raw
-  talosctl output written while it runs. That output contains the new CA and client key. Delete the
-  directory once the rotation is finished.
+  SIGTERM or a closed terminal, talkub keeps waiting for talosctl to finish (even if it can no
+  longer print) and keeps its output before it stops. If talkub is killed hard (SIGKILL), talosctl
+  keeps running on its own.
+- If the rotation is interrupted or fails, the printed temp directory holds `rotate-ca.out`
+  (talosctl's full output, including the new keys) and, if talosctl got that far, the new
+  talosconfig; after a successful run it is deleted.
 
 Commit `talos/` afterwards.
 

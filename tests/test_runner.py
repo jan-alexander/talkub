@@ -1,5 +1,6 @@
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -117,6 +118,49 @@ def test_run_uninterruptible_waits_for_the_child_on_signals(tmp_path, capfd, sig
     assert sorted(out.read_text().split()) == ["ERR", "MARKER"]  # the child was not killed
     assert f"{Path(sys.executable).name} is still running; waiting for it to finish (do not kill it)" in capfd.readouterr().err
     assert {sig: signal.getsignal(sig) for sig in before} == before
+
+
+class _BrokenStderr:
+    """A tty that has hung up: writing to it raises EIO, like a real closed terminal."""
+
+    def write(self, *args, **kwargs):
+        raise OSError("I/O error")
+
+    def flush(self):
+        raise OSError("I/O error")
+
+
+def test_run_uninterruptible_survives_a_closed_terminal(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    monkeypatch.setattr(sys, "stderr", _BrokenStderr())
+    start = time.monotonic()
+    timer = _send_later(signal.SIGINT)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            Runner().run_uninterruptible([sys.executable, "-c", SLOW_CHILD], output=out)
+    finally:
+        timer.cancel()
+    assert time.monotonic() - start >= 1.0  # raised only after the child finished
+    assert sorted(out.read_text().split()) == ["ERR", "MARKER"]  # output file is complete
+
+
+def test_run_uninterruptible_restores_handlers_when_popen_fails(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    before = {sig: signal.getsignal(sig) for sig in signals}
+    during: dict[int, object] = {}
+
+    def fake_popen(*args, **kwargs):
+        during.update({sig: signal.getsignal(sig) for sig in signals})
+        raise OSError("exec failed")
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    with pytest.raises(OSError):
+        Runner().run_uninterruptible([sys.executable, "-c", "pass"], output=out)
+    # the hold handlers were already installed by the time Popen was called
+    assert during != before
+    # ... and restored once Popen raised
+    assert {sig: signal.getsignal(sig) for sig in signals} == before
 
 
 def test_run_uninterruptible_new_session(tmp_path):
