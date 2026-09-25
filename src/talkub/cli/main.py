@@ -14,6 +14,7 @@ from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import lifecycle as lifecycle_cli
 from talkub.cli import nodes as nodes_cli
 from talkub.cli import repo as repo_cli
+from talkub.cli import rotate as rotate_cli
 from talkub.cli import sops as sops_cli
 from talkub.cli import status as status_cli
 from talkub.cli import tailscale as tailscale_cli
@@ -62,6 +63,7 @@ app.add_typer(upgrade_cli.app, name="upgrade")
 app.command("status")(status_cli.status)
 app.add_typer(tailscale_cli.app, name="tailscale")
 app.add_typer(repo_cli.app, name="repo")
+app.command("rotate-ca")(rotate_cli.rotate_ca)
 
 PASSTHROUGH = {"t": access.talosctl, "talosctl": access.talosctl, "k": access.kubectl, "kubectl": access.kubectl}
 

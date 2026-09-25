@@ -1,0 +1,30 @@
+"""rotate-ca: rotate the Talos API CA."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import typer
+
+from talkub import rotation
+from talkub.errors import ValidationError
+
+
+def rotate_ca(
+    ctx: typer.Context,
+    yes: bool = typer.Option(False, "--yes", help="Do not ask before rotating."),
+    finish: bool = typer.Option(False, "--finish", help="Finish an interrupted rotation."),
+    talosconfig: Path = typer.Option(
+        None, "--talosconfig", help="With --finish: plaintext talosconfig left by an interrupted rotation."
+    ),
+) -> None:
+    """Rotate the Talos API CA and update the talosconfig and secrets bundle in the repo."""
+    context = ctx.obj.context()
+    if talosconfig is not None and not finish:
+        raise ValidationError("--talosconfig needs --finish")
+    if finish:
+        notes = rotation.finish(context, talosconfig.expanduser() if talosconfig else None)
+    else:
+        notes = rotation.rotate(context, confirm=lambda question: yes or typer.confirm(question, default=False))
+    for note in notes:
+        print(f"note: {note}")

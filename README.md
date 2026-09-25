@@ -108,6 +108,24 @@ Rollback: delete `talos/patches/firewall.yaml`, reset `mgmt` in `.talkub.yaml` t
 LAN addresses (or remove the entries), point the talosconfig endpoints/nodes and the
 kubeconfig `server` back at the LAN with `talkub sops edit`, then run `talkub apply` via LAN.
 
+## Rotating the Talos CA
+
+    talkub rotate-ca            # asks for confirmation, then rotates the Talos API CA
+    talkub rotate-ca --yes      # no prompt
+
+Do this when the Talos API CA or a client certificate may have been exposed. It runs
+`talosctl rotate-ca`, then writes the new talosconfig and CA cert/key into the repo
+(`talos/talosconfig.sops.yaml`, `certs.os` in the secrets bundle). The previous encrypted
+talosconfig is kept as `talos/talosconfig.previous.sops.yaml` while a rotation is in
+progress; its presence means `talkub rotate-ca --finish` is needed to complete it.
+
+If a rotation is interrupted after `talosctl rotate-ca` has already run, `talkub rotate-ca
+--finish` retries bringing the repo in line. If the new talosconfig itself could not be
+stored, its plaintext is kept under a printed temp path; pass it explicitly with
+`talkub rotate-ca --finish --talosconfig <path>`.
+
+Commit `talos/` afterwards.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate
