@@ -11,6 +11,9 @@ import json
 import re
 from collections import Counter
 
+from talkub import yamlio
+from talkub.errors import ValidationError
+
 _SERVER_TAG = re.compile(r"^Server:\s*$.*?^\s*Tag:\s*(\S+)", re.MULTILINE | re.DOTALL)
 _TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 
@@ -248,6 +251,20 @@ def kubelet_versions(text: str) -> dict[str, str]:
         if isinstance(name, str) and isinstance(version, str):
             result[name] = version.lstrip("v")
     return result
+
+
+def machine_ca(text: str) -> tuple[str, str]:
+    """(crt, key) of machine.ca from `talosctl get machineconfig -o yaml`; never printed by callers."""
+    for resource in yamlio.load_all(text):
+        if not isinstance(resource, dict):
+            continue
+        spec = resource.get("spec")
+        documents = yamlio.load_all(spec) if isinstance(spec, str) else [spec]
+        for doc in documents:
+            ca = (doc or {}).get("machine", {}).get("ca") if isinstance(doc, dict) else None
+            if isinstance(ca, dict) and isinstance(ca.get("crt"), str) and isinstance(ca.get("key"), str):
+                return ca["crt"], ca["key"]
+    raise ValidationError("no machine CA in the machine config")
 
 
 def application_summary(text: str) -> dict[str, int] | None:

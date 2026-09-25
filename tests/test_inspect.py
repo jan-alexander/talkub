@@ -272,3 +272,39 @@ def test_redact_diff_env_value_forms():
     assert "UNRELATED=fine" in result
     assert "crt: cert-value" in result  # certificates stay
     assert "key: <redacted>" in result  # nested inside the flow mapping
+
+
+import base64
+
+CRT = base64.b64encode(b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n").decode()
+KEY = base64.b64encode(b"-----BEGIN ED25519 PRIVATE KEY-----\nMC4C\n-----END ED25519 PRIVATE KEY-----\n").decode()
+MACHINE = f"version: v1alpha1\nmachine:\n  type: controlplane\n  ca:\n    crt: {CRT}\n    key: {KEY}\ncluster:\n  id: x\n---\napiVersion: v1alpha1\nkind: HostnameConfig\nhostname: cp-01\n"
+
+
+def _resource(spec) -> str:
+    from talkub import yamlio
+
+    return yamlio.dump({"node": "10.0.0.10", "metadata": {"namespace": "config", "type": "MachineConfigs.config.talos.dev", "id": "v1alpha1"}, "spec": spec}) + "---\n"
+
+
+def test_machine_ca_from_spec_string():
+    from talkub.talos.inspect import machine_ca
+
+    assert machine_ca(_resource(MACHINE)) == (CRT, KEY)
+
+
+def test_machine_ca_from_spec_mapping():
+    from talkub import yamlio
+    from talkub.talos.inspect import machine_ca
+
+    assert machine_ca(_resource(yamlio.load_all(MACHINE)[0])) == (CRT, KEY)
+
+
+def test_machine_ca_missing():
+    import pytest
+
+    from talkub.errors import ValidationError
+    from talkub.talos.inspect import machine_ca
+
+    with pytest.raises(ValidationError):
+        machine_ca(_resource("version: v1alpha1\nmachine:\n  type: controlplane\n"))
