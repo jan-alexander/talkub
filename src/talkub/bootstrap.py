@@ -68,6 +68,9 @@ def run(ctx: Context) -> None:
     backup = sealing.key_backup_path(ctx.repo)
     had_backup = backup.is_file()
     with kube_session(ctx) as kube:
+        if "coredns" in settings.charts:
+            _step("installing coredns")
+            helm_install(kube, ctx.repo, "coredns", "coredns", settings.charts["coredns"], "kube-system", False)
         if had_backup:
             _step("restoring the sealed-secrets key")
             with decrypted(ctx.sops, {"sealing-key.yaml": backup}) as plain:

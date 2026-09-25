@@ -10,7 +10,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from string import Template
 
-from talkub import charts
+from talkub import charts, coredns
 from talkub.crypto.sops import Sops, render_sops_config
 from talkub.ephemeral import private_tempdir
 from talkub.errors import ValidationError
@@ -60,6 +60,7 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
 
     # Network lookups first: nothing is written if they fail.
     chart_specs = charts.resolve_defaults(runner)
+    chart_specs["coredns"] = charts.resolve(runner, "coredns")
     target.mkdir(parents=True, exist_ok=True)
     try:
         return _populate(Repo(target.resolve()), request, chart_specs, runner)
@@ -138,6 +139,7 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
     )
     repo.write_settings(settings)
     _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, git_url))
+    coredns.write_files(repo, settings.charts["coredns"], git_url)
     for node in request.nodes:
         options = request.node_options.get(node, NodeOptions())
         atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node, options).encode())

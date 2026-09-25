@@ -46,11 +46,22 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
         ".gitignore", ".sops.yaml", "README.md",
         "keys/recipients.txt", "keys/master.age", "keys/master.pub",
         "talos/secrets.sops.yaml", "talos/talosconfig.sops.yaml",
-        "talos/patches/controlplane.yaml", "talos/nodes/cp-01.yaml",
+        "talos/patches/controlplane.yaml", "talos/patches/controlplane-coredns.yaml",
+        "talos/nodes/cp-01.yaml",
         "gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml",
-        "gitops/values/argocd.yaml", "gitops/values/sealed-secrets.yaml", "gitops/manifests/.gitkeep",
+        "gitops/apps/coredns.yaml",
+        "gitops/values/argocd.yaml", "gitops/values/sealed-secrets.yaml", "gitops/values/coredns.yaml",
+        "gitops/manifests/.gitkeep",
     ):
         assert (repo.root / rel).is_file(), rel
+
+    assert settings.charts["coredns"].version == "1.2.3"
+    coredns_values = yamlio.load((repo.root / "gitops/values/coredns.yaml").read_text())
+    assert "servers" in coredns_values and len(coredns_values["servers"]) == 1  # no tailnet stub zone yet
+    coredns_app = yamlio.load((repo.root / "gitops/apps/coredns.yaml").read_text())
+    assert coredns_app["spec"]["sources"][1]["repoURL"] == "https://git.example.com/demo.git"
+    patch = yamlio.load((repo.root / "talos/patches/controlplane-coredns.yaml").read_text())
+    assert patch == {"apiVersion": "v1alpha1", "kind": "KubeCoreDNSConfig", "enabled": False}
 
     root_app = yamlio.load((repo.root / "gitops/root.yaml").read_text())
     assert root_app["spec"]["source"]["repoURL"] == "https://git.example.com/demo.git"

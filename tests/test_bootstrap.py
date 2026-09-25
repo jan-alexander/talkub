@@ -193,6 +193,28 @@ def test_bootstrap_error_is_reported(cluster):
     assert "connection refused" in exc.value.hint
 
 
+def test_coredns_installed_first_when_configured(cluster):
+    repo, spies = cluster
+    settings = repo.load_settings()
+    settings.charts["coredns"] = ChartSpec("https://coredns.github.io/helm", "coredns", "1.35.0")
+    repo.write_settings(settings)
+    atomic_write(repo.gitops_dir / "values" / "coredns.yaml", b"{}\n")
+    bootstrap.run(Context.open(repo))
+    helm = spies["helm"].argvs
+    assert helm[0][:4] == ["upgrade", "--install", "coredns", "coredns"]
+    assert "--create-namespace" not in helm[0]
+    assert helm[0][helm[0].index("--namespace") + 1] == "kube-system"
+    assert helm[1][:4] == ["upgrade", "--install", "sealed-secrets", "sealed-secrets"]
+    assert helm[2][:4] == ["upgrade", "--install", "argocd", "argo-cd"]
+
+
+def test_no_coredns_chart_leaves_bootstrap_unchanged(cluster):
+    repo, spies = cluster
+    bootstrap.run(Context.open(repo))
+    helm = spies["helm"].argvs
+    assert [a[2] for a in helm] == ["sealed-secrets", "argocd"]
+
+
 def test_missing_chart_settings(cluster):
     repo, _ = cluster
     settings = repo.load_settings()

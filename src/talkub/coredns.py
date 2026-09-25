@@ -216,6 +216,21 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
     ]
 
 
+def write_files(repo: Repo, chart: ChartSpec, git_url: str, tailnet: str | None = None) -> None:
+    """Write the Talos patch, Helm values and Argo CD app for CoreDNS. Shared by `init_cluster`
+    (a fresh cluster, no stub zone yet) and `takeover` (a running cluster, possibly with the
+    Tailscale operator already configured)."""
+    values_file = repo.rel(values_path(repo))
+    files = {
+        patch_path(repo): talos_patch(),
+        values_path(repo): values(tailnet),
+        app_path(repo): apps.helm_app("coredns", chart, git_url, values_file, NAMESPACE),
+    }
+    for path, text in files.items():
+        atomic_write(path, text.encode())
+        print(f"   wrote {repo.rel(path)}")
+
+
 def _write_repo_files(ctx: Context) -> None:
     repo = ctx.repo
     settings = repo.load_settings()
@@ -224,15 +239,7 @@ def _write_repo_files(ctx: Context) -> None:
     repo.write_settings(settings)
     operator_app = repo.gitops_dir / "apps" / "tailscale-operator.yaml"
     tailnet = settings.tailscale.tailnet if settings.tailscale and operator_app.exists() else None
-    values_file = repo.rel(values_path(repo))
-    files = {
-        patch_path(repo): talos_patch(),
-        values_path(repo): values(tailnet),
-        app_path(repo): apps.helm_app("coredns", chart, settings.git.url, values_file, NAMESPACE),
-    }
-    for path, text in files.items():
-        atomic_write(path, text.encode())
-        print(f"   wrote {repo.rel(path)}")
+    write_files(repo, chart, settings.git.url, tailnet)
 
 
 def _rendered_ports(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dict]:
