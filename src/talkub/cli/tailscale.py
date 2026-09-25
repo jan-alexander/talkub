@@ -1,4 +1,4 @@
-"""tailscale enable, tailscale lockdown."""
+"""tailscale enable, tailscale lockdown, tailscale operator enable."""
 
 from __future__ import annotations
 
@@ -6,11 +6,14 @@ from pathlib import Path
 
 import typer
 
-from talkub import tailscale
+from talkub import tailscale, tailscale_operator
 from talkub.cli.prompts import read_secret
 
 app = typer.Typer(help="Tailscale as the only admin path to the Talos and Kubernetes APIs.", no_args_is_help=True)
 NODE_CIDR = typer.Option(None, "--node-cidr", help="Node network for cluster-internal rules (default: /24 of the first node).")
+
+operator_app = typer.Typer(help="The Tailscale Kubernetes operator (API server proxy, egress).", no_args_is_help=True)
+app.add_typer(operator_app, name="operator")
 
 
 def read_authkey(path: Path | None, repo_root: Path | None = None) -> str:
@@ -50,3 +53,27 @@ def lockdown(
 ) -> None:
     """Step 2: Talos firewall + tailnet addresses for talosctl/kubectl."""
     print_notes(tailscale.lockdown(ctx.obj.context(), node_cidr=node_cidr, use_ips=use_ips))
+
+
+@operator_app.command("enable")
+def operator_enable(
+    ctx: typer.Context,
+    client_id: str = typer.Option(None, "--client-id", help="OAuth client ID (default: prompt)."),
+    client_secret_file: Path = typer.Option(
+        None, "--client-secret-file", help="File with the OAuth client secret (default: prompt)."
+    ),
+    rotate_credentials: bool = typer.Option(
+        False, "--rotate-credentials", help="Replace the OAuth client of an already-enabled operator."
+    ),
+) -> None:
+    """Install the Tailscale Kubernetes operator (Helm release, DNSConfig, sealed OAuth client)."""
+    context = ctx.obj.context()
+    tailscale_operator.check_can_enable(context.repo, rotate_credentials=rotate_credentials)
+    if not client_id:
+        client_id = typer.prompt("OAuth client ID")
+    client_secret = read_secret(client_secret_file, "OAuth client secret: ", repo_root=context.repo.root)
+    print_notes(
+        tailscale_operator.enable(
+            context, client_id=client_id, client_secret=client_secret, rotate_credentials=rotate_credentials
+        )
+    )
