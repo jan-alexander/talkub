@@ -1,4 +1,4 @@
-"""Entry point: global options, error reporting and raw pass-through for t/k."""
+"""Entry point: global options, error reporting and raw pass-through for t/k/run."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from talkub import __version__, access
+from talkub import __version__, access, shortcuts
 from talkub.cli import admin, check, image, keys, secret, session, setup
 from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import coredns as coredns_cli
@@ -67,6 +67,42 @@ app.add_typer(repo_cli.app, name="repo")
 app.add_typer(coredns_cli.app, name="coredns")
 app.command("rotate-ca")(rotate_cli.rotate_ca)
 
+RUN_USAGE = """\
+usage: talkub run                                       list the shortcuts in .talkub.yaml
+       talkub run [--print] [--follow] <name> [args...]  run one
+
+  --print   secret: write the value to stdout instead of the clipboard
+  --follow  job: wait for the pod, stream its logs, exit with the job's result
+
+Arguments after <name> are passed on verbatim (run shortcuts only)."""
+
+
+@app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def _run_help() -> None:
+    """Run a shortcut from .talkub.yaml (secret, job, run, portForward); without a name, list them."""
+    # Never reached via main(), which handles `run` raw (like t/k) so options after the name pass through.
+    print(RUN_USAGE)
+
+
+def run_shortcut(state: State, args: list[str]) -> int:
+    """`talkub run [--print] [--follow] [<name> [args...]]`, parsed raw: flags only before the name."""
+    print_value = follow = False
+    index = 0
+    while index < len(args) and args[index] in ("--print", "--follow", "--help", "-h"):
+        if args[index] in ("--help", "-h"):
+            print(RUN_USAGE)
+            return 0
+        print_value = print_value or args[index] == "--print"
+        follow = follow or args[index] == "--follow"
+        index += 1
+    ctx = state.context()
+    if index == len(args):
+        lines = shortcuts.listing(ctx.repo.load_settings())
+        print("\n".join(lines) if lines else "no shortcuts defined in .talkub.yaml")
+        return 0
+    return shortcuts.run(ctx, args[index], args[index + 1 :], print_value=print_value, follow=follow)
+
+
 PASSTHROUGH = {"t": access.talosctl, "talosctl": access.talosctl, "k": access.kubectl, "kubectl": access.kubectl}
 
 
@@ -104,6 +140,8 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if rest and rest[0] in PASSTHROUGH:
             raise SystemExit(PASSTHROUGH[rest[0]](state.context(), rest[1:]))
+        if rest and rest[0] == "run":
+            raise SystemExit(run_shortcut(state, rest[1:]))
         app(args=argv, prog_name="talkub")
     except TalkubError as err:
         _report(err, state.debug)

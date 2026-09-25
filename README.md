@@ -47,6 +47,46 @@ Inside `talkub shell`, `TALKUB_SESSION` holds the cluster name. zsh prompt examp
 
     PROMPT='${TALKUB_SESSION:+(talkub:$TALKUB_SESSION) }'$PROMPT
 
+## Shortcuts
+
+Frequent commands can be named in `.talkub.yaml` and run with `talkub run`:
+
+```yaml
+shortcuts:
+  db-password:
+    description: password of the app database
+    secret: {namespace: prod, name: db-creds, key: password}
+  backup:
+    job: {namespace: prod, cronjob: backup, follow: true}
+  argocd-apps:
+    run: [k, -n, argocd, get, applications]
+  grafana:
+    portForward: {namespace: monitoring, service: grafana, ports: ["3000:80"]}
+```
+
+    talkub run                              # list: name, kind, description
+    talkub run db-password                  # copy the secret value to the clipboard
+    talkub run --print db-password          # write it to stdout instead
+    talkub run --follow backup              # start the job, stream its logs
+    talkub run argocd-apps -o wide          # arguments after the name are passed on verbatim
+
+Each shortcut has exactly one kind:
+
+- `secret`: reads the Secret with kubectl and copies the base64-decoded key to the clipboard
+  (`pbcopy`, `wl-copy` or `xclip`, value on stdin only). A detached helper clears the clipboard
+  after 45 s (`TALKUB_CLIPBOARD_CLEAR_SECONDS`), but only if it still holds that value; the helper
+  gets only a SHA-256 digest of it. `--print` writes the bare value to stdout instead (a newline
+  only on a terminal), e.g. `talkub run --print db-password | ...`. A missing key is reported with
+  the names of the keys that exist.
+- `job`: creates `<cronjob>-manual-<timestamp>` from the CronJob. With `follow: true` or
+  `--follow`, waits for its pod, streams the logs and exits 0 only if the job succeeded.
+- `run`: `k`/`kubectl` or `t`/`talosctl` with the configured arguments, as with `talkub k`/`talkub t`;
+  further arguments (including options like `-f`) are appended.
+- `portForward`: `kubectl port-forward svc/<service> <ports...>` until Ctrl-C.
+
+`--print` and `--follow` go before the name; everything after the name belongs to the shortcut,
+and only `run` shortcuts accept anything there.
+
 ## Nodes and machine configs
 
     talkub node add w-01 --ip 10.0.0.11 --role worker \

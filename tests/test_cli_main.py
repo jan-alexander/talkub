@@ -109,3 +109,61 @@ def test_sops_edit_unchanged_exits_zero_and_keeps_file(repo_with_configs, fake_b
     before = path.read_bytes()
     assert _run(["--repo", str(repo_with_configs.root), "sops", "edit", str(path)]) == 0
     assert path.read_bytes() == before
+def _with_shortcuts(repo):
+    from talkub.repo import Shortcut
+
+    settings = repo.load_settings()
+    settings.shortcuts = {
+        "pods": Shortcut(name="pods", kind="run", description="list pods", argv=("k", "get", "pods")),
+        "backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="backup-job"),
+    }
+    repo.write_settings(settings)
+
+
+def test_run_without_name_lists_shortcuts(repo_with_configs, capfd):
+    _with_shortcuts(repo_with_configs)
+    assert _run(["--repo", str(repo_with_configs.root), "run"]) == 0
+    lines = capfd.readouterr().out.splitlines()
+    assert any(line.split() == ["pods", "run", "list", "pods"] for line in lines)
+    assert any(line.split() == ["backup", "job"] for line in lines)
+
+
+def test_run_without_shortcuts_says_so(repo_with_configs, capfd):
+    assert _run(["--repo", str(repo_with_configs.root), "run"]) == 0
+    assert "no shortcuts defined in .talkub.yaml" in capfd.readouterr().out
+
+
+def test_run_unknown_name_is_an_error(repo_with_configs, capfd):
+    _with_shortcuts(repo_with_configs)
+    assert _run(["--repo", str(repo_with_configs.root), "run", "nope"]) == 1
+    err = capfd.readouterr().err
+    assert "unknown shortcut 'nope'" in err and "backup" in err
+
+
+def test_run_passes_dash_f_after_the_name_through(repo_with_configs, fake_bin, capfd):
+    _with_shortcuts(repo_with_configs)
+    fake_bin("kubectl", ECHO_ARGS)
+    assert _run(["--repo", str(repo_with_configs.root), "run", "pods", "-f", "--follow", "x"]) == 3
+    assert "args:get pods -f --follow x" in capfd.readouterr().out
+
+
+def test_run_flags_before_the_name(repo_with_configs, monkeypatch):
+    from talkub import shortcuts
+
+    seen = []
+    monkeypatch.setattr(
+        shortcuts, "run", lambda ctx, name, extra, *, print_value=False, follow=False: seen.append((name, extra, print_value, follow)) or 0
+    )
+    assert _run(["--repo", str(repo_with_configs.root), "run", "--follow", "--print", "creds", "--print"]) == 0
+    assert seen == [("creds", ["--print"], True, True)]
+
+
+def test_run_help(capfd):
+    assert _run(["run", "--help"]) == 0
+    out = capfd.readouterr().out
+    assert "talkub run [--print] [--follow] <name>" in out
+
+
+def test_top_level_help_mentions_run(capfd):
+    assert _run(["--help"]) == 0
+    assert "Run a shortcut" in capfd.readouterr().out

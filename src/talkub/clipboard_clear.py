@@ -9,7 +9,6 @@ anything, so nothing leaks even if the stdout/stderr redirection by the parent w
 from __future__ import annotations
 
 import hashlib
-import os
 import sys
 import time
 
@@ -19,7 +18,7 @@ from talkub.runner import Runner
 
 def main() -> None:
     digest = sys.stdin.read().strip()
-    time.sleep(float(os.environ.get("TALKUB_CLIPBOARD_CLEAR_SECONDS", "45")))
+    time.sleep(clipboard.clear_seconds())
     found = clipboard.tool()
     if found is None:
         return

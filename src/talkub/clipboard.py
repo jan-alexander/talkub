@@ -8,12 +8,22 @@ detached, longer-lived process never holds the plaintext.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import sys
 from dataclasses import dataclass
 
 from talkub.errors import CommandFailed, ValidationError
 from talkub.runner import Runner
+
+
+CLEAR_SECONDS_ENV = "TALKUB_CLIPBOARD_CLEAR_SECONDS"
+DEFAULT_CLEAR_SECONDS = 45.0
+
+
+def clear_seconds() -> float:
+    """Delay before the clearer empties the clipboard (env TALKUB_CLIPBOARD_CLEAR_SECONDS, default 45)."""
+    return float(os.environ.get(CLEAR_SECONDS_ENV, DEFAULT_CLEAR_SECONDS))
 
 
 @dataclass(frozen=True)
