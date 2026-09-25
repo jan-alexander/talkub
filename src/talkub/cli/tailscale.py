@@ -15,6 +15,11 @@ NODE_CIDR = typer.Option(None, "--node-cidr", help="Node network for cluster-int
 operator_app = typer.Typer(help="The Tailscale Kubernetes operator (API server proxy, egress).", no_args_is_help=True)
 app.add_typer(operator_app, name="operator")
 
+egress_app = typer.Typer(
+    help="Egress: reach tailnet hosts from pods via ExternalName Services.", no_args_is_help=True
+)
+app.add_typer(egress_app, name="egress")
+
 
 def read_authkey(path: Path | None, repo_root: Path | None = None) -> str:
     """From a file, or prompted without echo — never from the command line."""
@@ -77,3 +82,27 @@ def operator_enable(
             context, client_id=client_id, client_secret=client_secret, rotate_credentials=rotate_credentials
         )
     )
+
+
+@egress_app.command("add")
+def egress_add(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Egress name; becomes the Service name."),
+    fqdn: str = typer.Option(None, "--fqdn", help="Tailnet DNS name to reach, e.g. host.tail1234.ts.net."),
+    ip: str = typer.Option(None, "--ip", help="Tailnet IP to reach, instead of --fqdn."),
+    namespace: str = typer.Option(
+        tailscale_operator.NAMESPACE, "--namespace", help="Namespace for the Service (must already exist if not 'tailscale')."
+    ),
+) -> None:
+    """Write a Service that lets pods reach a tailnet host or address by name (`<name>.<namespace>.svc.cluster.local`)."""
+    context = ctx.obj.context()
+    tailscale_operator.egress_add(context, name, fqdn=fqdn, ip=ip, namespace=namespace)
+    print(f"note: {tailscale_operator.EGRESS_COMMIT_NOTE}")
+
+
+@egress_app.command("remove")
+def egress_remove(ctx: typer.Context, name: str = typer.Argument(..., help="Egress name.")) -> None:
+    """Delete the egress Service manifest."""
+    context = ctx.obj.context()
+    tailscale_operator.egress_remove(context, name)
+    print(f"note: {tailscale_operator.EGRESS_COMMIT_NOTE}")

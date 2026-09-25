@@ -108,6 +108,77 @@ Rollback: delete `talos/patches/firewall.yaml`, reset `mgmt` in `.talkub.yaml` t
 LAN addresses (or remove the entries), point the talosconfig endpoints/nodes and the
 kubeconfig `server` back at the LAN with `talkub sops edit`, then run `talkub apply` via LAN.
 
+## CoreDNS
+
+    talkub coredns takeover              # moves CoreDNS from Talos to Argo CD (DNS keeps working)
+    talkub coredns takeover --resume     # finish an interrupted takeover
+
+Talos manages CoreDNS by default (the `kube-system/coredns` ConfigMap and Deployment, behind the
+`kube-dns` Service). `takeover` stops Talos from managing it (`talos/patches/coredns.yaml`,
+`KubeCoreDNSConfig` `enabled: false`) and installs CoreDNS as a Helm release (release `coredns`,
+Deployment `coredns-talkub`) that Argo CD manages instead. The `kube-dns` Service keeps its
+ClusterIP and selector throughout, so DNS keeps working during the switch. New clusters get
+CoreDNS this way from the start: `talkub init` writes the patch, Argo CD app and Helm values, and
+`talkub bootstrap` installs the Helm release before Sealed Secrets and Argo CD.
+
+If a takeover is interrupted partway, finish it with `talkub coredns takeover --resume` before
+running `talkub apply` or `talkub upgrade` again. `talkub tailscale operator enable` also
+requires the takeover to be done first (it extends the CoreDNS values with a stub zone for the
+tailnet).
+
+## Tailscale operator
+
+    talkub tailscale operator enable                      # OAuth client ID/secret via prompt or --client-*-file
+    talkub tailscale operator enable --rotate-credentials  # replace the OAuth client, keep everything else
+
+Prerequisites: `talkub tailscale enable` (the tailnet is known) and `talkub coredns takeover`
+(Argo CD manages CoreDNS, so its values can carry the operator's stub zone).
+
+In the Tailscale admin console, create an OAuth client with scopes Devices Core, Auth Keys and
+Services (write), tagged `tag:k8s-operator`, and add to the tailnet ACL:
+
+    "tagOwners": {"tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"]}
+
+`operator enable` seals the OAuth client into
+`gitops/manifests/tailscale/operator-oauth.sealed.yaml` and writes the Helm release
+(`tailscale-operator`), its manifests directory app and a `DNSConfig` that points the CoreDNS
+stub zone for `<tailnet>` at the operator's nameserver. Run it again without
+`--rotate-credentials` and it refuses ("already enabled"); with it, only the sealed secret is
+replaced.
+
+### Egress
+
+    talkub tailscale egress add db --fqdn db.tail1234.ts.net
+    talkub tailscale egress add db --ip 100.64.1.2 --namespace app   # namespace must already exist
+    talkub tailscale egress remove db
+
+Writes (or removes) `gitops/manifests/tailscale/egress/<name>.yaml`: an `ExternalName` Service
+annotated `tailscale.com/tailnet-fqdn` (or `tailscale.com/tailnet-ip`), which the operator points
+at the tailnet target. After commit, push and sync, pods reach it both by its MagicDNS name
+(`db.tail1234.ts.net`, resolved via the CoreDNS stub zone) and via the cluster Service
+(`db.tailscale.svc.cluster.local`).
+
+### Ingress
+
+Not automated by talkub — configure it directly in your app manifests:
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: web
+    spec:
+      loadBalancerClass: tailscale     # publishes the Service in the tailnet under its own MagicDNS name
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: web
+    spec:
+      ingressClassName: tailscale      # served by the operator's ingress proxy, also under a MagicDNS name
+
+See the operator's own docs for `tailscale.com/experimental-forward-cluster-traffic-via-ingress`
+if cluster-internal clients also need to reach the Ingress by that MagicDNS name.
+
 ## Rotating the Talos CA
 
     talkub rotate-ca            # asks for confirmation, then rotates the Talos API CA

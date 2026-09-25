@@ -46,6 +46,13 @@ def repo(repo_with_configs):
 
 
 @pytest.fixture
+def operator_repo(repo):
+    """`repo` plus a placeholder tailscale-operator app (as if `operator enable` already ran)."""
+    atomic_write(tailscale_operator.app_path(repo), b"placeholder\n")
+    return repo
+
+
+@pytest.fixture
 def kubeseal_spy(spy, fake_bin):
     """Fakes kubectl (only presence is required), kubeseal (--fetch-cert, --cert) and helm (chart resolve)."""
     spy("kubectl")
@@ -255,3 +262,132 @@ def test_cli_operator_enable_prompts_for_client_id(repo, tmp_path, kubeseal_spy,
     )
     assert code == 0
     assert asked == ["OAuth client ID"]
+
+
+# --- egress add/remove ---------------------------------------------------------------------------
+
+
+def test_egress_add_requires_operator_enabled(repo):
+    ctx = Context.open(repo)
+    with pytest.raises(ValidationError) as exc:
+        tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET)
+    assert "operator" in str(exc.value)
+    assert "operator enable" in exc.value.hint
+
+
+@pytest.mark.parametrize("name", ["DB", "-db", "db-", "has_underscore", "a b", ""])
+def test_egress_add_rejects_invalid_name(operator_repo, name):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_add(ctx, name, fqdn="db." + TAILNET)
+
+
+def test_egress_add_rejects_name_over_63_chars(operator_repo):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_add(ctx, "a" * 64, fqdn="db." + TAILNET)
+
+
+def test_egress_add_requires_exactly_one_of_fqdn_or_ip(operator_repo):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_add(ctx, "db")
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET, ip="100.64.0.1")
+
+
+def test_egress_add_rejects_fqdn_outside_tailnet(operator_repo):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError) as exc:
+        tailscale_operator.egress_add(ctx, "db", fqdn="db.example.com")
+    assert TAILNET in str(exc.value)
+
+
+def test_egress_add_accepts_fqdn_case_insensitively(operator_repo):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.egress_add(ctx, "db", fqdn="DB." + TAILNET.upper())
+    assert path.exists()
+
+
+@pytest.mark.parametrize("ip", ["8.8.8.8", "10.0.0.1", "not-an-ip", "::1"])
+def test_egress_add_rejects_non_tailnet_ip(operator_repo, ip):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_add(ctx, "db", ip=ip)
+
+
+@pytest.mark.parametrize("ip", ["100.64.0.1", "100.127.255.254", "fd7a:115c:a1e0::1"])
+def test_egress_add_accepts_tailnet_ip(operator_repo, ip):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.egress_add(ctx, "db", ip=ip)
+    doc = yamlio.load(path.read_text())
+    assert doc["metadata"]["annotations"] == {"tailscale.com/tailnet-ip": ip}
+
+
+def test_egress_add_writes_fqdn_service(operator_repo):
+    ctx = Context.open(operator_repo)
+    fqdn = "db." + TAILNET
+    path = tailscale_operator.egress_add(ctx, "db", fqdn=fqdn)
+    assert path == tailscale_operator.manifests_dir(operator_repo) / "egress" / "db.yaml"
+    doc = yamlio.load(path.read_text())
+    assert doc == {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": "db",
+            "namespace": "tailscale",
+            "annotations": {"tailscale.com/tailnet-fqdn": fqdn},
+        },
+        "spec": {"type": "ExternalName", "externalName": "placeholder"},
+    }
+
+
+def test_egress_add_custom_namespace(operator_repo, capfd):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET, namespace="app")
+    doc = yamlio.load(path.read_text())
+    assert doc["metadata"]["namespace"] == "app"
+    out = capfd.readouterr().out
+    assert "namespace" in out and "exist" in out
+
+
+def test_egress_add_existing_file_errors(operator_repo):
+    ctx = Context.open(operator_repo)
+    tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET)
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET)
+
+
+def test_egress_remove_missing_errors(operator_repo):
+    ctx = Context.open(operator_repo)
+    with pytest.raises(ValidationError):
+        tailscale_operator.egress_remove(ctx, "db")
+
+
+def test_egress_remove_deletes_file(operator_repo):
+    ctx = Context.open(operator_repo)
+    path = tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET)
+    assert path.exists()
+    result = tailscale_operator.egress_remove(ctx, "db")
+    assert result == path
+    assert not path.exists()
+
+
+def test_cli_egress_add_and_remove(operator_repo, capfd):
+    code = _run(
+        [
+            "--repo", str(operator_repo.root), "tailscale", "egress", "add", "db",
+            "--fqdn", "db." + TAILNET,
+        ]
+    )
+    assert code == 0
+    path = tailscale_operator.manifests_dir(operator_repo) / "egress" / "db.yaml"
+    assert path.exists()
+    out = capfd.readouterr().out
+    assert "commit and push gitops/" in out
+
+    code = _run(["--repo", str(operator_repo.root), "tailscale", "egress", "remove", "db"])
+    assert code == 0
+    assert not path.exists()
+    out = capfd.readouterr().out
+    assert "commit and push gitops/" in out
