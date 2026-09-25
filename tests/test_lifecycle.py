@@ -1,12 +1,14 @@
 import pytest
 
-from helpers import need
+from helpers import need, sample_settings
 from talkub import lifecycle
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
 from talkub.repo import NodeSpec
+from talkub.runner import Runner
+from talkub.talos.client import TalosSession
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
@@ -340,3 +342,32 @@ def test_invalid_settle_value_fails_before_any_change(talos_repo, spy, monkeypat
         lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
     assert "TALKUB_APPLY_SETTLE_SECONDS" in str(exc.value)
     assert _real_applies(talosctl.argvs) == []
+
+
+def test_node_drift_in_sync(tmp_path, spy, capfd):
+    talosconfig = tmp_path / "talosconfig"
+    talosconfig.write_text("marker\n")
+    spy("talosctl").on("apply-config", "--dry-run", stdout="No changes.\n")
+    talos = TalosSession(Runner(), talosconfig)
+    result = lifecycle.node_drift(talos, sample_settings(), "cp-01", b"config bytes")
+    assert result == "in sync"
+    assert capfd.readouterr() == ("", "")
+
+
+def test_node_drift_changes(tmp_path, spy, capfd):
+    talosconfig = tmp_path / "talosconfig"
+    talosconfig.write_text("marker\n")
+    spy("talosctl").on("apply-config", "--dry-run", stdout="Config diff:\n+ foo\n")
+    talos = TalosSession(Runner(), talosconfig)
+    result = lifecycle.node_drift(talos, sample_settings(), "cp-01", b"config bytes")
+    assert result == "changes"
+    assert capfd.readouterr() == ("", "")
+
+
+def test_node_drift_failure_raises(tmp_path, spy):
+    talosconfig = tmp_path / "talosconfig"
+    talosconfig.write_text("marker\n")
+    spy("talosctl").on("apply-config", "--dry-run", rc=1)
+    talos = TalosSession(Runner(), talosconfig)
+    with pytest.raises(CommandFailed):
+        lifecycle.node_drift(talos, sample_settings(), "cp-01", b"config bytes")

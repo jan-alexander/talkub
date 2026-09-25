@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from talkub import images
 from talkub.context import Context
@@ -14,6 +15,7 @@ from talkub.errors import CommandFailed, ValidationError
 from talkub.factory import FactoryClient
 from talkub.repo import Settings
 from talkub.runner import require_tool
+from talkub.talos import inspect
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.render import install_summary, render_configs
 
@@ -129,16 +131,36 @@ def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool) -
     return check
 
 
+def _dry_run_args(path: Path, mode: str | None) -> list[str]:
+    mode_args = ["--mode", mode] if mode else []
+    return ["apply-config", "--file", str(path), "--dry-run", *mode_args]
+
+
 def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes, mode: str | None = None) -> None:
     address = settings.mgmt_address(name)
     print(f"== {name} ({address})", flush=True)
-    mode_args = ["--mode", mode] if mode else []
     with private_file(f"{name}.yaml", config) as path:
-        code = talos.call_redacted(address, ["apply-config", "--file", str(path), "--dry-run", *mode_args])
+        code = talos.call_redacted(address, _dry_run_args(path, mode))
     if code != 0:
         raise CommandFailed(
             f"dry-run failed for node '{name}'", hint=f"talosctl exited with {code}; is {address} reachable?"
         )
+
+
+def node_drift(talos: TalosSession, settings: Settings, name: str, config: bytes) -> str:
+    """A quiet dry-run: classify drift for `name` without printing anything.
+
+    Raises `CommandFailed` on a non-zero exit, like `_dry_run` (message without output)."""
+    address = settings.mgmt_address(name)
+    with private_file(f"{name}.yaml", config) as path:
+        result = talos.run(address, _dry_run_args(path, None), check=False)
+    if result.returncode != 0:
+        raise CommandFailed(
+            f"dry-run failed for node '{name}'",
+            hint=f"talosctl exited with {result.returncode}; is {address} reachable?",
+        )
+    output = result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
+    return inspect.config_drift(output)
 
 
 def plan(ctx: Context, names: Sequence[str]) -> None:
