@@ -1,3 +1,4 @@
+import os
 import sys
 
 import pytest
@@ -71,3 +72,11 @@ def test_call_returns_exit_code():
 def test_call_maps_signal_death_to_shell_exit_code():
     code = "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"
     assert Runner().call([sys.executable, "-c", code]) == 143
+
+
+def test_run_new_session_detaches_the_child_from_the_terminal_session():
+    code = "import os; print(os.getsid(0))"
+    same = Runner().run([sys.executable, "-c", code]).stdout.decode().strip()
+    own = Runner().run([sys.executable, "-c", code], new_session=True).stdout.decode().strip()
+    assert same == str(os.getsid(0))
+    assert own != str(os.getsid(0))

@@ -31,6 +31,12 @@ def _bundle_yaml() -> YAML:
     return yaml
 
 
+def _os_ca(bundle: bytes) -> tuple[object, object]:
+    doc = _bundle_yaml().load(bundle.decode())
+    os_certs = doc.get("certs", {}).get("os") if isinstance(doc, dict) else None
+    return (os_certs.get("crt"), os_certs.get("key")) if isinstance(os_certs, dict) else (None, None)
+
+
 def replace_os_ca(bundle: bytes, crt: str, key: str) -> bytes:
     """The secrets bundle with certs.os replaced; everything else round-trips unchanged."""
     yaml = _bundle_yaml()
@@ -131,21 +137,27 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
         # The only plaintext kept on disk on failure: losing the new talosconfig can lock the user out.
         work = Path(tempfile.mkdtemp(prefix="talkub-rotate-"))  # mode 0700
         new = work / "talosconfig"
+        raw = work / "rotate-ca.out"  # unredacted output: the only copy of the new keys if `-o` is missing
         try:
-            print("== rotate-ca", flush=True)
+            print("== rotate-ca (this can take several minutes; do not interrupt it)", flush=True)
             print(
                 f"   if this is interrupted, the new talosconfig will be in {new}; "
                 f"finish with `talkub rotate-ca --finish --talosconfig {new}`",
                 flush=True,
             )
-            code = talos.call_global_redacted([*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs)
+            # Own session: a terminal Ctrl-C must not kill talosctl halfway through the CA swap.
+            code = talos.call_global_redacted(
+                [*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs, raw_to=raw, new_session=True
+            )
             if code != 0 or not new.is_file():
                 raise CommandFailed(f"rotate-ca failed (exit {code})")
             _store_talosconfig(ctx, settings, new.read_bytes())
         except BaseException:
             print(
                 f"warning: the new talosconfig (if any) is kept in {work}; if the rotation completed, "
-                f"only it works: `talkub rotate-ca --finish --talosconfig {new}`; delete {work} afterwards",
+                f"only it works: `talkub rotate-ca --finish --talosconfig {new}`; the raw talosctl output in "
+                f"{raw} (if any) contains the new CA and client key, needed if the rotation got past removing "
+                f"the old CA but wrote no talosconfig; delete {work} afterwards",
                 file=sys.stderr, flush=True,
             )
             raise
@@ -186,7 +198,8 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
     if not _decodes_to(crt, b"-----BEGIN CERTIFICATE-----") or not _decodes_to(key, b"-----BEGIN"):
         raise ValidationError("the machine CA in the running machine config does not look like a PEM certificate/key")
     plain = ctx.sops.decrypt(repo.talos_secrets)
-    _encrypt_to(ctx, repo.talos_secrets, replace_os_ca(plain, crt, key))
+    if _os_ca(plain) != (crt, key):  # a no-op resume leaves the encrypted bundle untouched
+        _encrypt_to(ctx, repo.talos_secrets, replace_os_ca(plain, crt, key))
 
     settings, order, configs = prepare(ctx, [], refresh=False)
     with talos_session(ctx) as talos:
@@ -202,8 +215,8 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
     if drifting:
         raise ValidationError(
             f"still not in sync: {', '.join(drifting)}",
-            hint="inspect with `talkub plan`; check that the repo talosconfig works with `talkub t version` and do not "
-            "run `talkub apply` before that; the old talosconfig is in talos/talosconfig.previous.sops.yaml",
+            hint="inspect with `talkub plan`; do not run `talkub apply` until `talkub plan` shows only expected "
+            "changes and `talkub t version` works; the old talosconfig is in talos/talosconfig.previous.sops.yaml",
         )
     previous_path(repo).unlink()
     return [*notes, "the Talos CA was rotated", "commit talos/"]

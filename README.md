@@ -124,6 +124,16 @@ If a rotation is interrupted after `talosctl rotate-ca` has already run, `talkub
 stored, its plaintext is kept under a printed temp path; pass it explicitly with
 `talkub rotate-ca --finish --talosconfig <path>`.
 
+Before you start:
+
+- Commit first. Git history then keeps the old talosconfig and secrets bundle.
+- Every other talosconfig for this cluster stops working after the rotation, for example
+  `~/.talos/config` or copies held by other admins. Hand out the new one from the repo.
+- Do not interrupt the rotation. `talosctl rotate-ca` can take several minutes and runs in its own
+  session, so Ctrl-C does not reach it. If talkub itself is stopped anyway, the printed temp
+  directory holds the new talosconfig. It also holds the raw talosctl output, which contains the new
+  CA and client key. Delete that directory once the rotation is finished.
+
 Commit `talos/` afterwards.
 
 ## Admin changes

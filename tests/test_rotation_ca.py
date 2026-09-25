@@ -12,6 +12,8 @@ from talkub import rotation, yamlio
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
+from talkub.nodes import node_patch_path, render_node_patch
+from talkub.repo import NodeSpec
 
 BUNDLE = (
     "cluster:\n    id: cid\n    secret: csecret\n"
@@ -57,10 +59,11 @@ NEW_TALOSCONFIG = (
 )
 SECRET_OUTPUT = "  key: SUPERSECRETCAKEY\ncontexts:\n    test:\n        key: CLIENTKEYSECRET\n"
 ROTATOR = '''#!{python}
-import json, sys
+import json, os, sys
 args = sys.argv[1:]
+entry = {{"args": args, "files": {{}}, "kubeconfig": False, "session_leader": os.getsid(0) == os.getpid()}}
 with open({log!r}, "a") as fh:
-    fh.write(json.dumps({{"args": args, "files": {{}}, "kubeconfig": False}}) + "\\n")
+    fh.write(json.dumps(entry) + "\\n")
 with open(args[args.index("-o") + 1], "w") as fh:
     fh.write({talosconfig!r})
 sys.stdout.write({output!r} + "ROTATED\\n")
@@ -152,6 +155,8 @@ def test_rotate_happy_path(rotating, capfd, monkeypatch):
                             r"`talkub rotate-ca --finish --talosconfig (\S+)`", out)
     assert interrupted and interrupted.group(1) == interrupted.group(2)
     assert out.index(interrupted.group(0)) < out.index("ROTATED")
+    assert "do not interrupt it" in out
+    assert talosctl.calls[3]["session_leader"]  # a terminal Ctrl-C does not reach talosctl
     assert not Path(interrupted.group(1)).parent.exists()  # deleted on success
     assert written.index(repo.talosconfig) < written.index(repo.talos_secrets)
 
@@ -248,7 +253,8 @@ def test_finish_keeps_previous_when_still_drifting(rotating):
     with pytest.raises(ValidationError, match="still not in sync: cp-01") as info:
         rotation.finish(Context.open(repo))
 
-    assert "talkub apply" in info.value.hint and "version" in info.value.hint
+    assert "do not run `talkub apply` until `talkub plan` shows only expected changes" in info.value.hint
+    assert "`talkub t version` works" in info.value.hint
 
     assert rotation.previous_path(repo).exists()
     assert _os_ca(repo) == talosctl.new_ca
@@ -336,3 +342,76 @@ def test_finish_version_failure_hides_stderr(rotating):
 
     assert "LEAKED" not in str(info.value) + str(info.value.hint)
     assert rotation.previous_path(repo).exists()
+
+
+def test_rotate_failure_keeps_the_raw_output(rotating, capfd):
+    repo, talosctl = rotating
+    talosctl.on("rotate-ca", "--dry-run=false", rc=1, stdout=SECRET_OUTPUT, stderr="  key: STDERRSECRET\n")
+    _in_sync(talosctl, real_rotation=False)
+
+    with pytest.raises(CommandFailed):
+        rotation.rotate(Context.open(repo), confirm=lambda q: True)
+
+    out, err = capfd.readouterr()
+    match = re.search(r"kept in (\S+);", err)
+    assert match, err
+    kept = Path(match.group(1))
+    try:
+        raw = kept / "rotate-ca.out"
+        assert str(raw) in err and "new CA and client key" in err
+        assert raw.stat().st_mode & 0o777 == 0o600
+        text = raw.read_text()
+        assert "SUPERSECRETCAKEY" in text and "CLIENTKEYSECRET" in text and "STDERRSECRET" in text
+        for secret in ("SUPERSECRETCAKEY", "CLIENTKEYSECRET", "STDERRSECRET"):
+            assert secret not in out + err
+    finally:
+        shutil.rmtree(kept, ignore_errors=True)
+
+
+def test_rotate_without_new_talosconfig_fails_and_keeps_the_dir(rotating, capfd):
+    repo, talosctl = rotating
+    talosctl.on("rotate-ca", "--dry-run=false", rc=0)
+    _in_sync(talosctl, real_rotation=False)
+    before = repo.talosconfig.read_bytes()
+
+    with pytest.raises(CommandFailed, match="exit 0"):
+        rotation.rotate(Context.open(repo), confirm=lambda q: True)
+
+    kept = Path(re.search(r"kept in (\S+);", capfd.readouterr().err).group(1))
+    try:
+        assert kept.is_dir()
+        assert repo.talosconfig.read_bytes() == before
+        assert rotation.previous_path(repo).exists()
+    finally:
+        shutil.rmtree(kept, ignore_errors=True)
+
+
+def test_rotate_passes_worker_nodes(rotating):
+    repo, talosctl = rotating
+    settings = repo.load_settings()
+    settings.nodes["wk-01"] = NodeSpec(ip="10.0.0.11", role="worker")
+    repo.write_settings(settings)
+    atomic_write(node_patch_path(repo, "wk-01"), render_node_patch("wk-01").encode())
+    _in_sync(talosctl)
+
+    rotation.rotate(Context.open(repo), confirm=lambda q: True)
+
+    rotate_calls = [a for a in talosctl.argvs if "rotate-ca" in a]
+    assert len(rotate_calls) == 2
+    for argv in rotate_calls:
+        assert argv[argv.index("--control-plane-nodes") + 1] == "10.0.0.10"
+        assert argv[argv.index("--worker-nodes") + 1] == "10.0.0.11"
+
+
+def test_finish_after_a_rotation_that_changed_nothing(rotating):
+    repo, talosctl = rotating
+    old_crt, old_key = _os_ca(repo)
+    talosctl.on("apply-config", "--dry-run", stdout="No changes.\n")
+    talosctl.on("get", "machineconfig", stdout=_machineconfig(old_crt, old_key))
+    rotation.previous_path(repo).write_bytes(repo.talosconfig.read_bytes())
+    bundle = repo.talos_secrets.read_bytes()
+
+    rotation.finish(Context.open(repo))
+
+    assert repo.talos_secrets.read_bytes() == bundle  # no SOPS churn
+    assert not rotation.previous_path(repo).exists()

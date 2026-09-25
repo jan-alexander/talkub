@@ -22,8 +22,14 @@ def rotate_ca(
     context = ctx.obj.context()
     if talosconfig is not None and not finish:
         raise ValidationError("--talosconfig needs --finish")
+    if yes and finish:
+        raise ValidationError("--yes cannot be combined with --finish", hint="--finish does not ask")
+    if talosconfig is not None:
+        talosconfig = talosconfig.expanduser()
+        if not talosconfig.is_file():
+            raise ValidationError(f"{talosconfig} is not a file")
     if finish:
-        notes = rotation.finish(context, talosconfig.expanduser() if talosconfig else None)
+        notes = rotation.finish(context, talosconfig)
     else:
         notes = rotation.rotate(context, confirm=lambda question: yes or typer.confirm(question, default=False))
     for note in notes:

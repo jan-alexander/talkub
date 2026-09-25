@@ -58,11 +58,14 @@ class Runner:
         check: bool = True,
         passthrough_stderr: bool = False,
         timeout: float | None = None,
+        new_session: bool = False,
     ) -> subprocess.CompletedProcess[bytes]:
         """Run non-interactively and capture stdout.
 
         `passthrough_stderr` lets prompts (e.g. "touch your YubiKey") reach the terminal.
         After `timeout` seconds the child is killed and treated as exit code 124 (like timeout(1)).
+        `new_session` starts the child in its own session, so a terminal Ctrl-C does not reach it
+        (for steps that must not be interrupted halfway).
         """
         require_tool(argv[0])
         try:
@@ -74,6 +77,7 @@ class Runner:
                 env=child_env(env),
                 cwd=cwd,
                 timeout=timeout,
+                start_new_session=new_session,
             )
         except subprocess.TimeoutExpired:
             message = f"{Path(argv[0]).name} timed out after {timeout:g}s"

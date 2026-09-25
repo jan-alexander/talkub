@@ -37,7 +37,10 @@ class FakeRunner(Runner):
     on_run: Callable[[list[str]], None] | None = None
     calls: list[Call] = field(default_factory=list)
 
-    def run(self, argv, *, input=None, env=None, cwd=None, check=True, passthrough_stderr=False, timeout=None):
+    def run(
+        self, argv, *, input=None, env=None, cwd=None, check=True, passthrough_stderr=False, timeout=None,
+        new_session=False,
+    ):
         self.calls.append(Call(list(argv), dict(env or {}), input, passthrough_stderr))
         if self.on_run is not None:
             self.on_run(list(argv))

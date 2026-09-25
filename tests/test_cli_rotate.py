@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pytest
 
@@ -85,3 +84,20 @@ def test_without_yes_confirm_uses_typer_confirm(repo_with_configs, monkeypatch, 
 
     assert code == 0
     assert seen_confirm == [False]
+
+
+def test_finish_with_missing_talosconfig_is_a_clean_error(repo_with_configs, tmp_path, monkeypatch, capfd):
+    monkeypatch.setattr("talkub.rotation.finish", lambda *a, **k: pytest.fail("must not be called"))
+    code = _run(
+        ["--repo", str(repo_with_configs.root), "rotate-ca", "--finish", "--talosconfig", str(tmp_path / "nope")]
+    )
+    assert code == 1
+    err = capfd.readouterr().err
+    assert "nope" in err and "Traceback" not in err
+
+
+def test_yes_with_finish_is_rejected(repo_with_configs, monkeypatch, capfd):
+    monkeypatch.setattr("talkub.rotation.finish", lambda *a, **k: pytest.fail("must not be called"))
+    code = _run(["--repo", str(repo_with_configs.root), "rotate-ca", "--finish", "--yes"])
+    assert code == 1
+    assert "--yes" in capfd.readouterr().err
