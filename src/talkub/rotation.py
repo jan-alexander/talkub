@@ -14,13 +14,14 @@ from pathlib import Path
 from ruamel.yaml import YAML
 
 from talkub.context import Context
+from talkub.ephemeral import private_tempdir
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.lifecycle import node_drift, prepare, wait_healthy
 from talkub.repo import Repo, Settings
 from talkub.tailscale import controlplanes, rewrite_talosconfig
 from talkub.talos import inspect
-from talkub.talos.client import talos_session
+from talkub.talos.client import talos_session, talos_session_from
 
 
 def _bundle_yaml() -> YAML:
@@ -44,6 +45,12 @@ def replace_os_ca(bundle: bytes, crt: str, key: str) -> bytes:
     return buffer.getvalue().encode()
 
 
+KEPT_TALOSCONFIG_HINT = (
+    "if the rotation completed, the new talosconfig may be kept under $TMPDIR/talkub-rotate-*/talosconfig; "
+    "use it with `talkub rotate-ca --finish --talosconfig <path>`"
+)
+
+
 def previous_path(repo: Repo) -> Path:
     """Byte copy of the encrypted talosconfig from before the rotation; present = rotation in progress."""
     return repo.talos_dir / "talosconfig.previous.sops.yaml"
@@ -53,12 +60,32 @@ def _encrypt_to(ctx: Context, path: Path, data: bytes) -> None:
     atomic_write(path, ctx.sops.encrypt(data, filename=path.name, public_key=ctx.keyring.public_key()))
 
 
+def _cp_addresses(settings: Settings) -> list[str]:
+    addresses = [settings.mgmt_address(name) for name in controlplanes(settings)]
+    if not addresses:
+        raise ValidationError("no controlplane node defined")
+    return addresses
+
+
+def _pointed_at_controlplanes(settings: Settings, data: bytes) -> bytes:
+    endpoints = _cp_addresses(settings)
+    return rewrite_talosconfig(data, endpoints, endpoints[0])
+
+
 def _store_talosconfig(ctx: Context, settings: Settings, data: bytes) -> None:
     """Point the (new) talosconfig at the control planes' mgmt addresses and encrypt it into the repo."""
-    endpoints = [settings.mgmt_address(name) for name in controlplanes(settings)]
-    if not endpoints:
-        raise ValidationError("no controlplane node defined")
-    _encrypt_to(ctx, ctx.repo.talosconfig, rewrite_talosconfig(data, endpoints, endpoints[0]))
+    _encrypt_to(ctx, ctx.repo.talosconfig, _pointed_at_controlplanes(settings, data))
+
+
+def _require_working_talosconfig(ctx: Context, settings: Settings, data: bytes) -> None:
+    """Refuse a talosconfig that cannot reach the first control plane (stale or wrong file)."""
+    address = _cp_addresses(settings)[0]
+    with private_tempdir() as work:
+        candidate = work / "talosconfig"
+        candidate.write_bytes(_pointed_at_controlplanes(settings, data))
+        result = talos_session_from(ctx.runner, candidate).run(address, ["version"], check=False)
+    if result.returncode != 0:
+        raise ValidationError(f"the given talosconfig does not work against {address}; nothing was changed")
 
 
 def _decodes_to(value: str, prefix: bytes) -> bool:
@@ -72,7 +99,9 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
     """Rotate the Talos API CA (`talosctl rotate-ca`), then bring the repo in line (`finish`)."""
     repo = ctx.repo
     if previous_path(repo).exists():
-        raise ValidationError("a CA rotation is in progress", hint="talkub rotate-ca --finish")
+        raise ValidationError(
+            "a CA rotation is in progress", hint=f"talkub rotate-ca --finish; {KEPT_TALOSCONFIG_HINT}"
+        )
     settings, order, configs = prepare(ctx, [], refresh=False)
     cps = [name for name in order if settings.nodes[name].role == "controlplane"]
     if not cps:
@@ -104,6 +133,11 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
         new = work / "talosconfig"
         try:
             print("== rotate-ca", flush=True)
+            print(
+                f"   if this is interrupted, the new talosconfig will be in {new}; "
+                f"finish with `talkub rotate-ca --finish --talosconfig {new}`",
+                flush=True,
+            )
             code = talos.call_global_redacted([*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs)
             if code != 0 or not new.is_file():
                 raise CommandFailed(f"rotate-ca failed (exit {code})")
@@ -135,13 +169,19 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
     settings = repo.load_settings()
     notes: list[str] = []
     if talosconfig is not None:
-        _store_talosconfig(ctx, settings, talosconfig.read_bytes())
+        data = talosconfig.read_bytes()
+        _require_working_talosconfig(ctx, settings, data)
+        _store_talosconfig(ctx, settings, data)
         notes.append(f"the new talosconfig is stored in the repo; delete {talosconfig} now")
-    cp_addrs = [settings.mgmt_address(name) for name in controlplanes(settings)]
-    if not cp_addrs:
-        raise ValidationError("no controlplane node defined")
+    address = _cp_addresses(settings)[0]
     with talos_session(ctx) as talos:
-        out = talos.run(cp_addrs[0], ["get", "machineconfig", "-o", "yaml"]).stdout.decode(errors="replace")
+        result = talos.run(address, ["get", "machineconfig", "-o", "yaml"], check=False)
+    if result.returncode != 0:
+        raise CommandFailed(
+            f"could not read the machine config from {address} (talosctl exited with {result.returncode})",
+            hint=f"is the repo talosconfig the new one? {KEPT_TALOSCONFIG_HINT}",
+        )
+    out = result.stdout.decode(errors="replace")
     crt, key = inspect.machine_ca(out)
     if not _decodes_to(crt, b"-----BEGIN CERTIFICATE-----") or not _decodes_to(key, b"-----BEGIN"):
         raise ValidationError("the machine CA in the running machine config does not look like a PEM certificate/key")
@@ -151,12 +191,19 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
     settings, order, configs = prepare(ctx, [], refresh=False)
     with talos_session(ctx) as talos:
         for name in order:
-            talos.run(settings.mgmt_address(name), ["version"])
+            address = settings.mgmt_address(name)
+            code = talos.run(address, ["version"], check=False).returncode
+            if code != 0:
+                raise CommandFailed(
+                    f"node '{name}' ({address}) did not answer `talosctl version` (exit {code})",
+                    hint="the Talos CA in the secrets bundle is updated; retry with `talkub rotate-ca --finish`",
+                )
         drifting = [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
     if drifting:
         raise ValidationError(
             f"still not in sync: {', '.join(drifting)}",
-            hint="inspect with `talkub plan`; the old talosconfig is in talos/talosconfig.previous.sops.yaml",
+            hint="inspect with `talkub plan`; check that the repo talosconfig works with `talkub t version` and do not "
+            "run `talkub apply` before that; the old talosconfig is in talos/talosconfig.previous.sops.yaml",
         )
     previous_path(repo).unlink()
     return [*notes, "the Talos CA was rotated", "commit talos/"]

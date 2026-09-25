@@ -129,6 +129,13 @@ class Spy:
         self._save()
         return self
 
+    def exec(self, *words: str, program: str) -> Spy:
+        """Run `program` (with the talosctl arguments) for calls whose arguments contain all `words`;
+        not logged unless `program` logs itself."""
+        self.rules.append({"match": list(words), "exec": program})
+        self._save()
+        return self
+
     def real(self, *words: str) -> Spy:
         """Forward calls whose arguments contain all `words` to the real binary (not logged)."""
         if self.real_path is None:
