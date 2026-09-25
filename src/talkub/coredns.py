@@ -22,7 +22,7 @@ from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.kube import KubeSession, kube_session
-from talkub.repo import ChartSpec, Repo
+from talkub.repo import ChartSpec, Repo, Settings
 from talkub.runner import require_tool
 from talkub.talos.inspect import endpointslice_pod_names, service_spec
 
@@ -112,7 +112,8 @@ ENDPOINTS_ATTEMPTS = 15
 ENDPOINTS_INTERVAL = 2.0
 _RESUME_HINT = (
     "old CoreDNS objects are deleted only after the new pods are ready; "
-    "fix the cause, then run `talkub coredns takeover --resume`"
+    "fix the cause, then finish with `talkub coredns takeover --resume` before `talkub apply`/`talkub upgrade` "
+    "(Talos health fails while both CoreDNS deployments exist)"
 )
 
 
@@ -173,17 +174,34 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
             f"kube-dns has ClusterIP {cluster_ip or 'none'}, expected {CLUSTER_DNS_IP}",
             hint="the CoreDNS values pin the Service to the Talos default ClusterIP",
         )
+    # Before any change: the Talos apply below must carry nothing but the CoreDNS patch.
+    drifting = lifecycle.drifting_nodes(ctx)
+    if drifting and not resume:
+        raise ValidationError(
+            f"the repo is not in sync with: {', '.join(drifting)}", hint="run `talkub plan`/`talkub apply` first"
+        )
     if not confirm(QUESTION):
         print("aborted, nothing was changed")
         return []
 
     if not resume:
         _write_repo_files(ctx)
+        drifting = _controlplanes(settings)  # the new patch applies to control planes only
     chart = repo.load_settings().charts["coredns"]
 
-    _step("applying the Talos config (Talos stops managing CoreDNS)")
-    with _failing_step("talos apply"):
-        lifecycle.apply(ctx, [], confirm=lambda question: True)
+    if drifting:
+        _step("applying the Talos config (Talos stops managing CoreDNS)")
+        with _failing_step("talos apply"):
+            # no-reboot: nothing is rolled or health-gated. On resume Talos health would fail anyway
+            # while both CoreDNS deployments exist, so the precheck is skipped explicitly as well.
+            applied = lifecycle.apply(ctx, [], mode="no-reboot", confirm=confirm, skip_precheck=resume)
+        if missing := [name for name in drifting if name not in applied]:
+            raise ValidationError(
+                f"the Talos config was not applied to: {', '.join(missing)}; CoreDNS in the cluster is unchanged",
+                hint="run `talkub coredns takeover --resume` to continue",
+            )
+    else:
+        print("   the Talos config is already applied", flush=True)
     with kube_session(ctx) as kube:
         _warn_unless_old_pods_ready(kube)
         if service_missing:
@@ -229,6 +247,10 @@ def write_files(repo: Repo, chart: ChartSpec, git_url: str, tailnet: str | None 
     for path, text in files.items():
         atomic_write(path, text.encode())
         print(f"   wrote {repo.rel(path)}")
+
+
+def _controlplanes(settings: Settings) -> list[str]:
+    return [name for name, node in settings.nodes.items() if node.role == "controlplane"]
 
 
 def _write_repo_files(ctx: Context) -> None:

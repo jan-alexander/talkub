@@ -114,21 +114,26 @@ kubeconfig `server` back at the LAN with `talkub sops edit`, then run `talkub ap
     talkub coredns takeover --resume     # finish an interrupted takeover
 
 Talos manages CoreDNS by default (the `kube-system/coredns` ConfigMap and Deployment, behind the
-`kube-dns` Service). `takeover` stops Talos from managing it (`talos/patches/coredns.yaml`,
+`kube-dns` Service). `takeover` stops Talos from managing it (`talos/patches/controlplane-coredns.yaml`,
 `KubeCoreDNSConfig` `enabled: false`) and installs CoreDNS as a Helm release (release `coredns`,
 Deployment `coredns-talkub`) that Argo CD manages instead. The `kube-dns` Service keeps its
-ClusterIP and selector throughout, so DNS keeps working during the switch. New clusters get
+ClusterIP and selector throughout, so DNS keeps working during the switch; its ports become the
+chart's `udp-53`/`tcp-53`, and the metrics port 9153 is no longer exposed on `kube-dns`. The
+takeover refuses to start while any node's Talos config differs from the repo (`talkub plan`),
+so its Talos apply (mode `no-reboot`, confirmed per node unless `--yes`) carries only the CoreDNS
+patch. New clusters get
 CoreDNS this way from the start: `talkub init` writes the patch, Argo CD app and Helm values, and
 `talkub bootstrap` installs the Helm release before Sealed Secrets and Argo CD.
 
 If a takeover is interrupted partway, finish it with `talkub coredns takeover --resume` before
-running `talkub apply` or `talkub upgrade` again. `talkub tailscale operator enable` also
+running `talkub apply` or `talkub upgrade` again: Talos health fails while both CoreDNS
+deployments exist. `talkub tailscale operator enable` also
 requires the takeover to be done first (it extends the CoreDNS values with a stub zone for the
 tailnet).
 
 ## Tailscale operator
 
-    talkub tailscale operator enable                      # OAuth client ID/secret via prompt or --client-*-file
+    talkub tailscale operator enable                      # OAuth client via prompt, --client-id, --client-secret-file
     talkub tailscale operator enable --rotate-credentials  # replace the OAuth client, keep everything else
 
 Prerequisites: `talkub tailscale enable` (the tailnet is known) and `talkub coredns takeover`
@@ -156,7 +161,8 @@ Writes (or removes) `gitops/manifests/tailscale/egress/<name>.yaml`: an `Externa
 annotated `tailscale.com/tailnet-fqdn` (or `tailscale.com/tailnet-ip`), which the operator points
 at the tailnet target. After commit, push and sync, pods reach it both by its MagicDNS name
 (`db.tail1234.ts.net`, resolved via the CoreDNS stub zone) and via the cluster Service
-(`db.tailscale.svc.cluster.local`).
+(`db.tailscale.svc.cluster.local`). The operator rewrites the Services' `spec.externalName`, so
+the `tailscale-operator-config` app ignores that field (`ignoreDifferences`) instead of reverting it.
 
 ### Ingress
 

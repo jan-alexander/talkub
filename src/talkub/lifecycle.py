@@ -163,6 +163,13 @@ def node_drift(talos: TalosSession, settings: Settings, name: str, config: bytes
     return inspect.config_drift(output)
 
 
+def drifting_nodes(ctx: Context) -> list[str]:
+    """All nodes whose running config differs from the repo (quiet dry-runs, nothing applied)."""
+    settings, order, configs = prepare(ctx, [])
+    with talos_session(ctx) as talos:
+        return [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
+
+
 def plan(ctx: Context, names: Sequence[str]) -> None:
     settings, order, configs = prepare(ctx, names)
     with talos_session(ctx) as talos:

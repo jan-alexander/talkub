@@ -82,21 +82,33 @@ def cluster(repo_with_configs, spy, fake_bin, monkeypatch):
     applied = []
 
     def fake_apply(ctx, names, *, mode="auto", confirm, skip_precheck=False):
-        applied.append(list(names))
+        applied.append({"names": list(names), "mode": mode, "skip_precheck": skip_precheck})
+        if not confirm("apply this configuration to cp-01?"):
+            return []
         kubectl.log.open("a").write(json.dumps({"args": ["<talos apply>"]}) + "\n")
         return ["cp-01"]
 
     monkeypatch.setattr(lifecycle, "apply", fake_apply)
+    set_drift(monkeypatch, [])
     monkeypatch.setattr(coredns, "ENDPOINTS_INTERVAL", 0)
     return repo, kubectl, applied
 
 
-def run(repo, *, resume=False, answer=True):
+def set_drift(monkeypatch, nodes):
+    monkeypatch.setattr(lifecycle, "drifting_nodes", lambda ctx: list(nodes))
+
+
+APPLY = {"names": [], "mode": "no-reboot", "skip_precheck": False}
+NODE_QUESTION = "apply this configuration to cp-01?"
+
+
+def run(repo, *, resume=False, answer=True, answers=None):
     questions = []
+    replies = list(answers) if answers is not None else None
 
     def confirm(question):
         questions.append(question)
-        return answer
+        return replies.pop(0) if replies is not None else answer
 
     notes = coredns.takeover(Context.open(repo), resume=resume, confirm=confirm)
     return notes, questions
@@ -109,8 +121,8 @@ def mutations(argvs):
 def test_happy_path_order_files_and_notes(cluster):
     repo, kubectl, applied = cluster
     notes, questions = run(repo)
-    assert questions == ["Move CoreDNS from Talos to Argo CD now? DNS keeps working during the switch."]
-    assert applied == [[]]
+    assert questions == ["Move CoreDNS from Talos to Argo CD now? DNS keeps working during the switch.", NODE_QUESTION]
+    assert applied == [APPLY]
     argvs = kubectl.argvs
     assert argvs[0] == ["-n", "kube-system", "get", "svc", "kube-dns", "-o", "jsonpath={.spec.clusterIP}"]
     assert argvs[1] == ["show", "chart", "coredns", "--repo", "https://coredns.github.io/helm"]
@@ -225,11 +237,48 @@ def test_resume_skips_file_writing_and_runs_the_rest(cluster):
     run(repo, resume=True)
     argvs = kubectl.argvs
     assert not any(a[0] == "show" for a in argvs)  # no chart resolution
-    assert argvs[1] == ["<talos apply>"]
-    assert argvs[8][:3] == ["upgrade", "--install", "coredns"]
-    assert argvs[11:16] == DELETES
+    assert ["<talos apply>"] not in argvs  # every node is in sync: the Talos step is skipped
+    assert argvs[7][:3] == ["upgrade", "--install", "coredns"]
+    assert argvs[10:15] == DELETES
     assert (repo.gitops_dir / "apps" / "coredns.yaml").read_text() == app_text
-    assert applied == [[], []]
+    assert applied == [APPLY]
+
+
+def test_drift_is_refused_before_any_change(cluster, monkeypatch):
+    repo, kubectl, applied = cluster
+    set_drift(monkeypatch, ["cp-01"])
+    before = repo.settings_file.read_text()
+    with pytest.raises(ValidationError) as exc:
+        run(repo, answer=True)
+    assert "cp-01" in str(exc.value)
+    assert "talkub plan" in exc.value.hint
+    assert repo.settings_file.read_text() == before
+    assert not (repo.gitops_dir / "apps" / "coredns.yaml").exists()
+    assert not (repo.talos_dir / "patches" / "controlplane-coredns.yaml").exists()
+    assert mutations(kubectl.argvs) == [] and applied == []
+
+
+def test_declined_node_apply_stops_before_the_cluster_changes(cluster):
+    repo, kubectl, applied = cluster
+    with pytest.raises(ValidationError) as exc:
+        run(repo, answers=[True, False])
+    assert "--resume" in exc.value.hint
+    assert applied == [APPLY]
+    assert mutations(kubectl.argvs) == []
+
+
+def test_resume_after_failed_rollout_skips_the_health_gate(cluster, monkeypatch):
+    repo, kubectl, applied = cluster
+    first_rule(kubectl, "rollout", "status", rc=1)
+    with pytest.raises(CommandFailed) as exc:
+        run(repo)
+    assert "before `talkub apply`" in exc.value.hint
+    kubectl.rules.pop(0)
+    kubectl._save()
+    set_drift(monkeypatch, ["cp-01"])  # e.g. the Talos apply had not gone through
+    run(repo, resume=True)
+    assert applied == [APPLY, {"names": [], "mode": "no-reboot", "skip_precheck": True}]
+    assert kubectl.argvs[-1][3] == "endpointslices"
 
 
 def test_declined_confirm_changes_nothing(cluster):
@@ -335,7 +384,7 @@ def test_resume_with_missing_service_lets_helm_create_it(cluster):
     run(repo, resume=True)
     argvs = kubectl.argvs
     assert not any(verb in a for a in argvs for verb in ("annotate", "label", "patch"))
-    assert argvs[3][0] == "template" and argvs[4][:2] == ["upgrade", "--install"]
+    assert argvs[2][0] == "template" and argvs[3][:2] == ["upgrade", "--install"]
     assert ["-n", "kube-system", "get", "svc", "kube-dns", "-o", "json"] in argvs
     assert argvs[-1][3] == "endpointslices"
 

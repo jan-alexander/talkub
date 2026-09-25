@@ -371,3 +371,12 @@ def test_node_drift_failure_raises(tmp_path, spy):
     talos = TalosSession(Runner(), talosconfig)
     with pytest.raises(CommandFailed):
         lifecycle.node_drift(talos, sample_settings(), "cp-01", b"config bytes")
+
+
+def test_drifting_nodes(talos_repo, spy):
+    talosctl = spy("talosctl").real("gen").real("validate").on("--dry-run", stdout="Config diff:\n+ foo\n")
+    assert lifecycle.drifting_nodes(Context.open(talos_repo)) == ["cp-01"]
+    talosctl.rules.insert(0, {"match": ["--dry-run"], "stdout": "No changes.\n", "rc": 0})
+    talosctl._save()
+    assert lifecycle.drifting_nodes(Context.open(talos_repo)) == []
+    assert not any("--dry-run" not in a and "apply-config" in a for a in talosctl.argvs)
