@@ -167,3 +167,20 @@ def test_run_uninterruptible_new_session(tmp_path):
     out = tmp_path / "out"
     Runner().run_uninterruptible([sys.executable, "-c", "import os; print(os.getsid(0) == os.getpid())"], output=out)
     assert out.read_text().strip() == "True"
+
+
+def test_spawn_detached_writes_stdin_to_the_child_and_does_not_wait(tmp_path):
+    out = tmp_path / "out"
+    code = "import sys; open(sys.argv[1], 'wb').write(sys.stdin.buffer.read())"
+    started = time.monotonic()
+    Runner().spawn_detached([sys.executable, "-c", code, str(out)], input=b"detached-payload")
+    assert time.monotonic() - started < 1.0  # returned without waiting for the child
+    deadline = time.monotonic() + 5
+    while not out.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert out.read_bytes() == b"detached-payload"
+
+
+def test_spawn_detached_requires_the_tool():
+    with pytest.raises(ToolMissing):
+        Runner().spawn_detached(["definitely-not-a-real-tool-xyz"], input=b"")

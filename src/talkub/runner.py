@@ -136,6 +136,26 @@ class Runner:
             _redeliver(received[0], previous[received[0]])
         return code
 
+    def spawn_detached(self, argv: Sequence[str], *, input: bytes) -> None:
+        """Start `argv` in its own session, feed it `input` on stdin, and do not wait for it.
+
+        stdout/stderr are discarded. Used for the clipboard clearer: the caller returns to the
+        user immediately while the child sleeps and later clears the clipboard.
+        """
+        require_tool(argv[0])
+        proc = subprocess.Popen(
+            list(argv),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=child_env(None),
+            start_new_session=True,
+            close_fds=True,
+        )
+        assert proc.stdin is not None
+        proc.stdin.write(input)
+        proc.stdin.close()
+
     def call(
         self,
         argv: Sequence[str],
