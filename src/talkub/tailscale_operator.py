@@ -21,6 +21,7 @@ from talkub.repo import ChartSpec, Repo, Settings
 NAMESPACE = "tailscale"
 CHART_KEY = "tailscale-operator"
 _VALUES_HEADER = "# Helm values for the Tailscale operator (chart tailscale-operator). Used by talkub and by Argo CD.\n"
+_NAMESPACE_HEADER = "# Managed by talkub. The Tailscale proxies need privileged pods (sysctl, NET_ADMIN).\n"
 
 # DNS-1123 label: lowercase letters, digits and '-', max 63 characters, not starting/ending with '-'.
 _EGRESS_NAME = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
@@ -56,6 +57,10 @@ def dnsconfig_path(repo: Repo) -> Path:
     return manifests_dir(repo) / "dnsconfig.yaml"
 
 
+def namespace_path(repo: Repo) -> Path:
+    return manifests_dir(repo) / "namespace.yaml"
+
+
 def secret_path(repo: Repo) -> Path:
     return manifests_dir(repo) / "operator-oauth.sealed.yaml"
 
@@ -86,6 +91,17 @@ def dnsconfig() -> str:
         "spec": {"nameserver": {"service": {"clusterIP": coredns.TS_NAMESERVER_IP}}},
     }
     return yamlio.dump(doc)
+
+
+def namespace() -> str:
+    """Talos enforces Pod Security `baseline`; the egress/ingress proxy pods need a privileged
+    init container (sysctl) and NET_ADMIN, so this namespace is loosened."""
+    doc = {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {"name": NAMESPACE, "labels": {"pod-security.kubernetes.io/enforce": "privileged"}},
+    }
+    return _NAMESPACE_HEADER + yamlio.dump(doc)
 
 
 def _check_single_line(value: str, what: str) -> str:
@@ -129,6 +145,7 @@ def write_files(repo: Repo, chart: ChartSpec, git_url: str, cluster: str) -> Non
             sync_wave="1",
         ),
         dnsconfig_path(repo): dnsconfig(),
+        namespace_path(repo): namespace(),
     }
     for path, text in files.items():
         atomic_write(path, text.encode())
@@ -158,6 +175,9 @@ def enable(ctx: Context, *, client_id: str, client_secret: str, rotate_credentia
     print(f"   wrote {repo.rel(secret_path(repo))}")
 
     if app_path(repo).exists():
+        if not namespace_path(repo).exists():
+            atomic_write(namespace_path(repo), namespace().encode())
+            print(f"   wrote {repo.rel(namespace_path(repo))} (added: privileged pod security for this namespace)")
         return ["re-sealed the OAuth client secret", COMMIT_NOTE]
 
     chart = charts.resolve(ctx.runner, CHART_KEY)

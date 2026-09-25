@@ -149,7 +149,9 @@ Services (write), tagged `tag:k8s-operator`, and add to the tailnet ACL:
 (`tailscale-operator`), its manifests directory app and a `DNSConfig` that points the CoreDNS
 stub zone for `<tailnet>` at the operator's nameserver. Run it again without
 `--rotate-credentials` and it refuses ("already enabled"); with it, only the sealed secret is
-replaced.
+replaced. The `tailscale` namespace runs with `pod-security.kubernetes.io/enforce: privileged`
+because the operator's egress/ingress proxy pods need a privileged init container and NET_ADMIN
+(only that namespace).
 
 ### Egress
 

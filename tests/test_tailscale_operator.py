@@ -4,6 +4,7 @@ import pytest
 
 from helpers import need
 from talkub import coredns, tailscale_operator, yamlio
+from talkub.checks import run_checks
 from talkub.cli.main import main
 from talkub.context import Context
 from talkub.errors import ValidationError
@@ -85,6 +86,18 @@ def test_dnsconfig_renderer():
         "spec": {"nameserver": {"service": {"clusterIP": "10.96.0.53"}}},
     }
     assert coredns.TS_NAMESERVER_IP == "10.96.0.53"
+
+
+def test_namespace_renderer():
+    doc = yamlio.load(tailscale_operator.namespace())
+    assert doc == {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "name": "tailscale",
+            "labels": {"pod-security.kubernetes.io/enforce": "privileged"},
+        },
+    }
 
 
 # --- preconditions ---------------------------------------------------------------------------
@@ -170,6 +183,20 @@ def test_enable_writes_repo_files_and_notes(repo, kubeseal_spy):
     assert settings.charts["tailscale-operator"].repo == "https://pkgs.tailscale.com/helmcharts"
 
 
+def test_enable_writes_namespace_file(repo, kubeseal_spy):
+    ctx = Context.open(repo)
+    tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+    doc = yamlio.load(tailscale_operator.namespace_path(repo).read_text())
+    assert doc["metadata"]["name"] == "tailscale"
+    assert doc["metadata"]["labels"] == {"pod-security.kubernetes.io/enforce": "privileged"}
+
+
+def test_check_stays_clean_after_enable(repo, kubeseal_spy):
+    ctx = Context.open(repo)
+    tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+    assert [f.message for f in run_checks(repo) if f.level == "error"] == []
+
+
 def test_coredns_stub_added_exactly_once(repo, kubeseal_spy):
     ctx = Context.open(repo)
     tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
@@ -209,6 +236,26 @@ def test_rotate_credentials_only_reseals(repo, kubeseal_spy):
     assert tailscale_operator.app_path(repo).read_text() == app_before
     assert tailscale_operator.dnsconfig_path(repo).read_text() == dns_before
     assert len([c for c in kubeseal_spy.calls if "--cert" in c["args"]]) == 2
+
+
+def test_rotate_credentials_adds_missing_namespace_file(repo, kubeseal_spy):
+    """Repos where the operator was enabled before this fix are missing the namespace manifest."""
+    ctx = Context.open(repo)
+    tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+    tailscale_operator.namespace_path(repo).unlink()
+    values_before = tailscale_operator.values_path(repo).read_text()
+    app_before = tailscale_operator.app_path(repo).read_text()
+    dns_before = tailscale_operator.dnsconfig_path(repo).read_text()
+
+    tailscale_operator.enable(
+        ctx, client_id=CLIENT_ID, client_secret="tskey-client-rotated", rotate_credentials=True
+    )
+
+    doc = yamlio.load(tailscale_operator.namespace_path(repo).read_text())
+    assert doc["metadata"]["labels"] == {"pod-security.kubernetes.io/enforce": "privileged"}
+    assert tailscale_operator.values_path(repo).read_text() == values_before
+    assert tailscale_operator.app_path(repo).read_text() == app_before
+    assert tailscale_operator.dnsconfig_path(repo).read_text() == dns_before
 
 
 # --- the secret only ever touches kubeseal's stdin ----------------------------------------------
