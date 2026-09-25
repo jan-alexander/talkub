@@ -77,9 +77,11 @@ Each shortcut has exactly one kind:
   after 45 s (`TALKUB_CLIPBOARD_CLEAR_SECONDS`), but only if it still holds that value; the helper
   gets only a SHA-256 digest of it. `--print` writes the bare value to stdout instead (a newline
   only on a terminal), e.g. `talkub run --print db-password | ...`. A missing key is reported with
-  the names of the keys that exist.
-- `job`: creates `<cronjob>-manual-<timestamp>` from the CronJob. With `follow: true` or
-  `--follow`, waits for its pod, streams the logs and exits 0 only if the job succeeded.
+  the names of the keys that exist. Clipboard history managers (e.g. Raycast, Maccy, Alfred) may
+  keep their own copy of the value; use `--print`, or exclude talkub/the terminal in those tools.
+- `job`: creates `<cronjob>-manual-<UTC timestamp>` from the CronJob. With `follow: true` or
+  `--follow`, waits (up to 5 min) for its pod to start, streams the logs and exits 0 only if the
+  job completed; a failed job, or one still running a minute after the logs end, exits 1.
 - `run`: `k`/`kubectl` or `t`/`talosctl` with the configured arguments, as with `talkub k`/`talkub t`;
   further arguments (including options like `-f`) are appended.
 - `portForward`: `kubectl port-forward svc/<service> <ports...>` until Ctrl-C.

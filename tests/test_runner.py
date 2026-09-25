@@ -220,3 +220,11 @@ def test_feed_does_not_wait_for_a_backgrounded_child_holding_stdout(fake_bin):
     started = time.monotonic()
     assert Runner().feed(["slow-bg"], input=b"") == 0
     assert time.monotonic() - started < 2.0
+
+
+def test_feed_passes_stderr_through_but_not_stdout(capfd):
+    code = "import sys; sys.stdout.write('OUT'); sys.stderr.write('reason on stderr'); sys.exit(1)"
+    assert Runner().feed([sys.executable, "-c", code], input=b"") == 1
+    captured = capfd.readouterr()
+    assert "reason on stderr" in captured.err
+    assert "OUT" not in captured.out

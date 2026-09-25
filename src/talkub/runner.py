@@ -167,17 +167,16 @@ class Runner:
     ) -> int:
         """Run `argv`, feeding it `input` on stdin, and return its exit code.
 
-        Unlike `run`, stdout/stderr are discarded rather than captured with a pipe. Some tools
-        (clipboard copy tools: xclip always, wl-copy usually) fork a background process that
-        holds the selection and inherits stdout/stderr; capturing with a pipe would then hang
-        waiting for that background child's stdout to close.
+        Unlike `run`, nothing is captured with a pipe: stdout is discarded and stderr goes to the
+        terminal (so a failure reason is visible). Some tools (clipboard copy tools: xclip always,
+        wl-copy usually) fork a background process that holds the selection and inherits
+        stdout/stderr; capturing with a pipe would then hang waiting for that child to close it.
         """
         require_tool(argv[0])
         proc = subprocess.run(
             list(argv),
             input=input,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
             env=child_env(env),
         )
         return proc.returncode

@@ -198,6 +198,21 @@ def enable(ctx: Context, *, client_id: str, client_secret: str, rotate_credentia
     return [ACL_NOTE, SCOPES_NOTE, COMMIT_NOTE]
 
 
+def _tailnet(settings: Settings) -> str:
+    if settings.tailscale is None:
+        raise ValidationError("tailscale is not enabled", hint="talkub tailscale enable")
+    return settings.tailscale.tailnet
+
+
+def _check_ingress_name(name: str) -> str:
+    if not valid_label(name):
+        raise ValidationError(
+            f"invalid name {name!r}",
+            hint="lowercase letters, digits and '-', max 63 characters (it becomes the tailnet device name)",
+        )
+    return name
+
+
 def _check_egress_name(name: str) -> str:
     if not valid_label(name):
         raise ValidationError(
@@ -250,7 +265,7 @@ def egress_add(
     if (fqdn is None) == (ip is None):
         raise ValidationError("give exactly one of --fqdn or --ip")
     if fqdn is not None:
-        annotations = {"tailscale.com/tailnet-fqdn": _check_fqdn(fqdn, settings.tailscale.tailnet)}
+        annotations = {"tailscale.com/tailnet-fqdn": _check_fqdn(fqdn, _tailnet(settings))}
     else:
         annotations = {"tailscale.com/tailnet-ip": _check_ip(ip)}
     path = egress_path(repo, name)
@@ -268,7 +283,7 @@ def egress_add(
 def egress_remove(ctx: Context, name: str) -> Path:
     """Delete the egress Service manifest written by `egress_add`."""
     repo = ctx.repo
-    path = egress_path(repo, name)
+    path = egress_path(repo, _check_egress_name(name))
     if not path.exists():
         raise ValidationError(f"{repo.rel(path)} does not exist")
     path.unlink()
@@ -334,12 +349,8 @@ def expose(ctx: Context, name: str, *, service: str, port: str, path: str | None
     repo = ctx.repo
     if not app_path(repo).exists():
         raise ValidationError("the Tailscale operator is not enabled", hint="talkub tailscale operator enable")
-    settings = repo.load_settings()
-    if not valid_label(name):
-        raise ValidationError(
-            f"invalid name {name!r}",
-            hint="lowercase letters, digits and '-', max 63 characters (it becomes the tailnet device name)",
-        )
+    tailnet = _tailnet(repo.load_settings())
+    _check_ingress_name(name)
     namespace, svc = _check_service(service)
     port_value = _check_port(port)
     if path is not None:
@@ -349,14 +360,14 @@ def expose(ctx: Context, name: str, *, service: str, port: str, path: str | None
         raise ValidationError(f"{repo.rel(target)} already exists", hint=f"talkub tailscale unexpose {name}")
     atomic_write(target, ingress(name, namespace, svc, port_value, path).encode())
     print(f"   wrote {repo.rel(target)}")
-    print(f"URL: https://{name}.{settings.tailscale.tailnet}")
+    print(f"URL: https://{name}.{tailnet}")
     return target
 
 
 def unexpose(ctx: Context, name: str) -> Path:
     """Delete the Ingress manifest written by `expose`."""
     repo = ctx.repo
-    path = ingress_path(repo, name)
+    path = ingress_path(repo, _check_ingress_name(name))
     if not path.exists():
         raise ValidationError(f"{repo.rel(path)} does not exist")
     path.unlink()

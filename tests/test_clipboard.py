@@ -103,9 +103,10 @@ def test_copy_raises_a_validation_error_when_no_tool_is_found(monkeypatch, tmp_p
 def test_copy_raises_command_failed_when_the_tool_exits_non_zero(fake_bin):
     from talkub import clipboard
 
-    fake_bin("pbcopy", "exit 7\n")
-    with pytest.raises(CommandFailed):
+    fake_bin("pbcopy", "echo 'pbcopy: no display' >&2\nexit 7\n")
+    with pytest.raises(CommandFailed) as exc:
         clipboard.copy(Runner(), SECRET)
+    assert exc.value.hint == "use --print"
 
 
 def test_copy_does_not_hang_on_a_backgrounded_child_holding_stdout(fake_bin):
@@ -226,3 +227,16 @@ def test_clipboard_clear_does_nothing_when_no_tool_is_found(monkeypatch, tmp_pat
     monkeypatch.setattr(sys, "stdin", io.StringIO(hashlib.sha256(SECRET).hexdigest()))
 
     clipboard_clear.main()  # must not raise
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"), [(None, 45.0), ("0", 0.0), ("2.5", 2.5), ("abc", 45.0), ("-1", 45.0), ("", 45.0)]
+)
+def test_clear_seconds(monkeypatch, raw, expected):
+    from talkub import clipboard
+
+    if raw is None:
+        monkeypatch.delenv("TALKUB_CLIPBOARD_CLEAR_SECONDS", raising=False)
+    else:
+        monkeypatch.setenv("TALKUB_CLIPBOARD_CLEAR_SECONDS", raw)
+    assert clipboard.clear_seconds() == expected

@@ -603,3 +603,43 @@ def test_cli_expose_and_unexpose(operator_repo, capfd):
     assert not path.exists()
     out = capfd.readouterr().out
     assert "commit and push gitops/" in out
+
+
+@pytest.mark.parametrize("remove", [tailscale_operator.unexpose, tailscale_operator.egress_remove])
+@pytest.mark.parametrize("name", ["../victim", "..", "a/b", "WEB"])
+def test_remove_rejects_invalid_names_without_touching_files(operator_repo, remove, name):
+    victim = tailscale_operator.manifests_dir(operator_repo) / "victim.yaml"
+    atomic_write(victim, b"keep me\n")
+    with pytest.raises(ValidationError) as exc:
+        remove(Context.open(operator_repo), name)
+    assert "invalid" in str(exc.value)
+    assert victim.read_bytes() == b"keep me\n"
+
+
+def _disable_tailscale(repo):
+    settings = repo.load_settings()
+    settings.tailscale = None
+    repo.write_settings(settings)
+
+
+def test_expose_without_tailscale_enabled(operator_repo):
+    _disable_tailscale(operator_repo)
+    with pytest.raises(ValidationError) as exc:
+        tailscale_operator.expose(Context.open(operator_repo), "web", service="app/web", port="80")
+    assert str(exc.value) == "tailscale is not enabled"
+    assert exc.value.hint == "talkub tailscale enable"
+
+
+def test_egress_add_fqdn_without_tailscale_enabled(operator_repo):
+    _disable_tailscale(operator_repo)
+    with pytest.raises(ValidationError) as exc:
+        tailscale_operator.egress_add(Context.open(operator_repo), "db", fqdn="db.tail1234.ts.net")
+    assert str(exc.value) == "tailscale is not enabled"
+
+
+def test_operator_help_mentions_expose(capfd, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "200")
+    assert _run(["tailscale", "operator", "--help"]) == 0
+    out = capfd.readouterr().out
+    assert "talkub tailscale expose" in out
+    assert "your own manifests" not in out

@@ -10,15 +10,24 @@ import base64
 import binascii
 import json
 import sys
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from talkub import access, clipboard
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.kube import kube_session
+from talkub.errors import CommandFailed, TalkubError, ValidationError
+from talkub.kube import KubeSession, kube_session
 from talkub.repo import MARKER, Settings, Shortcut
 
 _KUBECTL = ("k", "kubectl")
+_JOB_NAME_MAX = 63
+_OUTCOMES = ("Complete", "Failed")
+
+# Job --follow polling (module constants so tests can shorten them).
+POLL_INTERVAL = 2.0
+POD_START_TIMEOUT = 300.0  # until the job's pod exists and is no longer Pending
+JOB_SETTLE_TIMEOUT = 60.0  # after the logs end, until the job reports Complete or Failed
 
 
 def listing(settings: Settings) -> list[str]:
@@ -34,8 +43,55 @@ def listing(settings: Settings) -> list[str]:
 
 
 def job_name(cronjob: str, now: datetime) -> str:
-    """Name for a manual run of `cronjob` (timestamp in UTC), a DNS-1123 label of at most 63 characters."""
-    return f"{cronjob}-manual-{now:%Y%m%d%H%M%S}"[:63].rstrip("-")
+    """Name for a manual run of `cronjob` (timestamp in UTC), a DNS-1123 label of at most 63
+    characters: the cronjob part is shortened so the timestamp always survives."""
+    suffix = f"-manual-{now:%Y%m%d%H%M%S}"
+    return cronjob[: _JOB_NAME_MAX - len(suffix)].rstrip("-") + suffix
+
+
+def _json_object(text: bytes) -> dict:
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def pod_phases(text: bytes) -> list[str]:
+    """Phases of the pods in `kubectl get pods -o json` output (missing or invalid → none)."""
+    items = _json_object(text).get("items")
+    phases = []
+    for item in items if isinstance(items, list) else []:
+        status = item.get("status") if isinstance(item, dict) else None
+        phase = status.get("phase") if isinstance(status, dict) else None
+        phases.append(phase if isinstance(phase, str) else "Unknown")
+    return phases
+
+
+def job_outcome(text: bytes) -> str | None:
+    """"Complete" or "Failed" from `kubectl get job -o json` output; None while undecided."""
+    status = _json_object(text).get("status")
+    if not isinstance(status, dict):
+        return None
+    conditions = status.get("conditions")
+    for condition in conditions if isinstance(conditions, list) else []:
+        if isinstance(condition, dict) and condition.get("status") == "True" and condition.get("type") in _OUTCOMES:
+            return condition["type"]
+    succeeded = status.get("succeeded")
+    if isinstance(succeeded, int) and succeeded >= 1:
+        return "Complete"
+    return None
+
+
+def _poll(check: Callable[[], bool], timeout: float) -> bool:
+    """Call `check` every POLL_INTERVAL seconds until it returns True or `timeout` has passed."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if check():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(POLL_INTERVAL)
 
 
 def run(ctx: Context, name: str, extra: list[str], *, print_value: bool = False, follow: bool = False) -> int:
@@ -85,8 +141,15 @@ def _secret(ctx: Context, shortcut: Shortcut, print_value: bool) -> int:
         sys.stdout.buffer.flush()
         return 0
     clipboard.copy(ctx.runner, value)
-    clipboard.schedule_clear(ctx.runner, value)
-    print(f"copied {shortcut.name} ({len(value)} chars); the clipboard is cleared in {clipboard.clear_seconds():g} s")
+    try:
+        clipboard.schedule_clear(ctx.runner, value)
+    except TalkubError:
+        print("warning: the clipboard will not be cleared automatically", file=sys.stderr)
+    try:
+        size = f"{len(value.decode())} chars"
+    except UnicodeDecodeError:
+        size = f"{len(value)} bytes"
+    print(f"copied {shortcut.name} ({size}); the clipboard is cleared in {clipboard.clear_seconds():g} s")
     return 0
 
 
@@ -98,21 +161,42 @@ def _job(ctx: Context, shortcut: Shortcut, follow: bool) -> int:
         print(f"created job {ns}/{name}")
         if not follow:
             return 0
-        # Tolerated: the pod may already have finished (or not be Ready yet); the logs follow anyway.
-        kube.kubectl(
-            ["-n", ns, "wait", "--for=condition=Ready", "pod", "-l", f"job-name={name}", "--timeout=5m"],
-            check=False,
-        )
-        ctx.runner.call(["kubectl", "-n", ns, "logs", "-f", f"job/{name}"], env=kube.env)
-        raw = kube.kubectl(["-n", ns, "get", "job", name, "-o", "json"]).stdout
-    try:
-        succeeded = int(json.loads(raw).get("status", {}).get("succeeded") or 0)
-    except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
-        succeeded = 0
-    if succeeded >= 1:
+        return _follow(ctx, kube, ns, name)
+
+
+def _follow(ctx: Context, kube: KubeSession, ns: str, name: str) -> int:
+    """Wait for the job's pod, stream its logs, then report the job's outcome."""
+    describe = f"inspect with: talkub k -n {ns} describe job {name}"
+    phases: list[str] = []
+
+    def pod_started() -> bool:
+        nonlocal phases
+        phases = pod_phases(kube.kubectl(["-n", ns, "get", "pods", "-l", f"job-name={name}", "-o", "json"]).stdout)
+        return any(phase != "Pending" for phase in phases)
+
+    if not _poll(pod_started, POD_START_TIMEOUT):
+        if not phases:
+            raise CommandFailed("job pod did not start within 5 min", hint=describe)
+        print(f"note: the pod of job {ns}/{name} is still pending; following its logs anyway", file=sys.stderr)
+
+    logs = ctx.runner.call(["kubectl", "-n", ns, "logs", "-f", f"job/{name}"], env=kube.env)
+
+    outcome: str | None = None
+
+    def settled() -> bool:
+        nonlocal outcome
+        outcome = job_outcome(kube.kubectl(["-n", ns, "get", "job", name, "-o", "json"]).stdout)
+        return outcome is not None
+
+    # After an interrupted or failed `logs -f` (e.g. Ctrl-C), check once instead of waiting.
+    _poll(settled, JOB_SETTLE_TIMEOUT if logs == 0 else 0)
+    if outcome == "Complete":
         return 0
-    print(f"job {ns}/{name} has not succeeded", file=sys.stderr)
-    print(f"hint: inspect with: talkub k -n {ns} describe job {name}", file=sys.stderr)
+    if outcome == "Failed":
+        print(f"job {ns}/{name} failed", file=sys.stderr)
+    else:
+        print(f"job {ns}/{name} is still running", file=sys.stderr)
+    print(f"hint: {describe}", file=sys.stderr)
     return 1
 
 

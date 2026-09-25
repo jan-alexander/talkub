@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import json
+import subprocess
 import sys
 from datetime import UTC, datetime
 
@@ -14,7 +15,7 @@ import pytest
 from helpers import need
 from talkub import shortcuts
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.errors import CommandFailed, ValidationError
 from talkub.repo import Shortcut
 from talkub.runner import Runner
 
@@ -111,14 +112,13 @@ def test_secret_missing_key_lists_keys_without_values(ctx, spy, detached):
 def test_job_name_format_and_length():
     now = datetime(2026, 9, 26, 13, 4, 5, tzinfo=UTC)
     assert shortcuts.job_name("backup-job", now) == "backup-job-manual-20260926130405"
+    # the cronjob part is shortened so the timestamp always survives
     long_name = shortcuts.job_name("a" * 50, now)
-    assert len(long_name) <= 63
-    assert long_name == ("a" * 50 + "-manual-20260926130405")[:63]
-    # truncation landing right after a dash drops it
-    cut = shortcuts.job_name("b" * 55, now)
-    assert cut == "b" * 55 + "-manual"
-    assert not cut.endswith("-")
-    assert shortcuts.job_name("c" * 62, now) == "c" * 62
+    assert long_name == "a" * 41 + "-manual-20260926130405"
+    assert len(long_name) == 63
+    # a shortened cronjob part ending in '-' loses it
+    assert shortcuts.job_name("b" * 40 + "-cccc", now) == "b" * 40 + "-manual-20260926130405"
+    assert shortcuts.job_name("c" * 41, now) == "c" * 41 + "-manual-20260926130405"
 
 
 def test_job_creates_from_cronjob(ctx, spy, capfd):
@@ -131,31 +131,148 @@ def test_job_creates_from_cronjob(ctx, spy, capfd):
     assert f"created job prod/{create[4]}" in capfd.readouterr().out
 
 
-@pytest.mark.parametrize(("succeeded", "code"), [(1, 0), (0, 1)])
-def test_job_follow_waits_streams_logs_and_checks_status(ctx, spy, capfd, succeeded, code):
+class ScriptedKubectl(Runner):
+    """Real runner (sops etc.), but kubectl `get <kind>` answers come from `script[kind]` in order
+    (the last answer repeats) and interactive kubectl calls are recorded, not run."""
+
+    def __init__(self, script, *, logs=None):
+        self.script = {kind: list(answers) for kind, answers in script.items()}
+        self.logs = logs or (lambda: 0)
+        self.calls = []
+
+    def run(self, argv, **kwargs):
+        if argv[0] != "kubectl":
+            return super().run(argv, **kwargs)
+        self.calls.append(list(argv[1:]))
+        answer = ""
+        if argv[3] == "get":
+            answers = self.script[argv[4]]
+            answer = answers.pop(0) if len(answers) > 1 else answers[0]
+        return subprocess.CompletedProcess(list(argv), 0, answer.encode(), b"")
+
+    def call(self, argv, **kwargs):
+        if argv[0] != "kubectl":
+            return super().call(argv, **kwargs)
+        self.calls.append(list(argv[1:]))
+        assert kwargs["env"]["KUBECONFIG"]
+        return self.logs()
+
+    def verbs(self):
+        return [" ".join(call[2:4]) if call[2] == "get" else call[2] for call in self.calls]
+
+
+def _pods(*phases):
+    return json.dumps({"items": [{"status": {"phase": phase}} for phase in phases]})
+
+
+def _job(*, succeeded=None, condition=None):
+    status = {}
+    if succeeded is not None:
+        status["succeeded"] = succeeded
+    if condition is not None:
+        status["conditions"] = [{"type": "Suspended", "status": "False"}, {"type": condition, "status": "True"}]
+    return json.dumps({"status": status})
+
+
+@pytest.fixture
+def fast_polls(monkeypatch):
+    monkeypatch.setattr(shortcuts, "POLL_INTERVAL", 0)
+    monkeypatch.setattr(shortcuts, "POD_START_TIMEOUT", 0.3)
+    monkeypatch.setattr(shortcuts, "JOB_SETTLE_TIMEOUT", 0.3)
+
+
+def _scripted_ctx(repo, script, **kwargs):
+    runner = ScriptedKubectl(script, **kwargs)
+    return Context.open(repo, runner=runner), runner
+
+
+def test_job_follow_waits_for_the_pod_streams_logs_and_succeeds(ctx, spy, fast_polls, capfd):
+    spy("kubectl")  # only needs to be on PATH
+    fctx, runner = _scripted_ctx(
+        ctx.repo, {"pods": [_pods(), _pods("Pending"), _pods("Running")], "job": [_job(), _job(condition="Complete")]}
+    )
+    assert shortcuts.run(fctx, "backup", [], follow=True) == 0
+    assert runner.verbs() == ["create", "get pods", "get pods", "get pods", "logs", "get job", "get job"]
+    job = runner.calls[0][4]
+    assert runner.calls[1] == ["-n", "prod", "get", "pods", "-l", f"job-name={job}", "-o", "json"]
+    assert runner.calls[4] == ["-n", "prod", "logs", "-f", f"job/{job}"]
+    assert runner.calls[5] == ["-n", "prod", "get", "job", job, "-o", "json"]
+    assert "describe job" not in capfd.readouterr().err
+
+
+def test_job_follow_pod_already_finished_goes_straight_to_logs(ctx, spy, fast_polls):
+    spy("kubectl")
+    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Succeeded")], "job": [_job(succeeded=1)]})
+    assert shortcuts.run(fctx, "backup", [], follow=True) == 0
+    assert runner.verbs() == ["create", "get pods", "logs", "get job"]
+
+
+def test_job_follow_failed_job_returns_1_with_hint(ctx, spy, fast_polls, capfd):
+    spy("kubectl")
+    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Failed")], "job": [_job(condition="Failed")]})
+    assert shortcuts.run(fctx, "backup", [], follow=True) == 1
+    job = runner.calls[0][4]
+    err = capfd.readouterr().err
+    assert f"job prod/{job} failed" in err
+    assert f"inspect with: talkub k -n prod describe job {job}" in err
+
+
+def test_job_follow_undecided_job_is_still_running(ctx, spy, fast_polls, capfd):
+    spy("kubectl")
+    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Running")], "job": [_job()]})
+    assert shortcuts.run(fctx, "backup", [], follow=True) == 1
+    job = runner.calls[0][4]
+    err = capfd.readouterr().err
+    assert f"job prod/{job} is still running" in err
+    assert f"describe job {job}" in err
+    assert runner.verbs().count("get job") > 1  # polled until the timeout
+
+
+def test_job_follow_interrupted_logs_check_status_once(ctx, spy, fast_polls, monkeypatch, capfd):
+    spy("kubectl")
+    monkeypatch.setattr(shortcuts, "JOB_SETTLE_TIMEOUT", 60)  # must not be waited for after Ctrl-C
+    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Running")], "job": [_job()]}, logs=lambda: 130)
+    assert shortcuts.run(fctx, "backup", [], follow=True) == 1
+    assert runner.verbs().count("get job") == 1
+    assert "is still running" in capfd.readouterr().err
+
+
+def test_job_follow_pod_never_appears(ctx, spy, fast_polls):
+    spy("kubectl")
+    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods()], "job": [_job()]})
+    with pytest.raises(CommandFailed) as exc:
+        shortcuts.run(fctx, "backup", [], follow=True)
+    job = runner.calls[0][4]
+    assert "job pod did not start within 5 min" in str(exc.value)
+    assert exc.value.hint == f"inspect with: talkub k -n prod describe job {job}"
+    assert "logs" not in runner.verbs()
+
+
+def test_job_follow_pod_still_pending_streams_logs_anyway(ctx, spy, fast_polls, capfd):
+    spy("kubectl")
+    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Pending")], "job": [_job(succeeded=1)]})
+    assert shortcuts.run(fctx, "backup", [], follow=True) == 0
+    assert "logs" in runner.verbs()
+    assert "still pending" in capfd.readouterr().err
+
+
+def test_job_follow_end_to_end_with_real_kubeconfig(ctx, spy, fast_polls):
     kubectl = spy("kubectl")
-    kubectl.on("get", "job", stdout=json.dumps({"status": {"succeeded": succeeded} if succeeded else {"failed": 1}}))
-    kubectl.on("wait", rc=1, stderr="error: no matching resources found")  # tolerated
-    kubectl.on("logs", stdout="log line\n")
-
-    assert shortcuts.run(ctx, "backup", [], follow=True) == code
-
-    create, wait, logs, status = kubectl.argvs
-    job = create[4]
-    assert wait == ["-n", "prod", "wait", "--for=condition=Ready", "pod", "-l", f"job-name={job}", "--timeout=5m"]
-    assert logs == ["-n", "prod", "logs", "-f", f"job/{job}"]
-    assert status == ["-n", "prod", "get", "job", job, "-o", "json"]
-    assert all(call["kubeconfig"] for call in kubectl.calls)
-    captured = capfd.readouterr()
-    assert "log line" in captured.out
-    hint = f"inspect with: talkub k -n prod describe job {job}"
-    assert (hint in captured.out + captured.err) == (code == 1)
-
-
-def test_job_follow_from_config(ctx, spy):
-    kubectl = spy("kubectl").on("get", "job", stdout=json.dumps({"status": {"succeeded": 1}}))
+    kubectl.on("get", "pods", stdout=_pods("Running"))
+    kubectl.on("get", "job", stdout=_job(condition="Complete"))
     assert shortcuts.run(ctx, "backup-follow", []) == 0
-    assert [argv[2] for argv in kubectl.argvs] == ["create", "wait", "logs", "get"]
+    assert [argv[2] for argv in kubectl.argvs] == ["create", "get", "logs", "get"]
+    assert all(call["kubeconfig"] for call in kubectl.calls)
+
+
+def test_pod_phases_and_job_outcome_parsing():
+    assert shortcuts.pod_phases(_pods("Pending", "Running").encode()) == ["Pending", "Running"]
+    assert shortcuts.pod_phases(b"not json") == []
+    assert shortcuts.job_outcome(_job(succeeded=1).encode()) == "Complete"
+    assert shortcuts.job_outcome(_job(condition="Complete").encode()) == "Complete"
+    assert shortcuts.job_outcome(_job(condition="Failed").encode()) == "Failed"
+    assert shortcuts.job_outcome(_job().encode()) is None
+    assert shortcuts.job_outcome(b"{") is None
 
 
 @pytest.mark.parametrize("name", ["creds", "backup", "grafana"])
@@ -215,3 +332,32 @@ def test_listing(ctx):
     assert len(lines) == len(SHORTCUTS)
     creds = next(line for line in lines if line.startswith("creds"))
     assert creds.split() == ["creds", "secret", "db", "password"]
+
+
+def test_secret_counts_characters_not_bytes(ctx, spy, detached, capfd):
+    value = "pässwörd".encode()
+    spy("kubectl").on("get", "secret", stdout=_secret_json(password=value))
+    spy("pbcopy").on(read_stdin=True)
+    shortcuts.run(ctx, "creds", [])
+    assert "copied creds (8 chars)" in capfd.readouterr().out
+
+
+def test_secret_reports_bytes_when_not_utf8(ctx, spy, detached, capfd):
+    spy("kubectl").on("get", "secret", stdout=_secret_json(password=b"\xff\xfe\x00"))
+    spy("pbcopy")  # the spy logs stdin as text; this value is not UTF-8
+    shortcuts.run(ctx, "creds", [])
+    assert "copied creds (3 bytes)" in capfd.readouterr().out
+
+
+def test_secret_clearer_failure_only_warns(ctx, spy, capfd, monkeypatch):
+    def broken(self, argv, *, input):
+        raise CommandFailed("cannot start")
+
+    monkeypatch.setattr(Runner, "spawn_detached", broken)
+    spy("kubectl").on("get", "secret", stdout=_secret_json(password=VALUE))
+    pbcopy = spy("pbcopy").on(read_stdin=True)
+    assert shortcuts.run(ctx, "creds", []) == 0
+    assert len(pbcopy.calls) == 1
+    out, err = capfd.readouterr()
+    assert "warning: the clipboard will not be cleared automatically" in err
+    assert "copied creds" in out
