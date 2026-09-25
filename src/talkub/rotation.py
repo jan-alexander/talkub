@@ -145,9 +145,9 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
                 f"finish with `talkub rotate-ca --finish --talosconfig {new}`",
                 flush=True,
             )
-            # Own session: a terminal Ctrl-C must not kill talosctl halfway through the CA swap.
-            code = talos.call_global_redacted(
-                [*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs, raw_to=raw, new_session=True
+            # Never killed halfway through the CA swap: signals to talkub wait for talosctl to exit.
+            code = talos.call_global_uninterruptible(
+                [*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs, raw_to=raw
             )
             if code != 0 or not new.is_file():
                 raise CommandFailed(f"rotate-ca failed (exit {code})")

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
+import sys
+import threading
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -58,14 +61,11 @@ class Runner:
         check: bool = True,
         passthrough_stderr: bool = False,
         timeout: float | None = None,
-        new_session: bool = False,
     ) -> subprocess.CompletedProcess[bytes]:
         """Run non-interactively and capture stdout.
 
         `passthrough_stderr` lets prompts (e.g. "touch your YubiKey") reach the terminal.
         After `timeout` seconds the child is killed and treated as exit code 124 (like timeout(1)).
-        `new_session` starts the child in its own session, so a terminal Ctrl-C does not reach it
-        (for steps that must not be interrupted halfway).
         """
         require_tool(argv[0])
         try:
@@ -77,7 +77,6 @@ class Runner:
                 env=child_env(env),
                 cwd=cwd,
                 timeout=timeout,
-                start_new_session=new_session,
             )
         except subprocess.TimeoutExpired:
             message = f"{Path(argv[0]).name} timed out after {timeout:g}s"
@@ -90,6 +89,48 @@ class Runner:
                 f"{Path(argv[0]).name} exited with {proc.returncode}", hint=stderr or None
             )
         return proc
+
+    def run_uninterruptible(
+        self, argv: Sequence[str], *, output: Path, env: Mapping[str, str] | None = None
+    ) -> int:
+        """Run a step that must not be interrupted halfway and return its exit code.
+
+        stdout+stderr go straight to `output` (created, owner-only 0600; must not exist), so they
+        reach disk while the child runs and survive even if talkub itself is killed. The child runs
+        in its own session (a terminal Ctrl-C does not reach it); SIGINT/SIGTERM/SIGHUP sent to
+        talkub are held until the child has exited — it is never killed — and then re-raised as
+        the previous handler would have handled them.
+        """
+        require_tool(argv[0])
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            proc = subprocess.Popen(
+                list(argv), stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT,
+                env=child_env(env), start_new_session=True,
+            )
+        finally:
+            os.close(fd)
+        if threading.current_thread() is not threading.main_thread():
+            return proc.wait()
+        received: list[int] = []
+
+        def hold(signum, frame):
+            if not received:
+                print(
+                    f"{Path(argv[0]).name} is still running; waiting for it to finish (do not kill it)",
+                    file=sys.stderr, flush=True,
+                )
+            received.append(signum)
+
+        previous = {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS}
+        try:
+            code = proc.wait()  # the handler does not raise, so wait() resumes after each signal
+        finally:
+            for sig, old in previous.items():
+                signal.signal(sig, old)
+        if received:
+            _redeliver(received[0], previous[received[0]])
+        return code
 
     def call(
         self,
@@ -115,3 +156,18 @@ class Runner:
                 proc.terminate()
                 proc.wait()
                 raise
+
+
+_HELD_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+
+
+def _redeliver(signum: int, handler) -> None:
+    """Handle a held signal the way `handler` (the one active before it was held) would have."""
+    if callable(handler):
+        handler(signum, None)
+    elif handler == signal.SIG_IGN:
+        return
+    elif signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    else:
+        raise SystemExit(128 + signum)

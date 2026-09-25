@@ -1,5 +1,9 @@
 import os
+import signal
 import sys
+import threading
+import time
+from pathlib import Path
 
 import pytest
 
@@ -74,9 +78,48 @@ def test_call_maps_signal_death_to_shell_exit_code():
     assert Runner().call([sys.executable, "-c", code]) == 143
 
 
-def test_run_new_session_detaches_the_child_from_the_terminal_session():
-    code = "import os; print(os.getsid(0))"
-    same = Runner().run([sys.executable, "-c", code]).stdout.decode().strip()
-    own = Runner().run([sys.executable, "-c", code], new_session=True).stdout.decode().strip()
-    assert same == str(os.getsid(0))
-    assert own != str(os.getsid(0))
+
+SLOW_CHILD = "import sys, time; time.sleep(1); print('MARKER'); sys.stderr.write('ERR\\n'); sys.exit(3)"
+
+
+def _send_later(signum: int, delay: float = 0.2) -> threading.Timer:
+    timer = threading.Timer(delay, os.kill, (os.getpid(), signum))
+    timer.start()
+    return timer
+
+
+def test_run_uninterruptible_writes_output_privately_and_returns_the_exit_code(tmp_path):
+    out = tmp_path / "out"
+    assert Runner().run_uninterruptible([sys.executable, "-c", SLOW_CHILD], output=out) == 3
+    assert out.stat().st_mode & 0o777 == 0o600
+    assert sorted(out.read_text().split()) == ["ERR", "MARKER"]
+
+
+def test_run_uninterruptible_refuses_an_existing_output_file(tmp_path):
+    out = tmp_path / "out"
+    out.write_text("old")
+    with pytest.raises(FileExistsError):
+        Runner().run_uninterruptible([sys.executable, "-c", "pass"], output=out)
+
+
+@pytest.mark.parametrize(("signum", "expected"), [(signal.SIGINT, KeyboardInterrupt), (signal.SIGTERM, SystemExit)])
+def test_run_uninterruptible_waits_for_the_child_on_signals(tmp_path, capfd, signum, expected):
+    out = tmp_path / "out"
+    before = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    start = time.monotonic()
+    timer = _send_later(signum)
+    try:
+        with pytest.raises(expected):
+            Runner().run_uninterruptible([sys.executable, "-c", SLOW_CHILD], output=out)
+    finally:
+        timer.cancel()
+    assert time.monotonic() - start >= 1.0  # raised only after the child finished
+    assert sorted(out.read_text().split()) == ["ERR", "MARKER"]  # the child was not killed
+    assert f"{Path(sys.executable).name} is still running; waiting for it to finish (do not kill it)" in capfd.readouterr().err
+    assert {sig: signal.getsignal(sig) for sig in before} == before
+
+
+def test_run_uninterruptible_new_session(tmp_path):
+    out = tmp_path / "out"
+    Runner().run_uninterruptible([sys.executable, "-c", "import os; print(os.getsid(0) == os.getpid())"], output=out)
+    assert out.read_text().strip() == "True"

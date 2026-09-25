@@ -39,7 +39,6 @@ class FakeRunner(Runner):
 
     def run(
         self, argv, *, input=None, env=None, cwd=None, check=True, passthrough_stderr=False, timeout=None,
-        new_session=False,
     ):
         self.calls.append(Call(list(argv), dict(env or {}), input, passthrough_stderr))
         if self.on_run is not None:
