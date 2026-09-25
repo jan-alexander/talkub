@@ -9,9 +9,11 @@ from talkub.repo import (
     Repo,
     SchematicSpec,
     Settings,
+    Shortcut,
     TailscaleSpec,
     find_repo,
     parse_installer_image,
+    valid_label,
 )
 from talkub.schematic import customization_hash
 
@@ -217,3 +219,184 @@ def test_git_block_must_have_url(tmp_path, raw):
     repo.settings_file.write_text(yamlio.dump(data))
     with pytest.raises(ValidationError):
         repo.load_settings()
+
+
+# --- shortcuts ---
+
+
+def test_valid_label():
+    assert valid_label("cp-01")
+    assert valid_label("a")
+    assert not valid_label("")
+    assert not valid_label("Cp-01")
+    assert not valid_label("-cp01")
+    assert not valid_label("cp01-")
+    assert not valid_label("cp_01")
+    assert not valid_label("a" * 64)
+    assert valid_label("a" * 63)
+
+
+def _shortcuts_data(**shortcuts):
+    return _data(shortcuts=shortcuts)
+
+
+def test_shortcuts_full_example_roundtrip(tmp_path):
+    settings = sample_settings()
+    settings.shortcuts = {
+        "creds": Shortcut(
+            name="creds",
+            kind="secret",
+            description="db password",
+            namespace="prod",
+            secret="db-creds",
+            key="password",
+        ),
+        "backup": Shortcut(
+            name="backup", kind="job", namespace="prod", cronjob="backup-job", follow=True
+        ),
+        "argocd-password": Shortcut(
+            name="argocd-password",
+            kind="run",
+            argv=("kubectl", "get", "secret", "argocd-initial-admin-secret"),
+        ),
+        "grafana": Shortcut(
+            name="grafana",
+            kind="portForward",
+            namespace="monitoring",
+            service="grafana",
+            ports=("3000:3000", "8080"),
+        ),
+    }
+    repo = Repo(tmp_path)
+    repo.write_settings(settings)
+    assert repo.load_settings() == settings
+    text = repo.settings_file.read_text()
+    assert "secret:" in text
+    assert "job:" in text
+    assert "run:" in text
+    assert "portForward:" in text
+    assert "follow: true" in text
+
+
+def test_shortcuts_absent_block_not_written(tmp_path):
+    repo = Repo(tmp_path)
+    repo.write_settings(sample_settings())
+    assert "shortcuts:" not in repo.settings_file.read_text()
+
+
+def test_shortcut_job_follow_only_written_when_true(tmp_path):
+    settings = sample_settings()
+    settings.shortcuts = {
+        "backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="cj")
+    }
+    repo = Repo(tmp_path)
+    repo.write_settings(settings)
+    assert "follow" not in repo.settings_file.read_text()
+
+
+def test_shortcuts_must_be_a_mapping():
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_data(shortcuts=["nope"]))
+    assert "shortcuts" in str(exc.value)
+
+
+def test_shortcut_entry_must_be_a_mapping():
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup="nope"))
+    assert "shortcuts.backup" in str(exc.value)
+
+
+def test_shortcut_name_must_be_valid_label():
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(Bad_Name={"run": ["k", "get", "ns"]}))
+    assert "shortcuts.Bad_Name" in str(exc.value)
+
+
+@pytest.mark.parametrize("spec", [{}, {"run": ["k", "x"], "job": {"namespace": "a", "cronjob": "b"}}])
+def test_shortcut_must_have_exactly_one_kind(spec):
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup=spec))
+    assert "shortcuts.backup" in str(exc.value)
+
+
+def test_shortcut_description_must_be_non_empty_string():
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup={"description": "", "run": ["k", "x"]}))
+    assert "shortcuts.backup.description" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "secret,path",
+    [
+        ({"namespace": "Bad_NS", "name": "s", "key": "k"}, "shortcuts.backup.secret.namespace"),
+        ({"namespace": "prod", "name": "Bad_Name", "key": "k"}, "shortcuts.backup.secret.name"),
+        ({"namespace": "prod", "name": "s", "key": "bad key!"}, "shortcuts.backup.secret.key"),
+        ({"namespace": "prod", "name": "s", "key": ""}, "shortcuts.backup.secret.key"),
+    ],
+)
+def test_shortcut_secret_field_rules(secret, path):
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup={"secret": secret}))
+    assert path in str(exc.value)
+
+
+def test_shortcut_secret_key_may_contain_dot_and_underscore():
+    settings = Settings.from_dict(
+        _shortcuts_data(backup={"secret": {"namespace": "prod", "name": "s", "key": "tls.crt_1"}})
+    )
+    assert settings.shortcuts["backup"].key == "tls.crt_1"
+
+
+@pytest.mark.parametrize(
+    "job,path",
+    [
+        ({"namespace": "Bad_NS", "cronjob": "cj"}, "shortcuts.backup.job.namespace"),
+        ({"namespace": "prod", "cronjob": "Bad_CJ"}, "shortcuts.backup.job.cronjob"),
+        ({"namespace": "prod", "cronjob": "cj", "follow": "yes"}, "shortcuts.backup.job.follow"),
+    ],
+)
+def test_shortcut_job_field_rules(job, path):
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup={"job": job}))
+    assert path in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        [],
+        ["kubectl", 1],
+        ["helm", "get"],
+    ],
+)
+def test_shortcut_run_field_rules(run):
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup={"run": run}))
+    assert "shortcuts.backup.run" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "pf,path",
+    [
+        ({"namespace": "Bad_NS", "service": "svc", "ports": ["80"]}, "shortcuts.backup.portForward.namespace"),
+        ({"namespace": "prod", "service": "Bad_SVC", "ports": ["80"]}, "shortcuts.backup.portForward.service"),
+        ({"namespace": "prod", "service": "svc", "ports": []}, "shortcuts.backup.portForward.ports"),
+        ({"namespace": "prod", "service": "svc", "ports": ["0"]}, "shortcuts.backup.portForward.ports"),
+        ({"namespace": "prod", "service": "svc", "ports": ["70000"]}, "shortcuts.backup.portForward.ports"),
+        ({"namespace": "prod", "service": "svc", "ports": ["abc"]}, "shortcuts.backup.portForward.ports"),
+        ({"namespace": "prod", "service": "svc", "ports": ["1:2:3"]}, "shortcuts.backup.portForward.ports"),
+    ],
+)
+def test_shortcut_portforward_field_rules(pf, path):
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup={"portForward": pf}))
+    assert path in str(exc.value)
+
+
+def test_shortcut_portforward_accepts_single_and_mapped_ports():
+    settings = Settings.from_dict(
+        _shortcuts_data(
+            backup={"portForward": {"namespace": "prod", "service": "svc", "ports": ["8080", "3000:3000"]}}
+        )
+    )
+    assert settings.shortcuts["backup"].ports == ("8080", "3000:3000")
