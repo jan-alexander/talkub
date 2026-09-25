@@ -11,6 +11,8 @@ import json
 import re
 from collections import Counter
 
+from ruamel.yaml.error import YAMLError
+
 from talkub import yamlio
 from talkub.errors import ValidationError
 
@@ -253,20 +255,31 @@ def kubelet_versions(text: str) -> dict[str, str]:
     return result
 
 
-def endpoint_pod_names(text: str) -> list[str]:
-    """Pod names behind the ready addresses of `kubectl get endpoints <name> -o json`."""
-    docs = json_documents(text)
-    if len(docs) != 1 or not isinstance(docs[0], dict):
-        return []
+def endpointslice_pod_names(text: str) -> list[str]:
+    """Pod names of the ready endpoints in `kubectl get endpointslices -l ... -o json`."""
     names: list[str] = []
-    subsets = docs[0].get("subsets")
-    for subset in subsets if isinstance(subsets, list) else []:
-        addresses = _dict(subset).get("addresses")
-        for address in addresses if isinstance(addresses, list) else []:
-            name = _dict(_dict(address).get("targetRef")).get("name")
+    for item in _items(text):
+        endpoints = item.get("endpoints")
+        for endpoint in endpoints if isinstance(endpoints, list) else []:
+            endpoint = _dict(endpoint)
+            if _dict(endpoint.get("conditions")).get("ready") is not True:
+                continue
+            name = _dict(endpoint.get("targetRef")).get("name")
             if isinstance(name, str):
                 names.append(name)
     return names
+
+
+def service_spec(text: str) -> dict:
+    """`spec` of the first Service in YAML/JSON text (`helm template`, `kubectl get svc -o json`); {} if none."""
+    try:
+        docs = yamlio.load_all(text)
+    except YAMLError:
+        return {}
+    for doc in docs:
+        if isinstance(doc, dict) and doc.get("kind") == "Service":
+            return _dict(doc.get("spec"))
+    return {}
 
 
 def machine_ca(text: str) -> tuple[str, str]:

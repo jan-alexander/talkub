@@ -10,6 +10,7 @@ outage: the new pods join the existing `kube-dns` Service before the old ones ar
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from collections.abc import Callable, Iterator
@@ -21,9 +22,9 @@ from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
 from talkub.kube import KubeSession, kube_session
-from talkub.repo import Repo
+from talkub.repo import ChartSpec, Repo
 from talkub.runner import require_tool
-from talkub.talos.inspect import endpoint_pod_names
+from talkub.talos.inspect import endpointslice_pod_names, service_spec
 
 CLUSTER_DNS_IP = "10.96.0.10"
 TS_NAMESERVER_IP = "10.96.0.53"
@@ -58,7 +59,7 @@ TALOS_DEFAULT_PLUGINS = [
 
 def _stub_server(tailnet: str) -> dict:
     return {
-        "zones": [{"zone": tailnet}],
+        "zones": [{"zone": tailnet, "use_tcp": True}],
         "port": 53,
         "plugins": [
             {"name": "errors"},
@@ -74,7 +75,7 @@ def talos_patch() -> str:
 
 
 def values(tailnet: str | None = None) -> str:
-    servers = [{"zones": [{"zone": "."}], "port": 53, "plugins": TALOS_DEFAULT_PLUGINS}]
+    servers = [{"zones": [{"zone": ".", "use_tcp": True}], "port": 53, "plugins": TALOS_DEFAULT_PLUGINS}]
     if tailnet is not None:
         servers.append(_stub_server(tailnet))
     doc = {
@@ -82,6 +83,7 @@ def values(tailnet: str | None = None) -> str:
         "k8sAppLabelOverride": "kube-dns",
         "replicaCount": 2,
         "priorityClassName": "system-cluster-critical",
+        "serviceAccount": {"create": True},
         "tolerations": [
             {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
         ],
@@ -157,10 +159,16 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
             hint="run `talkub coredns takeover` without --resume",
         )
     with kube_session(ctx) as kube:
-        cluster_ip = kube.kubectl(
-            ["-n", NAMESPACE, "get", "svc", "kube-dns", "-o", "jsonpath={.spec.clusterIP}"]
-        ).stdout.decode().strip()
-    if cluster_ip != CLUSTER_DNS_IP:
+        result = kube.kubectl(
+            ["-n", NAMESPACE, "get", "svc", "kube-dns", "-o", "jsonpath={.spec.clusterIP}"], check=False
+        )
+    stderr = result.stderr.decode(errors="replace").strip()
+    # On --resume the Service may be gone (e.g. pruned); Helm then creates it with the pinned ClusterIP.
+    service_missing = result.returncode != 0 and "NotFound" in stderr
+    if result.returncode != 0 and not (resume and service_missing):
+        raise ValidationError(f"cannot read the kube-dns Service: {stderr or 'kubectl failed'}")
+    cluster_ip = result.stdout.decode().strip()
+    if not service_missing and cluster_ip != CLUSTER_DNS_IP:
         raise ValidationError(
             f"kube-dns has ClusterIP {cluster_ip or 'none'}, expected {CLUSTER_DNS_IP}",
             hint="the CoreDNS values pin the Service to the Talos default ClusterIP",
@@ -178,16 +186,21 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
         lifecycle.apply(ctx, [], confirm=lambda question: True)
     with kube_session(ctx) as kube:
         _warn_unless_old_pods_ready(kube)
-        _step("adopting the kube-dns Service into the Helm release")
-        with _failing_step("adopt kube-dns"):
-            annotations = [f"meta.helm.sh/release-name={RELEASE}", f"meta.helm.sh/release-namespace={NAMESPACE}"]
-            kube.kubectl(["-n", NAMESPACE, "annotate", "svc", "kube-dns", "--overwrite", *annotations])
-            kube.kubectl(["-n", NAMESPACE, "label", "svc", "kube-dns", "--overwrite", "app.kubernetes.io/managed-by=Helm"])
+        if service_missing:
+            print("   the kube-dns Service does not exist; the Helm release creates it", flush=True)
+            with _failing_step("render service"):
+                ports = _rendered_ports(kube, repo, chart)
+        else:
+            _step("adopting the kube-dns Service into the Helm release")
+            with _failing_step("adopt kube-dns"):
+                ports = _adopt_service(kube, repo, chart)
         _step(f"installing {DEPLOYMENT} (Helm release {RELEASE})")
         with _failing_step("helm install"):
             bootstrap.helm_install(kube, repo, "coredns", RELEASE, chart, NAMESPACE, False)
         with _failing_step("rollout status"):
             kube.kubectl(["-n", NAMESPACE, "rollout", "status", f"deploy/{DEPLOYMENT}", "--timeout", "5m"])
+        with _failing_step("verify service"):
+            _verify_service(kube, ports)
         _step("deleting the Talos CoreDNS objects")
         with _failing_step("delete old CoreDNS"):
             for kind in ("deploy", "configmap", "serviceaccount"):
@@ -222,6 +235,54 @@ def _write_repo_files(ctx: Context) -> None:
         print(f"   wrote {repo.rel(path)}")
 
 
+def _rendered_ports(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dict]:
+    """The chart's kube-dns Service ports for our values (`helm template`), so names cannot drift."""
+    argv = [
+        "template", RELEASE, *bootstrap.chart_ref(chart),
+        "--version", chart.version,
+        "--namespace", NAMESPACE,
+        "--values", str(values_path(repo)),
+        "--show-only", "templates/service.yaml",
+    ]
+    ports = service_spec(kube.helm(argv).stdout.decode()).get("ports")
+    if not isinstance(ports, list) or not ports:
+        raise CommandFailed("helm template rendered no Service ports for kube-dns")
+    return ports
+
+
+def _adopt_service(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dict]:
+    """Hand the Talos-applied kube-dns Service to Helm without a gap in DNS.
+
+    Talos' ports (dns, dns-tcp, metrics) differ from the chart's; neither Helm 3's strategic merge
+    (keyed by port only, two port-53 entries) nor Helm 4's server-side apply (field conflicts with
+    Talos' manager) can reconcile them, so the list is replaced up front and the field managers are
+    reset. targetPort stays 53, so the old pods keep serving until they are deleted."""
+    annotations = [f"meta.helm.sh/release-name={RELEASE}", f"meta.helm.sh/release-namespace={NAMESPACE}"]
+    kube.kubectl(["-n", NAMESPACE, "annotate", "svc", "kube-dns", "--overwrite", *annotations])
+    kube.kubectl(["-n", NAMESPACE, "label", "svc", "kube-dns", "--overwrite", "app.kubernetes.io/managed-by=Helm"])
+    ports = _rendered_ports(kube, repo, chart)
+    patch = json.dumps([{"op": "replace", "path": "/spec/ports", "value": ports}])
+    kube.kubectl(["-n", NAMESPACE, "patch", "svc", "kube-dns", "--type=json", "-p", patch])
+    reset = json.dumps({"metadata": {"managedFields": [{}]}})
+    kube.kubectl(["-n", NAMESPACE, "patch", "svc", "kube-dns", "--type=merge", "-p", reset])
+    return ports
+
+
+def _port_keys(ports: object) -> list[tuple]:
+    entries = ports if isinstance(ports, list) else []
+    return [(p.get("name"), p.get("port"), p.get("protocol")) for p in entries if isinstance(p, dict)]
+
+
+def _verify_service(kube: KubeSession, ports: list[dict]) -> None:
+    spec = service_spec(kube.kubectl(["-n", NAMESPACE, "get", "svc", "kube-dns", "-o", "json"]).stdout.decode())
+    live, expected = _port_keys(spec.get("ports")), _port_keys(ports)
+    if spec.get("clusterIP") != CLUSTER_DNS_IP or live != expected:
+        raise CommandFailed(
+            f"kube-dns has ClusterIP {spec.get('clusterIP') or 'none'} and ports {live}, "
+            f"expected {CLUSTER_DNS_IP} and {expected}"
+        )
+
+
 def _warn_unless_old_pods_ready(kube: KubeSession) -> None:
     result = kube.kubectl(
         ["-n", NAMESPACE, "get", "deploy", "coredns", "-o", "jsonpath={.status.readyReplicas}"], check=False
@@ -240,8 +301,9 @@ def _verify_endpoints(kube: KubeSession) -> None:
     for attempt in range(ENDPOINTS_ATTEMPTS):
         if attempt:
             time.sleep(ENDPOINTS_INTERVAL)
-        text = kube.kubectl(["-n", NAMESPACE, "get", "endpoints", "kube-dns", "-o", "json"]).stdout.decode()
-        names = endpoint_pod_names(text)
+        selector = "kubernetes.io/service-name=kube-dns"
+        text = kube.kubectl(["-n", NAMESPACE, "get", "endpointslices", "-l", selector, "-o", "json"]).stdout.decode()
+        names = endpointslice_pod_names(text)
         if names and all(name.startswith(f"{DEPLOYMENT}-") for name in names):
             return
     raise CommandFailed(

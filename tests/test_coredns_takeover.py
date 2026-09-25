@@ -23,9 +23,44 @@ DELETES = [
 ]
 
 
-def endpoints(*names: str) -> str:
-    addresses = [{"ip": f"10.244.0.{i}", "targetRef": {"kind": "Pod", "name": n}} for i, n in enumerate(names)]
-    return json.dumps({"kind": "Endpoints", "subsets": [{"addresses": addresses}]})
+PORTS = [
+    {"name": "udp-53", "port": 53, "protocol": "UDP", "targetPort": 53},
+    {"name": "tcp-53", "port": 53, "protocol": "TCP", "targetPort": 53},
+]
+RENDERED_SERVICE = """---
+# Source: coredns/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-dns
+  namespace: kube-system
+spec:
+  selector:
+    k8s-app: kube-dns
+  clusterIP: 10.96.0.10
+  ports:
+  - {"name":"udp-53","port":53,"protocol":"UDP","targetPort":53}
+  - {"name":"tcp-53","port":53,"protocol":"TCP","targetPort":53}
+  type: ClusterIP
+"""
+NOT_FOUND = 'Error from server (NotFound): services "kube-dns" not found\n'
+
+
+def live_service(ports=PORTS, cluster_ip="10.96.0.10") -> str:
+    return json.dumps({"kind": "Service", "spec": {"clusterIP": cluster_ip, "ports": ports}})
+
+
+def endpoints(*names: str, ready: bool = True) -> str:
+    endpoints = [
+        {"addresses": [f"10.244.0.{i}"], "conditions": {"ready": ready}, "targetRef": {"kind": "Pod", "name": n}}
+        for i, n in enumerate(names)
+    ]
+    return json.dumps({"kind": "List", "items": [{"kind": "EndpointSlice", "endpoints": endpoints}]})
+
+
+def first_rule(spy, *words, stdout="", stderr="", rc=0):
+    spy.rules.insert(0, {"match": list(words), "stdout": stdout, "stderr": stderr, "rc": rc})
+    spy._save()
 
 
 @pytest.fixture
@@ -38,7 +73,9 @@ def cluster(repo_with_configs, spy, fake_bin, monkeypatch):
     kubectl = spy("kubectl")
     kubectl.on("jsonpath={.spec.clusterIP}", stdout="10.96.0.10")
     kubectl.on("jsonpath={.status.readyReplicas}", stdout="2")
-    kubectl.on("endpoints", stdout=endpoints("coredns-talkub-abc-1", "coredns-talkub-abc-2"))
+    kubectl.on("endpointslices", stdout=endpoints("coredns-talkub-abc-1", "coredns-talkub-abc-2"))
+    kubectl.on("get", "svc", "json", stdout=live_service())
+    kubectl.on("template", "--show-only", stdout=RENDERED_SERVICE)  # helm
     kubectl.on("show", "chart", stdout="name: coredns\nversion: 1.45.0\n")  # helm shares the rules
     script = kubectl.directory / "spy.py"
     fake_bin("helm", f'exec "{sys.executable}" "{script}" "{kubectl.log}" "{kubectl.rules_file}" "$@"\n')
@@ -84,16 +121,31 @@ def test_happy_path_order_files_and_notes(cluster):
         "meta.helm.sh/release-name=coredns", "meta.helm.sh/release-namespace=kube-system",
     ]
     assert argvs[5] == ["-n", "kube-system", "label", "svc", "kube-dns", "--overwrite", "app.kubernetes.io/managed-by=Helm"]
-    helm = argvs[6]
+    template = argvs[6]
+    assert template[:4] == ["template", "coredns", "coredns", "--repo"]
+    assert template[template.index("--version") + 1] == "1.45.0"
+    assert template[template.index("--namespace") + 1] == "kube-system"
+    assert template[template.index("--values") + 1] == str(repo.gitops_dir / "values" / "coredns.yaml")
+    assert template[-2:] == ["--show-only", "templates/service.yaml"]
+    assert argvs[7][:7] == ["-n", "kube-system", "patch", "svc", "kube-dns", "--type=json", "-p"]
+    assert json.loads(argvs[7][7]) == [{"op": "replace", "path": "/spec/ports", "value": PORTS}]
+    assert len(argvs[7]) == 8
+    assert argvs[8] == [
+        "-n", "kube-system", "patch", "svc", "kube-dns", "--type=merge", "-p", '{"metadata": {"managedFields": [{}]}}',
+    ]
+    helm = argvs[9]
     assert helm[:5] == ["upgrade", "--install", "coredns", "coredns", "--repo"]
     assert helm[helm.index("--version") + 1] == "1.45.0"
     assert helm[helm.index("--namespace") + 1] == "kube-system"
     assert helm[helm.index("--values") + 1] == str(repo.gitops_dir / "values" / "coredns.yaml")
     assert "--create-namespace" not in helm
-    assert argvs[7] == ["-n", "kube-system", "rollout", "status", "deploy/coredns-talkub", "--timeout", "5m"]
-    assert argvs[8:13] == DELETES
-    assert argvs[13] == ["-n", "kube-system", "get", "endpoints", "kube-dns", "-o", "json"]
-    assert len(argvs) == 14
+    assert argvs[10] == ["-n", "kube-system", "rollout", "status", "deploy/coredns-talkub", "--timeout", "5m"]
+    assert argvs[11] == ["-n", "kube-system", "get", "svc", "kube-dns", "-o", "json"]
+    assert argvs[12:17] == DELETES
+    assert argvs[17] == [
+        "-n", "kube-system", "get", "endpointslices", "-l", "kubernetes.io/service-name=kube-dns", "-o", "json",
+    ]
+    assert len(argvs) == 18
     assert all(call["kubeconfig"] for call in kubectl.calls if call["args"][0] not in ("<talos apply>", "show"))
 
     settings = repo.load_settings()
@@ -174,8 +226,8 @@ def test_resume_skips_file_writing_and_runs_the_rest(cluster):
     argvs = kubectl.argvs
     assert not any(a[0] == "show" for a in argvs)  # no chart resolution
     assert argvs[1] == ["<talos apply>"]
-    assert argvs[5][:3] == ["upgrade", "--install", "coredns"]
-    assert argvs[7:12] == DELETES
+    assert argvs[8][:3] == ["upgrade", "--install", "coredns"]
+    assert argvs[11:16] == DELETES
     assert (repo.gitops_dir / "apps" / "coredns.yaml").read_text() == app_text
     assert applied == [[], []]
 
@@ -196,7 +248,7 @@ def test_missing_old_deployment_only_warns(cluster, capsys):
     kubectl._save()
     run(repo)
     assert "warning:" in capsys.readouterr().err
-    assert kubectl.argvs[-1][3] == "endpoints"
+    assert kubectl.argvs[-1][3] == "endpointslices"
 
 
 def test_failed_rollout_deletes_nothing(cluster):
@@ -206,20 +258,19 @@ def test_failed_rollout_deletes_nothing(cluster):
     kubectl._save()
     with pytest.raises(CommandFailed) as exc:
         run(repo)
-    assert "rollout" in str(exc.value) or "rollout" in (exc.value.hint or "")
+    assert str(exc.value).startswith("takeover step 'rollout status' failed")
     assert "--resume" in exc.value.hint
     assert not any("delete" in a for a in kubectl.argvs)
 
 
 def test_endpoints_still_on_old_pods_fail(cluster):
     repo, kubectl, _ = cluster
-    kubectl.rules.insert(0, {"match": ["endpoints"], "stdout": endpoints("coredns-talkub-x-1", "coredns-7c-2"), "rc": 0})
-    kubectl._save()
+    first_rule(kubectl, "endpointslices", stdout=endpoints("coredns-talkub-x-1", "coredns-7c-2"))
     with pytest.raises(CommandFailed) as exc:
         run(repo)
     assert "coredns-7c-2" in str(exc.value)
     assert exc.value.hint
-    polls = [a for a in kubectl.argvs if "endpoints" in a]
+    polls = [a for a in kubectl.argvs if "endpointslices" in a]
     assert len(polls) == coredns.ENDPOINTS_ATTEMPTS
 
 
@@ -244,7 +295,7 @@ def test_cli_yes_skips_prompt(cluster, monkeypatch, capsys):
     cli(main, repo, "--yes")
     out = capsys.readouterr().out
     assert "note: CoreDNS now runs as coredns-talkub (Helm release coredns)" in out
-    assert kubectl.argvs[-1][3] == "endpoints"
+    assert kubectl.argvs[-1][3] == "endpointslices"
 
 
 def test_cli_prompt_declined(cluster, monkeypatch):
@@ -258,8 +309,55 @@ def test_cli_prompt_declined(cluster, monkeypatch):
     assert applied == [] and mutations(kubectl.argvs) == []
 
 
-def test_endpoint_pod_names():
-    assert inspect.endpoint_pod_names(endpoints("a", "b")) == ["a", "b"]
-    assert inspect.endpoint_pod_names('{"subsets": [{"notReadyAddresses": [{"targetRef": {"name": "x"}}]}]}') == []
-    assert inspect.endpoint_pod_names("{}") == []
-    assert inspect.endpoint_pod_names("not json") == []
+def test_service_mismatch_after_helm_deletes_nothing(cluster):
+    repo, kubectl, _ = cluster
+    first_rule(kubectl, "get", "svc", "json", stdout=live_service([*PORTS, {"name": "metrics", "port": 9153, "protocol": "TCP"}]))
+    with pytest.raises(CommandFailed) as exc:
+        run(repo)
+    assert str(exc.value).startswith("takeover step 'verify service' failed")
+    assert not any("delete" in a for a in kubectl.argvs)
+
+
+def test_service_with_wrong_cluster_ip_after_helm_fails(cluster):
+    repo, kubectl, _ = cluster
+    first_rule(kubectl, "get", "svc", "json", stdout=live_service(cluster_ip="10.96.0.99"))
+    with pytest.raises(CommandFailed) as exc:
+        run(repo)
+    assert str(exc.value).startswith("takeover step 'verify service' failed")
+    assert not any("delete" in a for a in kubectl.argvs)
+
+
+def test_resume_with_missing_service_lets_helm_create_it(cluster):
+    repo, kubectl, _ = cluster
+    run(repo)
+    kubectl.log.unlink()
+    first_rule(kubectl, "jsonpath={.spec.clusterIP}", stderr=NOT_FOUND, rc=1)
+    run(repo, resume=True)
+    argvs = kubectl.argvs
+    assert not any(verb in a for a in argvs for verb in ("annotate", "label", "patch"))
+    assert argvs[3][0] == "template" and argvs[4][:2] == ["upgrade", "--install"]
+    assert ["-n", "kube-system", "get", "svc", "kube-dns", "-o", "json"] in argvs
+    assert argvs[-1][3] == "endpointslices"
+
+
+def test_missing_service_without_resume_is_rejected(cluster):
+    repo, kubectl, applied = cluster
+    first_rule(kubectl, "jsonpath={.spec.clusterIP}", stderr=NOT_FOUND, rc=1)
+    with pytest.raises(ValidationError):
+        run(repo)
+    assert mutations(kubectl.argvs) == [] and applied == []
+    assert not (repo.gitops_dir / "apps" / "coredns.yaml").exists()
+
+
+def test_service_spec():
+    assert inspect.service_spec(RENDERED_SERVICE)["ports"] == PORTS
+    assert inspect.service_spec(live_service())["clusterIP"] == "10.96.0.10"
+    assert inspect.service_spec("kind: ConfigMap\n") == {}
+    assert inspect.service_spec(": not yaml: [") == {}
+
+
+def test_endpointslice_pod_names():
+    assert inspect.endpointslice_pod_names(endpoints("a", "b")) == ["a", "b"]
+    assert inspect.endpointslice_pod_names(endpoints("a", ready=False)) == []
+    assert inspect.endpointslice_pod_names("{}") == []
+    assert inspect.endpointslice_pod_names("not json") == []

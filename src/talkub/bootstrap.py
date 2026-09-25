@@ -142,18 +142,21 @@ def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
     print(f"   wrote {ctx.repo.rel(target)}")
 
 
+def chart_ref(chart: ChartSpec) -> list[str]:
+    """helm arguments naming the chart: an OCI reference, or chart name plus --repo."""
+    if chart.repo.startswith("oci://"):
+        return [f"{chart.repo.rstrip('/')}/{chart.chart}"]
+    return [chart.chart, "--repo", chart.repo]
+
+
 def helm_install(
     kube: KubeSession, repo: Repo, key: str, release: str, chart: ChartSpec, namespace: str, create: bool
 ) -> None:
     values = repo.gitops_dir / "values" / f"{key}.yaml"
     if not values.is_file():
         raise ValidationError(f"{repo.rel(values)} does not exist")
-    if chart.repo.startswith("oci://"):
-        ref = [f"{chart.repo.rstrip('/')}/{chart.chart}"]
-    else:
-        ref = [chart.chart, "--repo", chart.repo]
     argv = [
-        "upgrade", "--install", release, *ref,
+        "upgrade", "--install", release, *chart_ref(chart),
         "--version", chart.version,
         "--namespace", namespace,
         "--values", str(values),

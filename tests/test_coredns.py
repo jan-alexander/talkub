@@ -27,7 +27,8 @@ def test_values_without_tailnet_has_leading_comment_and_one_server():
     assert doc["service"] == {"name": "kube-dns", "clusterIP": "10.96.0.10", "selector": {"k8s-app": "kube-dns"}}
     assert len(doc["servers"]) == 1
     default_server = doc["servers"][0]
-    assert default_server["zones"] == [{"zone": "."}]
+    assert default_server["zones"] == [{"zone": ".", "use_tcp": True}]
+    assert doc["serviceAccount"] == {"create": True}
     assert default_server["port"] == 53
     names = [p["name"] for p in default_server["plugins"]]
     assert names == [
@@ -45,7 +46,7 @@ def test_values_with_tailnet_adds_stub_block_exactly_once():
     doc = yamlio.load(text)
     assert len(doc["servers"]) == 2
     stub = doc["servers"][1]
-    assert stub["zones"] == [{"zone": TAILNET}]
+    assert stub["zones"] == [{"zone": TAILNET, "use_tcp": True}]
     assert stub["port"] == 53
     names = [p["name"] for p in stub["plugins"]]
     assert names == ["errors", "cache", "forward"]
@@ -61,7 +62,7 @@ def test_add_stub_zone_adds_server_and_keeps_comment():
     assert text.startswith("# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n")
     doc = yamlio.load(text)
     assert len(doc["servers"]) == 2
-    assert doc["servers"][1]["zones"] == [{"zone": TAILNET}]
+    assert doc["servers"][1]["zones"] == [{"zone": TAILNET, "use_tcp": True}]
 
 
 def test_add_stub_zone_idempotent():
@@ -95,8 +96,12 @@ def test_real_chart_renders_expected_shape(tmp_path):
     service = next(d for d in docs if d.get("kind") == "Service")
     assert service["spec"]["clusterIP"] == "10.96.0.10"
     assert service["spec"]["selector"] == {"k8s-app": "kube-dns"}
+    ports = {(p["name"], p["port"], p["protocol"]) for p in service["spec"]["ports"]}
+    assert len(service["spec"]["ports"]) == 2
+    assert ports == {("udp-53", 53, "UDP"), ("tcp-53", 53, "TCP")}
     deployment = next(d for d in docs if d.get("kind") == "Deployment")
     assert deployment["metadata"]["name"] == "coredns-talkub"
+    assert deployment["spec"]["template"]["spec"]["serviceAccountName"] not in ("default", None)
 
 
 @need("helm")
