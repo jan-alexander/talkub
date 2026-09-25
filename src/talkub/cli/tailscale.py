@@ -12,7 +12,7 @@ from talkub.cli.prompts import read_secret
 app = typer.Typer(help="Tailscale as the only admin path to the Talos and Kubernetes APIs.", no_args_is_help=True)
 NODE_CIDR = typer.Option(None, "--node-cidr", help="Node network for cluster-internal rules (default: /24 of the first node).")
 
-operator_app = typer.Typer(help="The Tailscale Kubernetes operator (API server proxy, egress).", no_args_is_help=True)
+operator_app = typer.Typer(help="The Tailscale Kubernetes operator (egress to tailnet hosts; ingress via your own manifests).", no_args_is_help=True)
 app.add_typer(operator_app, name="operator")
 
 egress_app = typer.Typer(

@@ -78,3 +78,37 @@ def test_directory_app_skip_dry_run_on_missing():
     )
     doc = yamlio.load(text)
     assert doc["spec"]["syncPolicy"]["syncOptions"] == ["ServerSideApply=true", "SkipDryRunOnMissingResource=true"]
+
+
+RETRY = {"limit": 10, "backoff": {"duration": "10s", "factor": 2, "maxDuration": "3m"}}
+
+
+def test_both_renderers_retry_failed_syncs():
+    helm = yamlio.load(apps.helm_app("coredns", _chart(), "https://g/r.git", "gitops/values/coredns.yaml", "kube-system"))
+    directory = yamlio.load(apps.directory_app("cfg", "https://g/r.git", "gitops/manifests/x", "x"))
+    assert helm["spec"]["syncPolicy"]["retry"] == RETRY
+    assert directory["spec"]["syncPolicy"]["retry"] == RETRY
+
+
+def test_sync_wave_annotation_only_when_given():
+    plain = yamlio.load(apps.helm_app("coredns", _chart(), "https://g/r.git", "v.yaml", "kube-system"))
+    assert "annotations" not in plain["metadata"]
+    helm = yamlio.load(apps.helm_app("op", _chart(), "https://g/r.git", "v.yaml", "tailscale", sync_wave="0"))
+    directory = yamlio.load(apps.directory_app("cfg", "https://g/r.git", "p", "tailscale", sync_wave="1"))
+    assert helm["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "0"}
+    assert directory["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "1"}
+
+
+def test_directory_app_create_namespace_and_ignore_differences():
+    ignore = [{"group": "", "kind": "Service", "jsonPointers": ["/spec/externalName"]}]
+    doc = yamlio.load(apps.directory_app(
+        "cfg", "https://g/r.git", "p", "tailscale",
+        create_namespace=True, skip_dry_run_on_missing=True, ignore_differences=ignore,
+    ))
+    assert doc["spec"]["syncPolicy"]["syncOptions"] == [
+        "CreateNamespace=true", "ServerSideApply=true", "SkipDryRunOnMissingResource=true",
+        "RespectIgnoreDifferences=true",
+    ]
+    assert doc["spec"]["ignoreDifferences"] == ignore
+    plain = yamlio.load(apps.directory_app("cfg", "https://g/r.git", "p", "tailscale"))
+    assert "ignoreDifferences" not in plain["spec"]

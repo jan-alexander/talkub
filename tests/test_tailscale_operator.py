@@ -145,7 +145,16 @@ def test_enable_writes_repo_files_and_notes(repo, kubeseal_spy):
     assert config_doc["spec"]["source"]["path"] == "gitops/manifests/tailscale"
     assert config_doc["spec"]["source"]["repoURL"] == GIT_URL
     assert config_doc["spec"]["destination"]["namespace"] == "tailscale"
-    assert config_doc["spec"]["syncPolicy"]["syncOptions"] == ["ServerSideApply=true", "SkipDryRunOnMissingResource=true"]
+    assert config_doc["spec"]["syncPolicy"]["syncOptions"] == [
+        "CreateNamespace=true", "ServerSideApply=true", "SkipDryRunOnMissingResource=true",
+        "RespectIgnoreDifferences=true",
+    ]
+    # the operator rewrites spec.externalName of egress Services (tailscale/tailscale#15098)
+    assert config_doc["spec"]["ignoreDifferences"] == [
+        {"group": "", "kind": "Service", "jsonPointers": ["/spec/externalName"]}
+    ]
+    assert app_doc["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "0"}
+    assert config_doc["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "1"}
 
     dns_doc = yamlio.load(tailscale_operator.dnsconfig_path(repo).read_text())
     assert dns_doc == {

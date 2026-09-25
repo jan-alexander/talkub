@@ -1,4 +1,4 @@
-"""Tailscale operator (Kubernetes API server proxy, egress via ExternalName services):
+"""Tailscale operator (egress via ExternalName services; its API server proxy stays disabled):
 Helm values, Argo CD apps, the DNSConfig that points CoreDNS' tailnet stub at the
 operator's nameserver, and the SealedSecret for its OAuth client.
 
@@ -117,11 +117,16 @@ def write_files(repo: Repo, chart: ChartSpec, git_url: str, cluster: str) -> Non
     files = {
         values_path(repo): values(cluster),
         app_path(repo): apps.helm_app(
-            "tailscale-operator", chart, git_url, values_file, NAMESPACE, create_namespace=True
+            "tailscale-operator", chart, git_url, values_file, NAMESPACE, create_namespace=True, sync_wave="0"
         ),
+        # Wave 1: the manifests need the operator's CRDs. The operator rewrites spec.externalName
+        # of egress Services (tailscale/tailscale#15098); selfHeal must leave that field alone.
         config_app_path(repo): apps.directory_app(
             "tailscale-operator-config", git_url, repo.rel(manifests_dir(repo)), NAMESPACE,
+            create_namespace=True,
             skip_dry_run_on_missing=True,
+            ignore_differences=[{"group": "", "kind": "Service", "jsonPointers": ["/spec/externalName"]}],
+            sync_wave="1",
         ),
         dnsconfig_path(repo): dnsconfig(),
     }

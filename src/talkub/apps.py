@@ -9,6 +9,16 @@ from talkub.repo import ChartSpec
 
 _HEADER = "# Managed by talkub.\n"
 _DESTINATION_SERVER = "https://kubernetes.default.svc"
+# A failed automated sync is not retried unless syncPolicy.retry is set (e.g. an app whose
+# CRDs come from another app that has not synced yet).
+_RETRY = {"limit": 10, "backoff": {"duration": "10s", "factor": 2, "maxDuration": "3m"}}
+
+
+def _metadata(name: str, sync_wave: str | None) -> dict:
+    metadata: dict = {"name": name, "namespace": "argocd"}
+    if sync_wave is not None:
+        metadata["annotations"] = {"argocd.argoproj.io/sync-wave": sync_wave}
+    return metadata
 
 
 def helm_app(
@@ -20,6 +30,7 @@ def helm_app(
     *,
     create_namespace: bool = False,
     server_side: bool = True,
+    sync_wave: str | None = None,
 ) -> str:
     sync_options = []
     if create_namespace:
@@ -29,10 +40,11 @@ def helm_app(
     sync_policy: dict = {"automated": {"prune": True, "selfHeal": True}}
     if sync_options:
         sync_policy["syncOptions"] = sync_options
+    sync_policy["retry"] = _RETRY
     doc = {
         "apiVersion": "argoproj.io/v1alpha1",
         "kind": "Application",
-        "metadata": {"name": name, "namespace": "argocd"},
+        "metadata": _metadata(name, sync_wave),
         "spec": {
             "project": "default",
             "sources": [
@@ -57,15 +69,21 @@ def directory_app(
     path: str,
     namespace: str,
     *,
+    create_namespace: bool = False,
     skip_dry_run_on_missing: bool = False,
+    ignore_differences: list[dict] | None = None,
+    sync_wave: str | None = None,
 ) -> str:
-    sync_options = ["ServerSideApply=true"]
+    sync_options = ["CreateNamespace=true"] if create_namespace else []
+    sync_options.append("ServerSideApply=true")
     if skip_dry_run_on_missing:
         sync_options.append("SkipDryRunOnMissingResource=true")
-    doc = {
+    if ignore_differences:
+        sync_options.append("RespectIgnoreDifferences=true")  # selfHeal must not revert those fields
+    doc: dict = {
         "apiVersion": "argoproj.io/v1alpha1",
         "kind": "Application",
-        "metadata": {"name": name, "namespace": "argocd"},
+        "metadata": _metadata(name, sync_wave),
         "spec": {
             "project": "default",
             "source": {
@@ -78,7 +96,10 @@ def directory_app(
             "syncPolicy": {
                 "automated": {"prune": True, "selfHeal": True},
                 "syncOptions": sync_options,
+                "retry": _RETRY,
             },
         },
     }
+    if ignore_differences:
+        doc["spec"]["ignoreDifferences"] = ignore_differences
     return _HEADER + yamlio.dump(doc)
