@@ -166,6 +166,12 @@ at the tailnet target. After commit, push and sync, pods reach it both by its Ma
 (`db.tailscale.svc.cluster.local`). The operator rewrites the Services' `spec.externalName`, so
 the `tailscale-operator-config` app ignores that field (`ignoreDifferences`) instead of reverting it.
 
+If the cluster Service works but the MagicDNS name still returns NXDOMAIN after the egress proxy is
+running, the operator's nameserver may have missed the update of its records (observed with
+operator 1.102.4: it read an empty `dnsrecords` ConfigMap and did not reload). Check the records
+with `talkub k -n tailscale get cm dnsrecords -o yaml`; if the name is listed, restart the
+nameserver: `talkub k -n tailscale delete pod -l app=nameserver`.
+
 ### Ingress
 
 Not automated by talkub — configure it directly in your app manifests:
