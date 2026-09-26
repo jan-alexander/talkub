@@ -4,7 +4,7 @@ from helpers import need
 from talkub.context import Context
 from talkub.core.errors import ValidationError
 from talkub.core.runner import Runner
-from talkub.kube import kube_session
+from talkub.kube.session import kube_session
 
 
 def test_spy_rules_first_match_and_logging(spy):

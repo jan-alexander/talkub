@@ -4,13 +4,13 @@ import sys
 import pytest
 from helpers import need
 
-from talkub import coredns, lifecycle
+from talkub import coredns
 from talkub.config import GitSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
-from talkub.talos import inspect
+from talkub.talos import inspect, lifecycle
 
 pytestmark = need("age", "age-keygen", "sops")
 

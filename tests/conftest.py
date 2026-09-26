@@ -142,8 +142,8 @@ def talos_repo(repo_with_configs):
     from talkub.core.ephemeral import private_tempdir
     from talkub.core.fsutil import atomic_write
     from talkub.core.runner import Runner
-    from talkub.nodes import node_patch_path, render_node_patch
     from talkub.talos import gen
+    from talkub.talos.nodes import node_patch_path, render_node_patch
 
     ctx = Context.open(repo_with_configs)
     public = ctx.keyring.public_key()

@@ -121,7 +121,7 @@ def test_multiple_distinct_talos_versions_are_comma_joined(
 ):
     from talkub.config import NodeSpec
     from talkub.core.fsutil import atomic_write
-    from talkub.nodes import node_patch_path, render_node_patch
+    from talkub.talos.nodes import node_patch_path, render_node_patch
 
     settings = repo_with_configs.load_settings()
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker")

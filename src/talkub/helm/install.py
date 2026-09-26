@@ -7,7 +7,7 @@ from contextlib import ExitStack
 from talkub.argoapps import HelmSource
 from talkub.config import ChartSpec
 from talkub.core.ephemeral import private_file
-from talkub.kube import KubeSession
+from talkub.kube.session import KubeSession
 
 
 def chart_ref(chart: ChartSpec) -> list[str]:

@@ -4,8 +4,8 @@ import sys
 import pytest
 from helpers import need
 
-from talkub import lifecycle
 from talkub.cli.main import main
+from talkub.talos import lifecycle
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 

@@ -1,4 +1,5 @@
-"""Tailscale as the only admin path: extension config, Talos firewall, client endpoints.
+"""Tailscale on the Talos hosts: the only admin path (extension config, Talos firewall, client
+endpoints). The in-cluster operator is talkub.gitops.tailscale_operator.
 
 The cluster endpoint (used by the nodes themselves) is never changed: nodes run with
 TS_ACCEPT_DNS=false and cannot resolve tailnet names. Only admin clients (talosctl,
@@ -15,15 +16,14 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import images
 from talkub.config import Repo, Settings, TailscaleSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
-from talkub.lifecycle import is_bootstrapped, ordered_nodes
-from talkub.talos import inspect
+from talkub.talos import images, inspect
 from talkub.talos.client import talos_session
+from talkub.talos.lifecycle import is_bootstrapped, ordered_nodes
 
 EXTENSION = "siderolabs/tailscale"
 TAILNET_V4 = "100.64.0.0/10"

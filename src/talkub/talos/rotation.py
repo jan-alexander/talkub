@@ -18,10 +18,10 @@ from talkub.context import Context
 from talkub.core.ephemeral import private_tempdir
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
-from talkub.lifecycle import node_drift, prepare, wait_healthy
-from talkub.tailscale import controlplanes, rewrite_talosconfig
 from talkub.talos import inspect
 from talkub.talos.client import talos_session, talos_session_from
+from talkub.talos.lifecycle import node_drift, prepare, wait_healthy
+from talkub.talos.tailscale import controlplanes, rewrite_talosconfig
 
 
 def _bundle_yaml() -> YAML:

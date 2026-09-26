@@ -7,7 +7,7 @@ from collections.abc import Iterable, Sequence
 from talkub.config import Settings
 from talkub.config.schematic import customization_hash
 from talkub.core.errors import ValidationError
-from talkub.factory import FactoryClient
+from talkub.talos.factory import FactoryClient
 
 
 def used_platforms(settings: Settings) -> list[str]:

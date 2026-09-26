@@ -1,10 +1,10 @@
 import pytest
 from helpers import DEFAULT_SCHEMATIC_ID, sample_settings
 
-from talkub import images
 from talkub.config import NodeSpec
 from talkub.core.errors import ValidationError
-from talkub.factory import FactoryClient
+from talkub.talos import images
+from talkub.talos.factory import FactoryClient
 
 
 def test_refresh_skips_current_schematic(factory_stub):

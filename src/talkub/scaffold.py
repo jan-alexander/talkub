@@ -28,11 +28,11 @@ from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner
 from talkub.gitrepo import classify_url
 from talkub.lint import DEFAULT_YAMLLINT
-from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
 from talkub.secrets.keyring import Keyring
 from talkub.secrets.recipients import Recipient
 from talkub.secrets.sops import Sops, render_sops_config
 from talkub.talos import gen
+from talkub.talos.nodes import NodeOptions, render_node_patch, validate_node_name
 
 TEMPLATES = resources.files("talkub") / "templates"
 ALLOWED_EXISTING = {".git", ".DS_Store"}

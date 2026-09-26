@@ -9,7 +9,7 @@ from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
-from talkub.kube import kube_session
+from talkub.kube.session import kube_session
 from talkub.scaffold import TEMPLATES
 
 pytestmark = need("age", "age-keygen", "sops")

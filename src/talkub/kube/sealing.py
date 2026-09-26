@@ -18,7 +18,7 @@ from talkub.core.ephemeral import private_file
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import require_tool
-from talkub.kube import kube_session
+from talkub.kube.session import kube_session
 
 CONTROLLER = [
     "--controller-name",

@@ -3,10 +3,11 @@ from pathlib import Path
 import pytest
 from helpers import need, write_chart_app
 
-from talkub import bootstrap, sealing
+from talkub import bootstrap
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
+from talkub.kube import sealing
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
@@ -132,7 +133,7 @@ ETCD_MEMBERS = (
 
 def _add_controlplane(repo, name, ip):
     from talkub.config import NodeSpec
-    from talkub.nodes import node_patch_path, render_node_patch
+    from talkub.talos.nodes import node_patch_path, render_node_patch
 
     settings = repo.load_settings()
     settings.nodes[name] = NodeSpec(ip=ip, role="controlplane")
@@ -410,9 +411,9 @@ def test_bootstrap_applies_repo_credentials_before_root(cluster):
 
 
 def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
-    from talkub import tailscale
     from talkub.config import NodeSpec, TailscaleSpec
     from talkub.core import yamlio
+    from talkub.talos import tailscale
 
     repo, spies = cluster
     settings = repo.load_settings()

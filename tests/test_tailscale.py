@@ -3,10 +3,10 @@ import subprocess
 import pytest
 from helpers import need, sample_settings
 
-from talkub import tailscale
 from talkub.config import NodeSpec
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
+from talkub.talos import tailscale
 
 TALOSCONFIG = b"""context: test
 contexts:

@@ -18,7 +18,7 @@ from talkub import access, clipboard
 from talkub.config import MARKER, Settings, Shortcut
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, TalkubError, ValidationError
-from talkub.kube import KubeSession, kube_session
+from talkub.kube.session import KubeSession, kube_session
 
 _KUBECTL = ("k", "kubectl")
 _JOB_NAME_MAX = 63

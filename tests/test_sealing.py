@@ -3,11 +3,11 @@ import base64
 import pytest
 from helpers import need
 
-from talkub import sealing
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
+from talkub.kube import sealing
 
 KEY_LIST = """apiVersion: v1
 kind: List

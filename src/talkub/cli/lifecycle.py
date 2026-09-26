@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import typer
 
-from talkub import lifecycle
 from talkub.core.errors import ValidationError
+from talkub.talos import lifecycle
 
 NODES = typer.Argument(None, help="Nodes (default: all, control planes first).")
 

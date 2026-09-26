@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import typer
 
-from talkub import images
 from talkub.config import ARCHES, PLATFORMS
 from talkub.core.errors import ValidationError
-from talkub.factory import FactoryClient, boot_media_url
+from talkub.talos import images
+from talkub.talos.factory import FactoryClient, boot_media_url
 
 app = typer.Typer(
     help="Manage Image Factory schematics (system extensions).", no_args_is_help=True

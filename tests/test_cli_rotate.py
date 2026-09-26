@@ -32,7 +32,7 @@ def test_finish_calls_rotation_finish_with_path(
         calls.append(talosconfig)
         return ["finished"]
 
-    monkeypatch.setattr("talkub.rotation.finish", fake_finish)
+    monkeypatch.setattr("talkub.talos.rotation.finish", fake_finish)
     given = tmp_path / "talosconfig"
     given.write_text("fake")
 
@@ -59,7 +59,7 @@ def test_finish_without_talosconfig_passes_none(repo_with_configs, monkeypatch, 
         calls.append(talosconfig)
         return []
 
-    monkeypatch.setattr("talkub.rotation.finish", fake_finish)
+    monkeypatch.setattr("talkub.talos.rotation.finish", fake_finish)
 
     code = _run(["--repo", str(repo_with_configs.root), "rotate-ca", "--finish"])
 
@@ -74,7 +74,7 @@ def test_yes_skips_prompt_and_confirms(repo_with_configs, monkeypatch, capfd):
         seen_confirm.append(confirm("proceed?"))
         return ["rotated"]
 
-    monkeypatch.setattr("talkub.rotation.rotate", fake_rotate)
+    monkeypatch.setattr("talkub.talos.rotation.rotate", fake_rotate)
     monkeypatch.setattr(
         "typer.confirm",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not prompt")),
@@ -94,7 +94,7 @@ def test_without_yes_confirm_uses_typer_confirm(repo_with_configs, monkeypatch, 
         seen_confirm.append(confirm("proceed?"))
         return []
 
-    monkeypatch.setattr("talkub.rotation.rotate", fake_rotate)
+    monkeypatch.setattr("talkub.talos.rotation.rotate", fake_rotate)
     monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
 
     code = _run(["--repo", str(repo_with_configs.root), "rotate-ca"])
@@ -107,7 +107,8 @@ def test_finish_with_missing_talosconfig_is_a_clean_error(
     repo_with_configs, tmp_path, monkeypatch, capfd
 ):
     monkeypatch.setattr(
-        "talkub.rotation.finish", lambda *a, **k: pytest.fail("must not be called")
+        "talkub.talos.rotation.finish",
+        lambda *a, **k: pytest.fail("must not be called"),
     )
     code = _run(
         [
@@ -126,7 +127,8 @@ def test_finish_with_missing_talosconfig_is_a_clean_error(
 
 def test_yes_with_finish_is_rejected(repo_with_configs, monkeypatch, capfd):
     monkeypatch.setattr(
-        "talkub.rotation.finish", lambda *a, **k: pytest.fail("must not be called")
+        "talkub.talos.rotation.finish",
+        lambda *a, **k: pytest.fail("must not be called"),
     )
     code = _run(
         ["--repo", str(repo_with_configs.root), "rotate-ca", "--finish", "--yes"]

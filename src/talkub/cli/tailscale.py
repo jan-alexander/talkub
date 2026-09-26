@@ -6,9 +6,10 @@ from pathlib import Path
 
 import typer
 
-from talkub import tailscale, tailscale_operator
+from talkub import tailscale_operator
 from talkub.cli.output import print_notes
 from talkub.cli.prompts import read_secret
+from talkub.talos import tailscale
 
 app = typer.Typer(
     help="Tailscale as the only admin path to the Talos and Kubernetes APIs.",

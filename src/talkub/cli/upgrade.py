@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import upgrade as upgrade_flow
+from talkub.talos import upgrade as upgrade_flow
 
 app = typer.Typer(
     help="Upgrade Talos or Kubernetes to the versions in .talkub.yaml.",

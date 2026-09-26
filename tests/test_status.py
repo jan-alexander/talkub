@@ -8,7 +8,7 @@ from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core.errors import TalkubError
 from talkub.core.fsutil import atomic_write
-from talkub.nodes import node_patch_path, render_node_patch
+from talkub.talos.nodes import node_patch_path, render_node_patch
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 

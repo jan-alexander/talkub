@@ -6,7 +6,9 @@ from collections.abc import Sequence
 
 from talkub.context import Context
 from talkub.core.errors import CommandFailed
-from talkub.lifecycle import (
+from talkub.talos import inspect
+from talkub.talos.client import talos_session
+from talkub.talos.lifecycle import (
     Confirm,
     ensure_images,
     health_precheck,
@@ -15,8 +17,6 @@ from talkub.lifecycle import (
     ordered_nodes,
     wait_healthy,
 )
-from talkub.talos import inspect
-from talkub.talos.client import talos_session
 
 
 def _short(value: str | None) -> str:

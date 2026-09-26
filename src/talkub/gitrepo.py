@@ -23,7 +23,7 @@ from talkub.core.ephemeral import decrypted, private_tempdir
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner
-from talkub.kube import KubeSession
+from talkub.kube.session import KubeSession
 
 ARGOCD_KNOWN_HOSTS = frozenset(
     {

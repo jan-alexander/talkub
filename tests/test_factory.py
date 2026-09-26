@@ -4,7 +4,7 @@ import pytest
 
 from talkub.config.schematic import schematic_document
 from talkub.core.errors import CommandFailed
-from talkub.factory import FactoryClient, boot_media_url
+from talkub.talos.factory import FactoryClient, boot_media_url
 
 
 def test_schematic_id_posts_the_document(factory_stub):

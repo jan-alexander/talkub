@@ -8,15 +8,14 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from talkub import images
 from talkub.config import Settings
 from talkub.context import Context
 from talkub.core.ephemeral import private_file
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.runner import require_tool
-from talkub.factory import FactoryClient
-from talkub.talos import inspect
+from talkub.talos import images, inspect
 from talkub.talos.client import TalosSession, talos_session
+from talkub.talos.factory import FactoryClient
 from talkub.talos.render import install_summary, render_configs
 
 MODES = ("auto", "no-reboot", "staged", "try")

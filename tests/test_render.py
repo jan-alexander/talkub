@@ -7,7 +7,7 @@ from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
-from talkub.nodes import node_patch_path, render_node_patch
+from talkub.talos.nodes import node_patch_path, render_node_patch
 from talkub.talos.render import (
     PatchRef,
     install_summary,

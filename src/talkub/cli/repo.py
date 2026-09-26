@@ -10,7 +10,7 @@ import typer
 from talkub import bootstrap, gitrepo
 from talkub.cli.prompts import read_secret
 from talkub.core.errors import ValidationError
-from talkub.kube import kube_session
+from talkub.kube.session import kube_session
 
 app = typer.Typer(
     help="The git repo Argo CD pulls from: URL and credentials.", no_args_is_help=True

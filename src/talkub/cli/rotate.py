@@ -6,8 +6,8 @@ from pathlib import Path
 
 import typer
 
-from talkub import rotation
 from talkub.core.errors import ValidationError
+from talkub.talos import rotation
 
 
 def rotate_ca(

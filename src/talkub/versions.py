@@ -18,10 +18,10 @@ from talkub.argoapps import HelmSource
 from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
-from talkub.kube import kube_session
-from talkub.lifecycle import ordered_nodes
+from talkub.kube.session import kube_session
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
+from talkub.talos.lifecycle import ordered_nodes
 
 GITHUB_API = "https://api.github.com"
 K8S_RELEASE_URL = "https://dl.k8s.io/release/stable.txt"

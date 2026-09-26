@@ -13,7 +13,7 @@ from talkub.core import yamlio
 from talkub.core.ephemeral import decrypted, private_file
 from talkub.core.errors import ValidationError
 from talkub.core.runner import Runner
-from talkub.nodes import node_patch_path
+from talkub.talos.nodes import node_patch_path
 
 VALIDATE_MODE = {"metal": "metal", "hcloud": "cloud"}
 _SECRETS = "secrets.yaml"
