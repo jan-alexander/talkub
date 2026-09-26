@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
-from helpers import write_chart_app
-from talkub import argoapps, chart_upgrade
+from helpers import FakeRunner, write_chart_app
+from talkub import argoapps, chart_upgrade, yamlio
+from talkub.cli.main import main
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.errors import CommandFailed, ToolMissing, ValidationError
 
 CHART_OLD = b"apiVersion: v2\nname: mychart\nversion: 1.0.0\nappVersion: v1.0\n"
 CHART_NEW = b"apiVersion: v2\nname: mychart\nversion: 2.0.0\nappVersion: v2.0\n"
@@ -142,3 +144,127 @@ def test_upgrade_neither_app_nor_all_is_an_error(empty_repo):
 def test_upgrade_app_and_all_together_is_an_error(empty_repo):
     with pytest.raises(ValidationError):
         chart_upgrade.upgrade(Context.open(empty_repo), "myapp", all_apps=True, version=None, confirm=lambda q: True)
+
+
+def _write_two_source_app(repo, key):
+    """An Application with two Helm chart sources: `argoapps.app_source` (which assumes exactly
+    one) raises `ValidationError` for it."""
+    doc = {
+        "apiVersion": "argoproj.io/v1alpha1", "kind": "Application",
+        "metadata": {"name": key},
+        "spec": {
+            "destination": {"namespace": "ns1"},
+            "sources": [
+                {"repoURL": "https://example.com/charts", "chart": "mychart", "targetRevision": "1.0.0"},
+                {"repoURL": "https://example.com/charts", "chart": "other", "targetRevision": "1.0.0"},
+            ],
+        },
+    }
+    apps_dir = repo.gitops_dir / "apps"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    (apps_dir / f"{key}.yaml").write_text(yamlio.dump(doc))
+
+
+def test_upgrade_all_apps_isolates_a_hard_command_failure(empty_repo, spy, capsys):
+    write_chart_app(empty_repo, "app-a", "https://example.com/charts", "mychart", "1.0.0", "ns1")
+    write_chart_app(empty_repo, "app-b", "https://example.com/charts", "badchart", "1.0.0", "ns1")
+    helm = spy("helm")
+    helm.on("badchart", stderr="not found\n", rc=1)  # app-b's `helm show chart` hard-fails
+    helm.on("show", "chart", "--version", "1.0.0", stdout=CHART_OLD.decode())
+    helm.on("show", "chart", "--version", "2.0.0", stdout=CHART_NEW.decode())
+    helm.on("show", "chart", stdout=CHART_NEW.decode())  # app-a's latest-version lookup (no --version)
+    helm.on("show", "values", "--version", "1.0.0", stdout="foo: 1\n")
+    helm.on("show", "values", "--version", "2.0.0", stdout="foo: 2\n")
+    helm.on("template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    kubeconform = spy("kubeconform")
+    _ok_kubeconform(kubeconform)
+
+    code = chart_upgrade.upgrade(
+        Context.open(empty_repo), None, all_apps=True, version=None, confirm=lambda q: True
+    )
+
+    assert code == 1
+    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"  # not aborted by app-b's failure
+    assert argoapps.app_source(empty_repo, "app-b").version == "1.0.0"  # untouched
+    out = capsys.readouterr().out
+    assert "app-b: helm exited with 1" in out
+    assert "1/2 succeeded" in out
+
+
+def test_upgrade_all_apps_reports_and_skips_a_validation_error(empty_repo, spy, capsys):
+    write_chart_app(empty_repo, "app-a", "https://example.com/charts", "mychart", "1.0.0", "ns1")
+    _write_two_source_app(empty_repo, "app-c")
+    helm = spy("helm")
+    helm.on("show", "chart", "--version", "1.0.0", stdout=CHART_OLD.decode())
+    helm.on("show", "chart", "--version", "2.0.0", stdout=CHART_NEW.decode())
+    helm.on("show", "chart", stdout=CHART_NEW.decode())  # app-a's latest-version lookup (no --version)
+    helm.on("show", "values", "--version", "1.0.0", stdout="foo: 1\n")
+    helm.on("show", "values", "--version", "2.0.0", stdout="foo: 2\n")
+    helm.on("template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    kubeconform = spy("kubeconform")
+    _ok_kubeconform(kubeconform)
+
+    code = chart_upgrade.upgrade(
+        Context.open(empty_repo), None, all_apps=True, version=None, confirm=lambda q: True
+    )
+
+    assert code == 1
+    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+    out = capsys.readouterr().out
+    assert "app-c: gitops/apps/app-c.yaml has no Helm chart source" in out
+    assert "1/2 succeeded" in out
+
+
+def test_upgrade_single_app_hard_failure_still_raises(empty_repo, spy):
+    write_chart_app(empty_repo, "myapp", "https://example.com/charts", "badchart", "1.0.0", "ns1")
+    helm = spy("helm")
+    helm.on("badchart", stderr="not found\n", rc=1)
+
+    with pytest.raises(CommandFailed):
+        chart_upgrade.upgrade(
+            Context.open(empty_repo), "myapp", all_apps=False, version="2.0.0", confirm=lambda q: True
+        )
+
+
+def test_upgrade_kubeconform_missing_notes_and_still_succeeds(empty_repo, spy, monkeypatch, capsys):
+    _setup_app(empty_repo, spy)
+    bindir = os.environ["PATH"].split(os.pathsep)[0]
+    monkeypatch.setenv("PATH", bindir)  # helm's spy script lives here (absolute paths inside); no kubeconform
+
+    code = chart_upgrade.upgrade(
+        Context.open(empty_repo), "myapp", all_apps=False, version="2.0.0", confirm=lambda q: True
+    )
+
+    assert code == 0
+    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"
+    out = capsys.readouterr().out
+    assert "kubeconform not found" in out
+
+
+def test_upgrade_helm_missing_is_a_failure_and_does_not_write(empty_repo, monkeypatch, tmp_path):
+    write_chart_app(empty_repo, "myapp", "https://example.com/charts", "mychart", "1.0.0", "ns1")
+    runner = FakeRunner(
+        outputs={"helm": CHART_NEW}  # `helm show chart`/`show values` succeed (FakeRunner never checks PATH)
+    )
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # real `shutil.which("helm")` finds nothing
+
+    with pytest.raises(ToolMissing):
+        chart_upgrade.upgrade(
+            Context.open(empty_repo, runner=runner), "myapp", all_apps=False, version="2.0.0", confirm=lambda q: True
+        )
+
+    assert argoapps.app_source(empty_repo, "myapp").version == "1.0.0"  # nothing was written
+
+
+def test_cli_chart_upgrade_wiring(empty_repo, spy, monkeypatch, capfd):
+    _setup_app(empty_repo, spy)
+    kubeconform = spy("kubeconform")
+    _ok_kubeconform(kubeconform)
+    monkeypatch.chdir(empty_repo.root)
+
+    with pytest.raises(SystemExit) as exc:
+        main(["chart", "upgrade", "myapp", "--version", "2.0.0", "--yes"])
+
+    assert exc.value.code == 0
+    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"
+    assert "commit and push" in capfd.readouterr().out

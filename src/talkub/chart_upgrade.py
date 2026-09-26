@@ -9,13 +9,15 @@ so the user can inspect or fix it; it is reported as a failure, not undone.
 from __future__ import annotations
 
 import difflib
+import shutil
 from collections.abc import Callable
 
 from talkub import argoapps, bootstrap, charts
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.errors import TalkubError, ValidationError
 from talkub.lint import LintReport, lint_helm_app
 from talkub.repo import ChartSpec
+from talkub.runner import require_tool
 
 Confirm = Callable[[str], bool]
 
@@ -80,6 +82,10 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
         print(f"{app}: aborted; nothing was changed")
         return False
 
+    # helm renders the app for lint right after; check it's there *before* writing anything, so a
+    # missing helm is a clean failure (with the standard brew hint) instead of a changed file that
+    # `lint_helm_app` can only silently skip.
+    require_tool("helm")
     argoapps.set_target_revision(ctx.repo, app, target)
 
     report = LintReport()
@@ -89,6 +95,14 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
             print(f"   {line}")
         print(f"{app}: lint found errors; fix the values or revert the change")
         return False
+
+    # kubeconform missing (or any other skip lint_helm_app reported) means the chart rendered but
+    # was never actually validated against the cluster's Kubernetes schemas; still a success, but
+    # worth calling out rather than looking identical to a fully validated upgrade.
+    if report.skipped or shutil.which("kubeconform") is None:
+        for reason in report.skipped:
+            print(f"{app}: {reason}")
+        print(f"{app}: note: rendered with helm but not validated against Kubernetes schemas (kubeconform not found)")
 
     if app in SELF_MANAGED:
         print(f"{app}: commit and push — Argo CD upgrades itself")
@@ -107,8 +121,26 @@ def upgrade(ctx: Context, app: str | None, *, all_apps: bool, version: str | Non
         raise ValidationError("--version cannot be combined with --all")
 
     apps = chart_apps(ctx) if all_apps else [app]
-    failed = [name for name in apps if not _upgrade_one(ctx, name, version, confirm)]
+    failed: list[str] = []
+    for name in apps:
+        if not _upgrade_app(ctx, name, version, confirm, isolate=all_apps):
+            failed.append(name)
 
     if all_apps:
         print(f"upgrade: {len(apps) - len(failed)}/{len(apps)} succeeded")
     return 1 if failed else 0
+
+
+def _upgrade_app(ctx: Context, app: str, version: str | None, confirm: Confirm, *, isolate: bool) -> bool:
+    """`_upgrade_one`, but with `--all`'s per-app isolation: a `TalkubError` (a broken app file, a
+    failed `helm`/kubeconform call, ...) is reported like any other failure and does not abort the
+    rest of `--all`. In single-app mode it keeps propagating, for a normal CLI error exit."""
+    if not isolate:
+        return _upgrade_one(ctx, app, version, confirm)
+    try:
+        return _upgrade_one(ctx, app, version, confirm)
+    except TalkubError as err:
+        print(f"{app}: {err}")
+        if err.hint:
+            print(f"{app}: hint: {err.hint}")
+        return False
