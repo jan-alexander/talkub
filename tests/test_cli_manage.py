@@ -51,6 +51,15 @@ def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd,
         )
         assert remote.stdout.strip() == "https://git.example.com/demo.git"
 
+        from talkub.hooks import MARKER
+
+        hook = tmp_path / "demo" / ".git" / "hooks" / "pre-commit"
+        assert hook.is_file()
+        assert hook.stat().st_mode & 0o111  # executable
+        assert MARKER in hook.read_text()
+
+    assert (tmp_path / "demo" / ".yamllint").is_file()
+
     monkeypatch.chdir(tmp_path / "demo")
 
     assert _run(["check"]) == 0
@@ -83,6 +92,31 @@ def test_keys_rotate_with_yes(repo_with_configs, capfd):
     old = repo_with_configs.master_pub.read_text()
     assert _run(["--repo", str(repo_with_configs.root), "keys", "rotate", "--yes"]) == 0
     assert repo_with_configs.master_pub.read_text() != old
+
+
+@need("git")
+def test_hooks_install_and_uninstall(tmp_path, monkeypatch, capfd):
+    import subprocess as _subprocess
+
+    monkeypatch.chdir(tmp_path)
+    _subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".talkub.yaml").write_text(
+        "name: t\nendpoint: https://10.0.0.10:6443\ntalosVersion: v1.0.0\nkubernetesVersion: 1.30.0\n"
+    )
+
+    assert _run(["hooks", "install"]) == 0
+    out = capfd.readouterr().out
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    assert f"installed {hook}" in out
+    assert hook.is_file()
+    assert (tmp_path / ".yamllint").is_file()
+
+    assert _run(["hooks", "uninstall"]) == 0
+    assert f"removed {hook}" in capfd.readouterr().out
+    assert not hook.exists()
+
+    assert _run(["hooks", "uninstall"]) == 1
+    assert "no talkub pre-commit hook" in capfd.readouterr().err
 
 
 def test_init_rejects_bad_node_syntax(tmp_path, capfd, monkeypatch):

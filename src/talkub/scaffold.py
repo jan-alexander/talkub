@@ -17,6 +17,7 @@ from talkub.errors import ValidationError
 from talkub.fsutil import atomic_write
 from talkub.gitrepo import classify_url
 from talkub.keyring import Keyring
+from talkub.lint import DEFAULT_YAMLLINT
 from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
 from talkub.recipients import Recipient
 from talkub.repo import (
@@ -139,6 +140,7 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
     )
     repo.write_settings(settings)
     _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, git_url))
+    atomic_write(repo.root / ".yamllint", DEFAULT_YAMLLINT.encode())
     coredns.write_files(repo, settings.charts["coredns"], git_url)
     for node in request.nodes:
         options = request.node_options.get(node, NodeOptions())

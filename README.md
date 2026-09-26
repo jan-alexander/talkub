@@ -276,6 +276,27 @@ Before you start:
 
 Commit `talos/` afterwards.
 
+## Lint and pre-commit hook
+
+    talkub lint                 # yamllint, kubeconform, helm template — style, syntax, valid manifests
+    talkub lint --offline       # same, but skip checks that need network access
+
+Three checks, in order, each key-free:
+
+- yamllint (`.yamllint` if present, else a relaxed default managed by talkub) over every
+  `*.yaml`/`*.yml` in the repo.
+- `gitops/apps/**` and `gitops/manifests/**` manifests validated with `kubeconform` (skipped with
+  a warning if `kubeconform` is not installed; `--offline` uses only the local schema cache).
+- every Argo CD Application's Helm chart rendered with `helm template` and validated the same way
+  (skipped entirely with `--offline`, or with a warning if `helm` is not installed).
+
+    talkub hooks install            # install .git/hooks/pre-commit
+    talkub hooks install --force    # overwrite a pre-commit hook not managed by talkub
+    talkub hooks uninstall          # remove it again
+
+The hook runs `talkub check && talkub lint --offline` before every commit; `talkub init` installs
+it automatically. Bypass it once with `git commit --no-verify`.
+
 ## Admin changes
 
     talkub admin remove alice && talkub keys rotate

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from talkub import gitrepo, tailscale
+from talkub import gitrepo, hooks, tailscale
 from talkub.cli.nodes import (
     DISK,
     DNS,
@@ -112,6 +112,10 @@ def init(
     )
     repo = init_cluster(request, Runner())
     print_warnings(gitrepo.git_init(repo.root, git_url.strip(), Runner()))
+    try:
+        print_notes(hooks.install(repo, Runner()))
+    except TalkubError as err:
+        print_warnings([f"could not install the pre-commit hook: {err}"])
     if authkey is not None:
         context = Context.open(repo)
         try:

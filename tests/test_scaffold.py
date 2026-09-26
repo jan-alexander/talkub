@@ -43,7 +43,7 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     assert settings.installer_image("metal").startswith("factory.talos.dev/metal-installer/")
 
     for rel in (
-        ".gitignore", ".sops.yaml", "README.md",
+        ".gitignore", ".sops.yaml", ".yamllint", "README.md",
         "keys/recipients.txt", "keys/master.age", "keys/master.pub",
         "talos/secrets.sops.yaml", "talos/talosconfig.sops.yaml",
         "talos/patches/controlplane.yaml", "talos/patches/controlplane-coredns.yaml",
@@ -76,6 +76,10 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     from talkub.repo import GitSpec
 
     assert settings.git == GitSpec(url="https://git.example.com/demo.git")
+
+    from talkub.lint import DEFAULT_YAMLLINT
+
+    assert (repo.root / ".yamllint").read_text() == DEFAULT_YAMLLINT
 
 
 def test_generated_patches_validate_with_talosctl(tmp_path, software_identity, fake_bin):
