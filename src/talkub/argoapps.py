@@ -57,13 +57,42 @@ def _chart_sources(spec: Mapping) -> list[tuple[int | None, Mapping]]:
     return [(index, source) for index, source in enumerate(raw_sources) if isinstance(source, Mapping) and "chart" in source]
 
 
+def _scalar_str(source: Mapping, field: str, name: str, findings: list[Finding]) -> str:
+    """`source[field]` normalised to `str`: a `str` stays; `None`/missing -> ""; any other scalar
+    (e.g. a ruamel `ScalarFloat` from an unquoted YAML number) is a parsing mistake, not a valid
+    value -> an error finding, "" used instead, so every `HelmSource` field stays a `str`."""
+    value = source.get(field)
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    findings.append(Finding("error", f"app {name}", f"{field} must be a quoted string"))
+    return ""
+
+
+def _target_revision_str(source: Mapping, name: str, findings: list[Finding]) -> str:
+    """Like `_scalar_str`, but for `targetRevision` specifically: also an error finding (a
+    different one) when the value, once a `str`, is empty — a chart source must always be pinned
+    to a version, and `versions`/`app_source` need a plain `str` to tell "unpinned" from "pinned"
+    without re-inspecting the raw YAML value."""
+    value = source.get("targetRevision")
+    if value is None:
+        value = ""
+    elif not isinstance(value, str):
+        findings.append(Finding("error", f"app {name}", "targetRevision must be a quoted string"))
+        return ""
+    if not value:
+        findings.append(Finding("error", f"app {name}", "targetRevision is empty"))
+    return value
+
+
 def _build_helm_source(repo: Repo, name: str, namespace: str, source: Mapping) -> tuple[HelmSource, list[Finding]]:
     """A `HelmSource` for `source` (a single `chart` entry), plus findings for its value files:
     an error if a `$values/`-prefixed entry doesn't resolve to a repo file, a warning (skipped,
     not fatal) for any other, unsupported entry."""
     findings: list[Finding] = []
     helm = _as_mapping(source.get("helm"))
-    release = helm.get("releaseName") or name
+    release = _scalar_str(helm, "releaseName", name, findings) or name
 
     value_files: list[Path] = []
     for entry in helm.get("valueFiles") or []:
@@ -88,13 +117,40 @@ def _build_helm_source(repo: Repo, name: str, namespace: str, source: Mapping) -
         app=name,
         release=release,
         namespace=namespace,
-        repo=source.get("repoURL", ""),
-        chart=source["chart"],
-        version=source.get("targetRevision", ""),
+        repo=_scalar_str(source, "repoURL", name, findings),
+        chart=_scalar_str(source, "chart", name, findings),
+        version=_target_revision_str(source, name, findings),
         value_files=tuple(value_files),
         inline_values=inline_values,
     )
     return helm_source, findings
+
+
+def _file_chart_sources(repo: Repo, path: Path) -> tuple[list[HelmSource], list[Finding]]:
+    """Every Helm source (a `chart` entry) of every Argo CD Application document in `path`, the
+    per-file body shared by `helm_sources` (whole-repo scan, keyed by `metadata.name`) and
+    `app_chart_sources` (one file, keyed by its stem). Empty, with no findings, if `path` doesn't
+    exist or isn't valid YAML (a syntax error is reported elsewhere, by yamllint)."""
+    sources: list[HelmSource] = []
+    findings: list[Finding] = []
+    try:
+        docs = yamlio.load_all(path.read_text())
+    except (OSError, YAMLError):
+        return sources, findings
+    for doc in docs:
+        if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
+            continue
+        metadata = _as_mapping(doc.get("metadata"))
+        name = str(metadata.get("name", path.stem))
+        spec = _as_mapping(doc.get("spec"))
+        destination = _as_mapping(spec.get("destination"))
+        namespace = destination.get("namespace") or "default"
+
+        for _index, source in _chart_sources(spec):
+            helm_source, source_findings = _build_helm_source(repo, name, namespace, source)
+            sources.append(helm_source)
+            findings.extend(source_findings)
+    return sources, findings
 
 
 def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
@@ -112,24 +168,36 @@ def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
     for path in sorted(apps_dir.glob("*.yaml")):
         if path.name.endswith(".sops.yaml"):
             continue
-        try:
-            docs = yamlio.load_all(path.read_text())
-        except YAMLError:
-            continue  # yamllint already reports the syntax error as a finding
-        for doc in docs:
-            if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
-                continue
-            metadata = _as_mapping(doc.get("metadata"))
-            name = str(metadata.get("name", path.stem))
-            spec = _as_mapping(doc.get("spec"))
-            destination = _as_mapping(spec.get("destination"))
-            namespace = destination.get("namespace") or "default"
-
-            for _index, source in _chart_sources(spec):
-                helm_source, source_findings = _build_helm_source(repo, name, namespace, source)
-                sources.append(helm_source)
-                findings.extend(source_findings)
+        file_sources, file_findings = _file_chart_sources(repo, path)
+        sources.extend(file_sources)
+        findings.extend(file_findings)
     return sources, findings
+
+
+def app_chart_sources(repo: Repo, app: str) -> tuple[list[HelmSource], list[Finding]]:
+    """Like `helm_sources`, but scoped to `gitops/apps/<app>.yaml` alone and keyed by that file's
+    stem rather than by whatever `metadata.name` its Application(s) declare — for callers
+    (`versions`, `chart upgrade --all`) that address an app by file stem and must not conflate it
+    with a differently-named `metadata.name` (see `chart_app_stems`, `is_single_chart_app`)."""
+    return _file_chart_sources(repo, repo.gitops_dir / "apps" / f"{app}.yaml")
+
+
+def chart_app_stems(repo: Repo) -> list[str]:
+    """Every `gitops/apps/*.yaml` file stem that has at least one Helm chart source, in file
+    order — whether or not it's a *single* one (see `is_single_chart_app`). A file with none at
+    all (a plain directory app, a git-values-only app, ...) is not a "chart app" and is left out
+    entirely, not just marked invalid."""
+    apps_dir = repo.gitops_dir / "apps"
+    if not apps_dir.is_dir():
+        return []
+    stems: list[str] = []
+    for path in sorted(apps_dir.glob("*.yaml")):
+        if path.name.endswith(".sops.yaml"):
+            continue
+        sources, _findings = _file_chart_sources(repo, path)
+        if sources:
+            stems.append(path.stem)
+    return stems
 
 
 def chart_source_indices(repo: Repo, app: str) -> list[int | None]:
@@ -156,17 +224,21 @@ def _locate_single_chart_source(repo: Repo, key: str) -> tuple[list, Mapping]:
     Helm chart source, for callers that need to look at (or mutate) that one source directly.
 
     Raises `ValidationError` unless the file exists, is valid YAML, has exactly one `Application`
-    document, and that Application has exactly one `chart` source.
+    document, and that Application has exactly one `chart` source: a missing file and invalid YAML
+    each get their own message (and hint); only a file that parses but doesn't have exactly one
+    chart source keeps the generic "has no Helm chart source" message.
     """
     path = repo.gitops_dir / "apps" / f"{key}.yaml"
-    error = ValidationError(f"gitops/apps/{key}.yaml has no Helm chart source", hint=_NO_CHART_SOURCE_HINT)
     if not path.is_file():
-        raise error
+        raise ValidationError(
+            f"gitops/apps/{key}.yaml does not exist", hint="run `talkub init`, or create the app file"
+        )
     try:
         docs = yamlio.load_all(path.read_text())
-    except YAMLError:
-        raise error from None
+    except YAMLError as err:
+        raise ValidationError(f"gitops/apps/{key}.yaml is not valid YAML: {err}") from None
 
+    error = ValidationError(f"gitops/apps/{key}.yaml has no Helm chart source", hint=_NO_CHART_SOURCE_HINT)
     applications = [doc for doc in docs if isinstance(doc, Mapping) and doc.get("kind") == "Application"]
     if len(applications) != 1:
         raise error
@@ -175,6 +247,18 @@ def _locate_single_chart_source(repo: Repo, key: str) -> tuple[list, Mapping]:
     if len(chart_sources) != 1:
         raise error
     return docs, chart_sources[0][1]
+
+
+def is_single_chart_app(repo: Repo, key: str) -> bool:
+    """Whether `gitops/apps/<key>.yaml` holds exactly one Application document with exactly one
+    Helm chart source — the shape `chart upgrade <key>`/`--all` and `versions` require to address
+    an app by file stem. `False` for a missing file, invalid YAML, zero/multiple Application
+    documents, or zero/multiple chart sources."""
+    try:
+        _locate_single_chart_source(repo, key)
+    except ValidationError:
+        return False
+    return True
 
 
 def app_source(repo: Repo, key: str) -> HelmSource:
@@ -192,6 +276,10 @@ def app_source(repo: Repo, key: str) -> HelmSource:
     namespace = destination.get("namespace") or "default"
 
     helm_source, findings = _build_helm_source(repo, name, namespace, source)
+    if not helm_source.version:
+        raise ValidationError(
+            f"gitops/apps/{key}.yaml: targetRevision is empty", hint="pin a chart version in targetRevision"
+        )
     errors = [finding for finding in findings if finding.level == "error"]
     if errors:
         raise ValidationError(errors[0].message)

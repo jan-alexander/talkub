@@ -8,7 +8,16 @@ from string import Template
 import pytest
 
 from talkub import apps, coredns, yamlio
-from talkub.argoapps import HelmSource, app_source, chart_source_indices, helm_sources, set_target_revision
+from talkub.argoapps import (
+    HelmSource,
+    app_chart_sources,
+    app_source,
+    chart_app_stems,
+    chart_source_indices,
+    helm_sources,
+    is_single_chart_app,
+    set_target_revision,
+)
 from talkub.errors import ValidationError
 from talkub.findings import Finding
 from talkub.repo import ChartSpec
@@ -203,6 +212,30 @@ def test_helm_sources_skips_source_without_chart(empty_repo):
     assert sources == [] and findings == []
 
 
+def test_helm_sources_non_string_target_revision_is_an_error(empty_repo):
+    doc = _app_doc("myapp", sources=[{"repoURL": "r", "chart": "c", "targetRevision": 1.10}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert sources[0].version == ""
+    assert findings == [Finding("error", "app myapp", "targetRevision must be a quoted string")]
+
+
+def test_helm_sources_null_target_revision_is_an_error(empty_repo):
+    doc = _app_doc("myapp", sources=[{"repoURL": "r", "chart": "c", "targetRevision": None}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert sources[0].version == ""
+    assert findings == [Finding("error", "app myapp", "targetRevision is empty")]
+
+
+def test_helm_sources_empty_string_target_revision_is_an_error(empty_repo):
+    doc = _app_doc("myapp", sources=[{"repoURL": "r", "chart": "c", "targetRevision": ""}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert sources[0].version == ""
+    assert findings == [Finding("error", "app myapp", "targetRevision is empty")]
+
+
 # --- app_source ---
 
 
@@ -217,7 +250,39 @@ def test_app_source_ok(empty_repo):
 
 
 def test_app_source_missing_file_is_a_validation_error(empty_repo):
-    with pytest.raises(ValidationError, match="gitops/apps/myapp.yaml has no Helm chart source"):
+    with pytest.raises(ValidationError, match="gitops/apps/myapp.yaml does not exist"):
+        app_source(empty_repo, "myapp")
+
+
+def test_app_source_invalid_yaml_is_a_validation_error(empty_repo):
+    apps_dir = empty_repo.gitops_dir / "apps"
+    apps_dir.mkdir(parents=True)
+    (apps_dir / "myapp.yaml").write_text("apiVersion: v1\nkind: [oops\n")
+    with pytest.raises(ValidationError, match="gitops/apps/myapp.yaml is not valid YAML"):
+        app_source(empty_repo, "myapp")
+
+
+def test_app_source_empty_target_revision_is_a_validation_error(empty_repo):
+    doc = _app_doc("myapp", sources=[{"repoURL": "r", "chart": "c", "targetRevision": ""}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    with pytest.raises(ValidationError, match="targetRevision is empty") as exc:
+        app_source(empty_repo, "myapp")
+    assert exc.value.hint == "pin a chart version in targetRevision"
+
+
+def test_app_source_null_target_revision_is_a_validation_error(empty_repo):
+    doc = _app_doc("myapp", sources=[{"repoURL": "r", "chart": "c", "targetRevision": None}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    with pytest.raises(ValidationError, match="targetRevision is empty"):
+        app_source(empty_repo, "myapp")
+
+
+def test_app_source_non_string_target_revision_is_a_validation_error(empty_repo):
+    """A `targetRevision` like `1.10` parses as a YAML float, not a string; `app_source` must
+    still refuse it cleanly, not raise an unrelated exception."""
+    doc = _app_doc("myapp", sources=[{"repoURL": "r", "chart": "c", "targetRevision": 1.10}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    with pytest.raises(ValidationError, match="targetRevision is empty"):
         app_source(empty_repo, "myapp")
 
 
@@ -280,6 +345,51 @@ def test_chart_source_indices_non_list_sources_does_not_fall_back_to_source(empt
 
 def test_chart_source_indices_missing_file_is_empty(empty_repo):
     assert chart_source_indices(empty_repo, "nope") == []
+
+
+# --- chart_app_stems / is_single_chart_app / app_chart_sources ---
+
+
+def test_chart_app_stems_uses_file_stem_not_metadata_name(empty_repo):
+    """`gitops/apps/myapp.yaml`'s Application is named `renamed` — `chart_app_stems` still reports
+    the file stem, since that's what `chart upgrade`/`versions` address it by."""
+    doc = _app_doc("renamed", sources=[{"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    assert chart_app_stems(empty_repo) == ["myapp"]
+    assert is_single_chart_app(empty_repo, "myapp") is True
+
+
+def test_chart_app_stems_excludes_apps_without_a_chart_source(empty_repo):
+    doc = _app_doc(
+        "dirapp",
+        source={"repoURL": "r", "targetRevision": "HEAD", "path": "gitops/manifests/x", "directory": {"recurse": True}},
+    )
+    _write_app_doc(empty_repo, "dirapp", doc)
+    assert chart_app_stems(empty_repo) == []
+
+
+def test_is_single_chart_app_false_for_two_chart_sources(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "chart": "c1", "targetRevision": "1.0.0"},
+        {"repoURL": "r", "chart": "c2", "targetRevision": "2.0.0"},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    assert chart_app_stems(empty_repo) == ["myapp"]
+    assert is_single_chart_app(empty_repo, "myapp") is False
+
+
+def test_app_chart_sources_keyed_by_stem_finds_renamed_app(empty_repo):
+    doc = _app_doc("renamed", sources=[{"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = app_chart_sources(empty_repo, "myapp")
+    assert findings == []
+    assert len(sources) == 1
+    assert sources[0].app == "renamed"  # metadata.name, not the file stem
+    assert sources[0].version == "1.0.0"
+
+
+def test_app_chart_sources_missing_file_is_empty(empty_repo):
+    assert app_chart_sources(empty_repo, "nope") == ([], [])
 
 
 # --- set_target_revision ---

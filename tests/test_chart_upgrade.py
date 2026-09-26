@@ -76,6 +76,23 @@ def test_upgrade_already_current_prints_note_and_does_nothing(empty_repo, spy, c
     assert not any("template" in argv for argv in helm.argvs)
 
 
+def test_upgrade_without_version_skips_when_current_is_newer_than_latest(empty_repo, spy, capsys):
+    """No `--version`: `chart upgrade` always resolves to the chart's latest release, which must
+    not silently downgrade an app pinned ahead of it (e.g. a manually chosen pre-release)."""
+    write_chart_app(empty_repo, "myapp", "https://example.com/charts", "mychart", "2.0.0", "ns1")
+    helm = spy("helm")
+    helm.on("show", "chart", stdout=CHART_OLD.decode())  # the latest-version lookup (no --version): "latest" is 1.0.0
+
+    code = chart_upgrade.upgrade(
+        Context.open(empty_repo), "myapp", all_apps=False, version=None, confirm=lambda q: pytest.fail("not asked")
+    )
+
+    assert code == 0
+    assert "2.0.0 is newer than latest 1.0.0" in capsys.readouterr().out
+    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"  # untouched
+    assert not any("template" in argv for argv in helm.argvs)
+
+
 def test_upgrade_decline_leaves_file_unchanged(empty_repo, spy, capsys):
     _setup_app(empty_repo, spy)
     kubeconform = spy("kubeconform")
@@ -191,7 +208,9 @@ def test_upgrade_all_apps_isolates_a_hard_command_failure(empty_repo, spy, capsy
     assert "1/2 succeeded" in out
 
 
-def test_upgrade_all_apps_reports_and_skips_a_validation_error(empty_repo, spy, capsys):
+def test_upgrade_all_apps_skips_a_multi_chart_app_without_failing(empty_repo, spy, capsys):
+    """A file that isn't a single-chart app (here: two chart sources in one Application) is
+    skipped in `--all` — reported by name, but not counted as a failure."""
     write_chart_app(empty_repo, "app-a", "https://example.com/charts", "mychart", "1.0.0", "ns1")
     _write_two_source_app(empty_repo, "app-c")
     helm = spy("helm")
@@ -208,11 +227,63 @@ def test_upgrade_all_apps_reports_and_skips_a_validation_error(empty_repo, spy, 
         Context.open(empty_repo), None, all_apps=True, version=None, confirm=lambda q: True
     )
 
-    assert code == 1
+    assert code == 0
     assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
     out = capsys.readouterr().out
-    assert "app-c: gitops/apps/app-c.yaml has no Helm chart source" in out
-    assert "1/2 succeeded" in out
+    assert "app-c: skipped (not a single-chart app)" in out
+    assert "1/1 succeeded" in out
+
+
+def test_upgrade_all_apps_addresses_a_file_by_stem_not_metadata_name(empty_repo, spy, capsys):
+    """`gitops/apps/app-a.yaml`'s Application is named `renamed-app`; `--all` (and single-app
+    upgrade) must still address it as `app-a`, the file stem — not the mismatched metadata name,
+    which isn't even a file on disk."""
+    write_chart_app(empty_repo, "app-a", "https://example.com/charts", "mychart", "1.0.0", "ns1")
+    path = empty_repo.gitops_dir / "apps" / "app-a.yaml"
+    doc = yamlio.load(path.read_text())
+    doc["metadata"]["name"] = "renamed-app"
+    path.write_text(yamlio.dump(doc))
+    helm = spy("helm")
+    helm.on("show", "chart", "--version", "1.0.0", stdout=CHART_OLD.decode())
+    helm.on("show", "chart", "--version", "2.0.0", stdout=CHART_NEW.decode())
+    helm.on("show", "chart", stdout=CHART_NEW.decode())
+    helm.on("show", "values", "--version", "1.0.0", stdout="foo: 1\n")
+    helm.on("show", "values", "--version", "2.0.0", stdout="foo: 2\n")
+    helm.on("template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    kubeconform = spy("kubeconform")
+    _ok_kubeconform(kubeconform)
+
+    code = chart_upgrade.upgrade(
+        Context.open(empty_repo), None, all_apps=True, version=None, confirm=lambda q: True
+    )
+
+    assert code == 0
+    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+    out = capsys.readouterr().out
+    assert "1/1 succeeded" in out
+
+
+def test_upgrade_single_app_addresses_a_file_by_stem_not_metadata_name(empty_repo, spy):
+    write_chart_app(empty_repo, "app-a", "https://example.com/charts", "mychart", "1.0.0", "ns1")
+    path = empty_repo.gitops_dir / "apps" / "app-a.yaml"
+    doc = yamlio.load(path.read_text())
+    doc["metadata"]["name"] = "renamed-app"
+    path.write_text(yamlio.dump(doc))
+    helm = spy("helm")
+    helm.on("show", "chart", "--version", "1.0.0", stdout=CHART_OLD.decode())
+    helm.on("show", "chart", "--version", "2.0.0", stdout=CHART_NEW.decode())
+    helm.on("show", "values", "--version", "1.0.0", stdout="foo: 1\n")
+    helm.on("show", "values", "--version", "2.0.0", stdout="foo: 2\n")
+    helm.on("template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    kubeconform = spy("kubeconform")
+    _ok_kubeconform(kubeconform)
+
+    code = chart_upgrade.upgrade(
+        Context.open(empty_repo), "app-a", all_apps=False, version="2.0.0", confirm=lambda q: True
+    )
+
+    assert code == 0
+    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
 
 
 def test_upgrade_single_app_hard_failure_still_raises(empty_repo, spy):

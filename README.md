@@ -140,9 +140,10 @@ next write.
 The Argo CD app files (`gitops/apps/*.yaml`) are the single source of chart versions — `versions`
 reads `targetRevision` from them and shows it next to what is actually running (via `kubectl get
 application`) and the latest release upstream. `*` marks a row whose latest differs from its
-target. `chart upgrade` writes the new `targetRevision`, shows a diff of the rendered manifests and
-the chart's `appVersion`, and asks for confirmation unless `--yes`; after it, commit and push
-`gitops/` so Argo CD picks it up. `versions set` only updates the target in `.talkub.yaml` — run
+target. `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
+(`helm show values` old vs. new) and the chart's `appVersion`, and asks for confirmation unless
+`--yes`; after it, commit and push `gitops/` so Argo CD picks it up. `versions set` only updates
+the target in `.talkub.yaml` — run
 `talkub upgrade talos`/`talkub upgrade k8s` afterwards to actually change the nodes.
 
     talkub renovate init          # writes renovate.json in the repo root

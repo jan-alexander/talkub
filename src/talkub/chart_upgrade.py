@@ -28,13 +28,18 @@ SELF_MANAGED = {"argocd"}
 
 
 def chart_apps(ctx: Context) -> list[str]:
-    """Every app under `gitops/apps/*.yaml` with a Helm chart source, in file order (for `--all`)."""
-    sources, _findings = argoapps.helm_sources(ctx.repo)
-    apps: list[str] = []
-    for source in sources:
-        if source.app not in apps:
-            apps.append(source.app)
-    return apps
+    """Every `gitops/apps/*.yaml` file stem that holds exactly one Application with exactly one
+    Helm chart source, in file order (for `--all`); other chart-app files (more than one chart
+    source, more than one Application document, ...) are skipped — see `upgrade`, which reports
+    them by name instead of silently dropping them."""
+    return [stem for stem in argoapps.chart_app_stems(ctx.repo) if argoapps.is_single_chart_app(ctx.repo, stem)]
+
+
+def _skipped_chart_apps(ctx: Context) -> list[str]:
+    """File stems `chart_apps` leaves out because they're not a single-chart app (as opposed to
+    not a chart app at all, which `chart_app_stems` already excludes)."""
+    apps = set(chart_apps(ctx))
+    return [stem for stem in argoapps.chart_app_stems(ctx.repo) if stem not in apps]
 
 
 def _show_values(ctx: Context, chart: ChartSpec) -> str:
@@ -52,11 +57,45 @@ def _diff(old: str, new: str, *, old_label: str, new_label: str) -> str:
     return "".join(lines)
 
 
+def _version_tuple(value: str) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(part) for part in value.split("."))
+    except ValueError:
+        return None
+
+
+def _is_downgrade(current: str, latest: str) -> bool:
+    """Whether `latest` is actually older than `current` — the no-`--version` path (which always
+    resolves to the chart's latest release) must not quietly step backwards if `current` is
+    already ahead of it (e.g. a manually pinned pre-release). Uses `packaging.version` when it's
+    importable; falls back to a plain dotted-integer tuple compare, and to "no downgrade check"
+    (`False`) when even that can't parse both versions."""
+    try:
+        from packaging.version import InvalidVersion, Version
+    except ImportError:
+        pass
+    else:
+        try:
+            return Version(latest) < Version(current)
+        except InvalidVersion:
+            return False
+    current_t, latest_t = _version_tuple(current), _version_tuple(latest)
+    if current_t is None or latest_t is None:
+        return False
+    return latest_t < current_t
+
+
 def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) -> bool:
-    """Upgrade one app's chart. True on success (including "already at X"), False if the user
-    declined or the post-upgrade lint found an error."""
+    """Upgrade one app's chart. True on success (including "already at X" and "newer than
+    latest"), False if the user declined or the post-upgrade lint found an error."""
     source = argoapps.app_source(ctx.repo, app)
-    target = version or charts.latest_version(ctx.runner, source.repo, source.chart)
+    if version is None:
+        target = charts.latest_version(ctx.runner, source.repo, source.chart)
+        if _is_downgrade(source.version, target):
+            print(f"{app}: {source.version} is newer than latest {target}")
+            return True
+    else:
+        target = version
     if target == source.version:
         print(f"{app}: already at {target}")
         return True
@@ -96,12 +135,10 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
         print(f"{app}: lint found errors; fix the values or revert the change")
         return False
 
-    # kubeconform missing (or any other skip lint_helm_app reported) means the chart rendered but
-    # was never actually validated against the cluster's Kubernetes schemas; still a success, but
-    # worth calling out rather than looking identical to a fully validated upgrade.
-    if report.skipped or shutil.which("kubeconform") is None:
-        for reason in report.skipped:
-            print(f"{app}: {reason}")
+    # kubeconform missing means the chart rendered but was never actually validated against the
+    # cluster's Kubernetes schemas; still a success, but worth calling out rather than looking
+    # identical to a fully validated upgrade.
+    if shutil.which("kubeconform") is None:
         print(f"{app}: note: rendered with helm but not validated against Kubernetes schemas (kubeconform not found)")
 
     if app in SELF_MANAGED:
@@ -121,6 +158,9 @@ def upgrade(ctx: Context, app: str | None, *, all_apps: bool, version: str | Non
         raise ValidationError("--version cannot be combined with --all")
 
     apps = chart_apps(ctx) if all_apps else [app]
+    if all_apps:
+        for name in _skipped_chart_apps(ctx):
+            print(f"{name}: skipped (not a single-chart app)")
     failed: list[str] = []
     for name in apps:
         if not _upgrade_app(ctx, name, version, confirm, isolate=all_apps):

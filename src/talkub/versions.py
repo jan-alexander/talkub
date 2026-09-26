@@ -169,29 +169,37 @@ def _app_version_note(ctx: Context, source: HelmSource, latest: str) -> str:
     return ""
 
 
-def _chart_row(ctx: Context, source: HelmSource, source_index: int | None, *, offline: bool) -> Row:
+def _chart_row(ctx: Context, component: str, source: HelmSource, source_index: int | None, *, offline: bool) -> Row:
+    """One chart app's row. `component` is the `gitops/apps/*.yaml` file stem (see `_chart_rows`);
+    `source.app` — the Application's `metadata.name`, which may differ — is still what identifies
+    the actual Argo CD Application resource to `_chart_running`."""
     running = _chart_running(ctx, source, source_index)
+    target = source.version or "?"  # an invalid/empty targetRevision must not crash `versions`
     if offline:
-        return Row(source.app, source.version, running, "-")
+        return Row(component, target, running, "-")
     try:
         latest = charts.latest_version(ctx.runner, source.repo, source.chart)
     except TalkubError:
-        return Row(source.app, source.version, running, "?")
+        return Row(component, target, running, "?")
     note = _app_version_note(ctx, source, latest) if latest != source.version else ""
-    return Row(source.app, source.version, running, latest, note)
+    return Row(component, target, running, latest, note)
 
 
 def _chart_rows(ctx: Context, *, offline: bool) -> list[Row]:
-    sources, _findings = argoapps.helm_sources(ctx.repo)
+    """One row per `gitops/apps/*.yaml` file stem with a Helm chart source: a normal row for a
+    single-chart file, a "not a single-chart app" note for one with more than one (or a
+    malformed/multi-Application file) — never one row per `metadata.name`, which could differ
+    from the file stem `chart upgrade` and `--all` actually address."""
     rows: list[Row] = []
-    occurrence: dict[str, int] = {}
-    indices_by_app: dict[str, list[int | None]] = {}
-    for source in sources:
-        position = occurrence.get(source.app, 0)
-        occurrence[source.app] = position + 1
-        indices = indices_by_app.setdefault(source.app, argoapps.chart_source_indices(ctx.repo, source.app))
-        source_index = indices[position] if position < len(indices) else None
-        rows.append(_chart_row(ctx, source, source_index, offline=offline))
+    for stem in argoapps.chart_app_stems(ctx.repo):
+        if not argoapps.is_single_chart_app(ctx.repo, stem):
+            rows.append(Row(stem, "?", "?", "?", "not a single-chart app"))
+            continue
+        sources, _findings = argoapps.app_chart_sources(ctx.repo, stem)
+        source = sources[0]
+        indices = argoapps.chart_source_indices(ctx.repo, stem)
+        source_index = indices[0] if indices else None
+        rows.append(_chart_row(ctx, stem, source, source_index, offline=offline))
     return rows
 
 

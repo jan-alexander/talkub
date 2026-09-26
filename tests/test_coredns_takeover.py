@@ -245,6 +245,36 @@ def test_resume_skips_file_writing_and_runs_the_rest(cluster):
     assert applied == [APPLY]
 
 
+def test_resume_rejects_mismatched_namespace(cluster):
+    repo, kubectl, applied = cluster
+    run(repo)
+    path = repo.gitops_dir / "apps" / "coredns.yaml"
+    doc = yamlio.load(path.read_text())
+    doc["spec"]["destination"]["namespace"] = "other-ns"
+    atomic_write(path, yamlio.dump(doc).encode())
+    kubectl.log.unlink()
+    with pytest.raises(ValidationError) as exc:
+        run(repo, resume=True)
+    assert "other-ns" in str(exc.value)
+    assert mutations(kubectl.argvs) == []
+    assert applied == [APPLY]  # only from the first (successful) run; resume aborted before Talos
+
+
+def test_resume_rejects_mismatched_release_name(cluster):
+    repo, kubectl, applied = cluster
+    run(repo)
+    path = repo.gitops_dir / "apps" / "coredns.yaml"
+    doc = yamlio.load(path.read_text())
+    doc["spec"]["sources"][0].setdefault("helm", {})["releaseName"] = "other-release"
+    atomic_write(path, yamlio.dump(doc).encode())
+    kubectl.log.unlink()
+    with pytest.raises(ValidationError) as exc:
+        run(repo, resume=True)
+    assert "other-release" in str(exc.value)
+    assert mutations(kubectl.argvs) == []
+    assert applied == [APPLY]  # only from the first (successful) run; resume aborted before Talos
+
+
 def test_drift_is_refused_before_any_change(cluster, monkeypatch):
     repo, kubectl, applied = cluster
     set_drift(monkeypatch, ["cp-01"])

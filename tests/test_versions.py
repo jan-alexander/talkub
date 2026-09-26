@@ -257,6 +257,89 @@ def test_chart_row_offline_is_dash_and_makes_no_helm_call(repo_with_configs, spy
     assert helm.argvs == []
 
 
+def _write_app_yaml(repo, stem, name, target_revision_line, *, namespace="argocd"):
+    """A single-source Argo CD Application at `gitops/apps/<stem>.yaml`, with `targetRevision`
+    given as a raw YAML line (e.g. `"targetRevision:"` for null, `"targetRevision: 1.10"` for an
+    unquoted float) — `write_chart_app` always writes a valid quoted `str`, which can't reproduce
+    these malformed-input cases."""
+    apps_dir = repo.gitops_dir / "apps"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    (apps_dir / f"{stem}.yaml").write_text(
+        "apiVersion: argoproj.io/v1alpha1\n"
+        "kind: Application\n"
+        "metadata:\n"
+        f"  name: {name}\n"
+        "spec:\n"
+        "  source:\n"
+        "    repoURL: https://argoproj.github.io/argo-helm\n"
+        "    chart: argo-cd\n"
+        f"    {target_revision_line}\n"
+        "  destination:\n"
+        f"    namespace: {namespace}\n"
+    )
+
+
+def test_chart_row_target_is_question_mark_for_null_target_revision(repo_with_configs, spy):
+    _write_app_yaml(repo_with_configs, "argocd", "argocd", "targetRevision:")
+    _spy_talos_kube(spy)
+    kubectl = spy("kubectl")
+    kubectl.on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
+    rows = versions.collect(Context.open(repo_with_configs), offline=True)  # must not crash
+    argocd = next(r for r in rows if r.component == "argocd")
+    assert argocd.target == "?"
+
+
+def test_chart_row_target_is_question_mark_for_float_target_revision(repo_with_configs, spy):
+    _write_app_yaml(repo_with_configs, "argocd", "argocd", "targetRevision: 1.10")
+    _spy_talos_kube(spy)
+    kubectl = spy("kubectl")
+    kubectl.on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
+    rows = versions.collect(Context.open(repo_with_configs), offline=True)  # must not crash
+    argocd = next(r for r in rows if r.component == "argocd")
+    assert argocd.target == "?"
+
+
+def test_chart_row_uses_file_stem_not_metadata_name(repo_with_configs, spy, version_http_stub):
+    """The Application is named `renamed-argocd`; the row (and the `kubectl get application`
+    lookup for the running revision) must key off the file stem `argocd`/the real resource name
+    respectively — not conflate the two."""
+    _write_app_yaml(repo_with_configs, "argocd", "renamed-argocd", "targetRevision: 10.9.2")
+    _spy_talos_kube(spy)
+    kubectl = spy("kubectl")
+    kubectl.on("get", "application", "renamed-argocd", stdout=APP_SYNCED_JSON)
+    spy("helm").on("show", "chart", stdout=CHART_OLD)
+    rows = versions.collect(Context.open(repo_with_configs))
+    assert any(r.component == "argocd" for r in rows)
+    assert not any(r.component == "renamed-argocd" for r in rows)
+
+
+def test_chart_row_multi_chart_app_shows_not_single_chart_note(repo_with_configs, spy, version_http_stub):
+    apps_dir = repo_with_configs.gitops_dir / "apps"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    (apps_dir / "twocharts.yaml").write_text(
+        "apiVersion: argoproj.io/v1alpha1\n"
+        "kind: Application\n"
+        "metadata:\n"
+        "  name: twocharts\n"
+        "spec:\n"
+        "  sources:\n"
+        "    - repoURL: r\n"
+        "      chart: c1\n"
+        "      targetRevision: 1.0.0\n"
+        "    - repoURL: r\n"
+        "      chart: c2\n"
+        "      targetRevision: 2.0.0\n"
+        "  destination:\n"
+        "    namespace: ns1\n"
+    )
+    _spy_talos_kube(spy)
+    spy("helm")
+    rows = versions.collect(Context.open(repo_with_configs))
+    row = next(r for r in rows if r.component == "twocharts")
+    assert row.note == "not a single-chart app"
+    assert (row.target, row.running, row.latest) == ("?", "?", "?")
+
+
 # --- render ---
 
 

@@ -188,6 +188,12 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
         _write_repo_files(ctx)
         drifting = _controlplanes(settings)  # the new patch applies to control planes only
     source = argoapps.app_source(repo, "coredns")
+    if source.release != RELEASE or source.namespace != NAMESPACE:
+        raise ValidationError(
+            f"gitops/apps/coredns.yaml has release {source.release!r}/namespace {source.namespace!r}, "
+            f"expected {RELEASE!r}/{NAMESPACE!r}",
+            hint="talkub coredns takeover manages this exact Helm release; do not rename its release or namespace",
+        )
     chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
 
     if drifting:
