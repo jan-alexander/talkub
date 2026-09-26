@@ -1,7 +1,7 @@
 """Clipboard copy, plus scheduling the detached clearer.
 
 The secret value is only ever handed to a child on stdin (never in argv, env, or a file). The
-clearer (`talkub.clipboard_clear`) is told only a SHA-256 digest of the value, so that even that
+clearer (`talkub.workstation.clipboard_clear`) is told only a SHA-256 digest of the value, so that even that
 detached, longer-lived process never holds the plaintext.
 """
 
@@ -84,5 +84,5 @@ def schedule_clear(runner: Runner, value: bytes) -> None:
     digest = hashlib.sha256(value).hexdigest().encode()
     # -I: isolated mode, so the clearer's sys.path does not depend on the caller's cwd.
     runner.spawn_detached(
-        [sys.executable, "-I", "-m", "talkub.clipboard_clear"], input=digest
+        [sys.executable, "-I", "-m", "talkub.workstation.clipboard_clear"], input=digest
     )

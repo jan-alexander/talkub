@@ -13,11 +13,11 @@ from datetime import UTC, datetime
 import pytest
 from helpers import need
 
-from talkub import shortcuts
 from talkub.config import Shortcut
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.runner import Runner
+from talkub.workstation import shortcuts
 
 pytestmark = need("age", "age-keygen", "sops")
 

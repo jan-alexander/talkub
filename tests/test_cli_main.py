@@ -203,7 +203,7 @@ def test_run_passes_dash_f_after_the_name_through(repo_with_configs, fake_bin, c
 
 
 def test_run_flags_before_the_name(repo_with_configs, monkeypatch):
-    from talkub import shortcuts
+    from talkub.workstation import shortcuts
 
     seen = []
     monkeypatch.setattr(

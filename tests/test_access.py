@@ -3,9 +3,9 @@ import os
 import pytest
 from helpers import need
 
-from talkub import access
 from talkub.context import Context
 from talkub.core.errors import ToolMissing, ValidationError
+from talkub.workstation import access
 
 pytestmark = need("age", "age-keygen", "sops")
 

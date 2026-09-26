@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import status as status_flow
+from talkub.overview import status as status_flow
 
 
 def status(ctx: typer.Context) -> None:

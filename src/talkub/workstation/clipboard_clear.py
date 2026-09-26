@@ -1,6 +1,6 @@
-"""Entry point for the detached clipboard-clearing helper (`python -m talkub.clipboard_clear`).
+"""Entry point for the detached clipboard-clearing helper (`python -m talkub.workstation.clipboard_clear`).
 
-Started via `talkub.clipboard.schedule_clear` / `Runner.spawn_detached`. Reads a SHA-256 hex
+Started via `talkub.workstation.clipboard.schedule_clear` / `Runner.spawn_detached`. Reads a SHA-256 hex
 digest from stdin (never the plaintext), sleeps `TALKUB_CLIPBOARD_CLEAR_SECONDS` (default 45),
 then clears the clipboard only if its current content still hashes to that digest. Never prints
 anything, so nothing leaks even if the stdout/stderr redirection by the parent were absent.
@@ -12,8 +12,8 @@ import hashlib
 import sys
 import time
 
-from talkub import clipboard
 from talkub.core.runner import Runner
+from talkub.workstation import clipboard
 
 
 def main() -> None:

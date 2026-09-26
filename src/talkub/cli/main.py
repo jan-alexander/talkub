@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from talkub import __version__, access, shortcuts
+from talkub import __version__
 from talkub.cli import admin, check, image, keys, lint, secret, session, setup
 from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import chart as chart_cli
@@ -26,6 +26,7 @@ from talkub.cli import upgrade as upgrade_cli
 from talkub.cli import versions as versions_cli
 from talkub.cli.state import State
 from talkub.core.errors import TalkubError
+from talkub.workstation import access, shortcuts
 
 app = typer.Typer(
     help="Administer a Talos cluster repo (ArgoCD, SOPS/age, Sealed Secrets).",

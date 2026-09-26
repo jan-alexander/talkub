@@ -8,10 +8,10 @@ from types import SimpleNamespace
 import pytest
 from helpers import need, write_chart_app
 
-from talkub import versions
 from talkub.cli.main import main
 from talkub.context import Context
 from talkub.core.errors import ValidationError
+from talkub.overview import versions
 
 pytestmark = need("age", "age-keygen", "sops")
 

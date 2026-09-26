@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import access
+from talkub.workstation import access
 
 PASSTHROUGH = {
     "allow_extra_args": True,

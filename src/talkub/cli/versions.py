@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import versions as versions_flow
+from talkub.overview import versions as versions_flow
 
 app = typer.Typer(
     help="Target vs. running vs. latest versions: Talos, Kubernetes and chart apps."
