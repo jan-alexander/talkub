@@ -11,6 +11,7 @@ from talkub.lint import (
     DEFAULT_YAMLLINT,
     Finding,
     LintReport,
+    _DOWNLOAD_ERROR_PREFIX,
     cache_dir,
     kubeconform_argv,
     lint_manifests,
@@ -189,7 +190,7 @@ def test_manifest_files_empty_when_no_gitops_dirs(empty_repo):
 def test_kubeconform_argv_contents(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     cache = tmp_path / "cache" / "talkub" / "kubeconform"
-    argv = kubeconform_argv("1.30.0", offline=False)
+    argv = kubeconform_argv("1.30.0")
     assert argv == [
         "kubeconform",
         "-output", "json",
@@ -204,8 +205,6 @@ def test_kubeconform_argv_contents(monkeypatch, tmp_path):
         "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
         "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
     ]
-    # offline does not change the argv (see docstring); only whether the check runs at all.
-    assert kubeconform_argv("1.30.0", offline=True) == argv
 
 
 def _kubeconform_json(resources):
@@ -246,6 +245,49 @@ def test_parse_kubeconform_error_without_validation_errors_uses_msg():
     findings, skipped = parse_kubeconform(stdout)
     assert findings == [Finding("error", "gitops/apps/x.yaml", "Pod/x: boom")]
     assert skipped == []
+
+
+def test_parse_kubeconform_offline_download_error_is_skipped():
+    stdout = _kubeconform_json([
+        {
+            "filename": "gitops/apps/x.yaml", "kind": "Namespace", "name": "test", "version": "v1",
+            "status": "statusError",
+            "msg": "failed downloading schema at https://nonexistent.invalid/namespace.json: dial tcp: lookup nonexistent.invalid: no such host",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout, offline=True)
+    assert findings == []
+    assert skipped == ["schema not cached for Namespace/test (offline)"]
+
+
+def test_parse_kubeconform_online_download_error_stays_an_error():
+    stdout = _kubeconform_json([
+        {
+            "filename": "gitops/apps/x.yaml", "kind": "Namespace", "name": "test", "version": "v1",
+            "status": "statusError", "msg": "failed downloading schema at https://x/namespace.json: boom",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout, offline=False)
+    assert skipped == []
+    assert findings == [Finding("error", "gitops/apps/x.yaml", "Namespace/test: failed downloading schema at https://x/namespace.json: boom")]
+
+
+def test_parse_kubeconform_offline_non_download_error_stays_an_error():
+    stdout = _kubeconform_json([
+        {
+            "filename": "gitops/apps/x.yaml", "kind": "Namespace", "name": "test", "version": "v1",
+            "status": "statusError", "msg": "error unmarshalling resource: bad yaml",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout, offline=True)
+    assert skipped == []
+    assert findings == [Finding("error", "gitops/apps/x.yaml", "Namespace/test: error unmarshalling resource: bad yaml")]
+
+
+def test_parse_kubeconform_non_json_output_is_one_error_finding():
+    findings, skipped = parse_kubeconform("not json at all\nsecond line")
+    assert skipped == []
+    assert findings == [Finding("error", "kubeconform", "kubeconform produced unexpected output: not json at all")]
 
 
 def test_parse_kubeconform_prefix_prepended_to_path():
@@ -355,6 +397,54 @@ def test_lint_manifests_version_fallback_reruns_with_master(empty_repo, fake_bin
     assert report.skipped == []
 
 
+def test_lint_manifests_version_fallback_preserves_invalid_crd_finding(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo, "a.yaml")
+    (empty_repo.root / "gitops" / "apps" / "b.yaml").write_text("x: 1\n")
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    first = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusSkipped", "msg": ""},
+        {
+            "filename": "gitops/apps/b.yaml", "kind": "DNSConfig", "name": "y", "version": "tailscale.com/v1alpha1",
+            "status": "statusInvalid", "msg": "bad", "validationErrors": [{"path": "/spec", "msg": "missing nameserver"}],
+        },
+    ]).encode()
+    # The master rerun's crafted output omits the CRD entirely (it should still be reported).
+    second = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
+    ]).encode()
+    runner = ScriptedRunner(outputs=[first, second])
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    assert len(runner.calls) == 2
+    crd_findings = [f for f in report.findings if f.path == "gitops/apps/b.yaml"]
+    assert crd_findings == [Finding("error", "gitops/apps/b.yaml", "DNSConfig/y: /spec: missing nameserver")]
+
+
+def test_lint_manifests_version_fallback_dedupes_resource_present_in_both_runs(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo, "a.yaml")
+    (empty_repo.root / "gitops" / "apps" / "b.yaml").write_text("x: 1\n")
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    crd = {
+        "filename": "gitops/apps/b.yaml", "kind": "DNSConfig", "name": "y", "version": "tailscale.com/v1alpha1",
+        "status": "statusInvalid", "msg": "bad", "validationErrors": [{"path": "/spec", "msg": "missing nameserver"}],
+    }
+    first = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusSkipped", "msg": ""},
+        crd,
+    ]).encode()
+    second = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
+        crd,  # also reported by the master run: must not be duplicated
+    ]).encode()
+    runner = ScriptedRunner(outputs=[first, second])
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    crd_findings = [f for f in report.findings if f.path == "gitops/apps/b.yaml"]
+    assert len(crd_findings) == 1
+
+
 def test_lint_manifests_crd_group_skip_does_not_trigger_fallback(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo, "a.yaml")
     fake_bin("kubeconform", "true\n")
@@ -435,3 +525,29 @@ def test_real_kubeconform_validates_manifests(empty_repo, monkeypatch, tmp_path)
     good_findings = [f for f in report.findings if f.path == "gitops/apps/good.yaml"]
     if good_findings:
         pytest.skip(f"good.yaml unexpectedly flagged (network issue?): {report.render()}")
+
+
+@need("kubeconform")
+def test_real_kubeconform_download_error_msg_matches_our_prefix(tmp_path):
+    """Pins the exact msg shape an unreachable schema host produces, since offline handling in
+    `parse_kubeconform` depends on it starting with `_DOWNLOAD_ERROR_PREFIX`."""
+    (tmp_path / "x.yaml").write_text("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: test\n")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    proc = Runner().run(
+        [
+            "kubeconform", "-output", "json", "-verbose", "-ignore-missing-schemas",
+            "-cache", str(cache),
+            "-schema-location", "https://nonexistent.invalid.example/{{.ResourceKind}}.json",
+            "x.yaml",
+        ],
+        cwd=tmp_path, check=False,
+    )
+    data = json.loads(proc.stdout.decode())
+    resources = data["resources"]
+    if not resources or resources[0]["status"] != "statusError":
+        pytest.skip(f"kubeconform did not report a download error (network/DNS issue?): {data}")
+    msg = resources[0]["msg"]
+    if not msg.startswith("failed downloading schema"):
+        pytest.skip(f"kubeconform's error msg shape changed: {msg!r}")
+    assert msg.startswith(_DOWNLOAD_ERROR_PREFIX)

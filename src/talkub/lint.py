@@ -113,13 +113,12 @@ def manifest_files(repo: Repo) -> list[Path]:
     return sorted(files)
 
 
-def kubeconform_argv(version: str, *, offline: bool) -> list[str]:
+def kubeconform_argv(version: str) -> list[str]:
     """argv for `kubeconform -output json ...` (without the input files).
 
-    kubeconform has no offline flag; `offline` doesn't change the argv — whether the check runs
-    at all when offline (an empty schema cache skips it entirely) is decided by `lint_manifests`.
+    Whether the check runs at all when offline (an empty schema cache skips it entirely) is
+    decided by `lint_manifests`; kubeconform itself has no offline flag.
     """
-    del offline
     return [
         "kubeconform",
         "-output", "json",
@@ -134,10 +133,19 @@ def kubeconform_argv(version: str, *, offline: bool) -> list[str]:
     ]
 
 
-def _resources(stdout: str) -> list[dict]:
-    if not stdout.strip():
+_DOWNLOAD_ERROR_PREFIX = "failed downloading schema"
+
+
+def _try_resources(stdout: str) -> list[dict] | None:
+    """Parsed `resources` list, or `None` if `stdout` isn't the JSON kubeconform normally emits."""
+    text = stdout.strip()
+    if not text:
         return []
-    return json.loads(stdout).get("resources", [])
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return data.get("resources", [])
 
 
 def _is_core_group(version: str) -> bool:
@@ -146,26 +154,40 @@ def _is_core_group(version: str) -> bool:
     return not group or "." not in group or group.endswith(".k8s.io")
 
 
+def _is_download_error(res: dict) -> bool:
+    """True for a schema-fetch failure (e.g. an unreachable host); unrelated to the k8s version."""
+    return str(res.get("msg", "")).startswith(_DOWNLOAD_ERROR_PREFIX)
+
+
+def _resource_key(res: dict) -> tuple:
+    return (res.get("filename"), res.get("kind"), res.get("name"))
+
+
 def _needs_master_fallback(stdout: str) -> bool:
-    """True if a core/Kubernetes-owned resource was skipped or errored: the requested version's
-    schemas are probably missing entirely, rather than this being a genuine unknown-CRD skip."""
+    """True if a core/Kubernetes-owned resource was skipped, or errored for a reason other than a
+    download failure: the requested version's schemas are probably missing entirely, rather than
+    this being a genuine unknown-CRD skip or an unrelated network problem."""
+    resources = _try_resources(stdout)
+    if resources is None:
+        return False
     return any(
-        res.get("status") in ("statusSkipped", "statusError") and _is_core_group(res.get("version", ""))
-        for res in _resources(stdout)
+        _is_core_group(res.get("version", ""))
+        and (res.get("status") == "statusSkipped" or (res.get("status") == "statusError" and not _is_download_error(res)))
+        for res in resources
     )
 
 
-def parse_kubeconform(stdout: str, prefix: str | None = None) -> tuple[list[Finding], list[str]]:
-    """Parse `kubeconform -output json -verbose` output into findings and skipped reasons.
-
-    `prefix` is prepended to the path (e.g. an app name like ``"coredns: "`` for Helm output);
-    plain manifest linting passes `None` since `filename` is already repo-relative.
-    """
+def _parse_resources(
+    resources: list[dict], prefix: str | None, *, offline: bool
+) -> tuple[list[Finding], list[str]]:
     findings: list[Finding] = []
     skipped: list[str] = []
-    for res in _resources(stdout):
+    for res in resources:
         ident = f"{res.get('kind')}/{res.get('name')}"
         status = res.get("status")
+        if status == "statusError" and offline and _is_download_error(res):
+            skipped.append(f"schema not cached for {ident} (offline)")
+            continue
         if status in ("statusInvalid", "statusError"):
             path = f"{prefix}{res.get('filename', '')}" if prefix else res.get("filename", "")
             errors = res.get("validationErrors") or []
@@ -177,6 +199,24 @@ def parse_kubeconform(stdout: str, prefix: str | None = None) -> tuple[list[Find
         elif status == "statusSkipped":
             skipped.append(f"no schema for {ident} ({res.get('version', '')})")
     return findings, skipped
+
+
+def parse_kubeconform(
+    stdout: str, prefix: str | None = None, *, offline: bool = False
+) -> tuple[list[Finding], list[str]]:
+    """Parse `kubeconform -output json -verbose` output into findings and skipped reasons.
+
+    `prefix` is prepended to the path (e.g. an app name like ``"coredns: "`` for Helm output);
+    plain manifest linting passes `None` since `filename` is already repo-relative. When `offline`,
+    a `statusError` caused by a schema download failure becomes a skipped reason rather than an
+    error, since we expect the network to be unavailable; other errors (e.g. a malformed resource)
+    still count as errors.
+    """
+    resources = _try_resources(stdout)
+    if resources is None:
+        first_line = stdout.strip().splitlines()[0] if stdout.strip() else ""
+        return [Finding("error", "kubeconform", f"kubeconform produced unexpected output: {first_line}")], []
+    return _parse_resources(resources, prefix, offline=offline)
 
 
 def _cache_populated(cache: Path) -> bool:
@@ -200,13 +240,23 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
 
     version = repo.load_settings().kubernetes_version.lstrip("v")
     rel_files = [repo.rel(path) for path in files]
-    result = ctx.runner.run(kubeconform_argv(version, offline=offline) + rel_files, cwd=repo.root, check=False)
+    result = ctx.runner.run(kubeconform_argv(version) + rel_files, cwd=repo.root, check=False)
     stdout = result.stdout.decode()
 
     if _needs_master_fallback(stdout):
-        result = ctx.runner.run(kubeconform_argv("master", offline=offline) + rel_files, cwd=repo.root, check=False)
+        # A CRD's validity doesn't depend on -kubernetes-version: keep those findings from this
+        # run rather than losing them when we discard the rest for the master rerun below.
+        carried = [
+            res
+            for res in (_try_resources(stdout) or [])
+            if res.get("status") == "statusInvalid" and not _is_core_group(res.get("version", ""))
+        ]
+        result = ctx.runner.run(kubeconform_argv("master") + rel_files, cwd=repo.root, check=False)
         stdout = result.stdout.decode()
-        findings, skipped = parse_kubeconform(stdout)
+        master_resources = _try_resources(stdout) or []
+        seen = {_resource_key(res) for res in master_resources}
+        merged = master_resources + [res for res in carried if _resource_key(res) not in seen]
+        findings, skipped = _parse_resources(merged, None, offline=offline)
         report.findings.extend(findings)
         report.skipped.extend(skipped)
         report.findings.append(
@@ -217,7 +267,7 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
         )
         return
 
-    findings, skipped = parse_kubeconform(stdout)
+    findings, skipped = parse_kubeconform(stdout, offline=offline)
     report.findings.extend(findings)
     report.skipped.extend(skipped)
 
