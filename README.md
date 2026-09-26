@@ -281,14 +281,18 @@ Commit `talos/` afterwards.
     talkub lint                 # yamllint, kubeconform, helm template — style, syntax, valid manifests
     talkub lint --offline       # same, but skip checks that need network access
 
+`--offline` is not a guarantee of zero network: kubeconform may still fetch a schema that is not
+yet cached, and a schema download that fails while offline just counts as skipped, not an error.
+
 Three checks, in order, each key-free:
 
 - yamllint (`.yamllint` if present, else a relaxed default managed by talkub) over every
   `*.yaml`/`*.yml` in the repo.
-- `gitops/apps/**` and `gitops/manifests/**` manifests validated with `kubeconform` (skipped with
-  a warning if `kubeconform` is not installed; `--offline` uses only the local schema cache).
+- `gitops/apps/**` and `gitops/manifests/**` manifests validated with `kubeconform` (a `skipped:`
+  line if `kubeconform` is not installed; `--offline` skips entirely if the local schema cache is
+  still empty).
 - every Argo CD Application's Helm chart rendered with `helm template` and validated the same way
-  (skipped entirely with `--offline`, or with a warning if `helm` is not installed).
+  (skipped entirely with `--offline`, or a `skipped:` line if `helm` is not installed).
 
     talkub hooks install            # install .git/hooks/pre-commit
     talkub hooks install --force    # overwrite a pre-commit hook not managed by talkub

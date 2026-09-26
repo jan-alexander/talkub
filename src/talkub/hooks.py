@@ -34,6 +34,8 @@ def render_hook(talkub: str) -> str:
         f"# {MARKER} (managed by talkub; reinstall with `talkub hooks install`)\n"
         f"TALKUB={shlex.quote(talkub)}\n"
         '[ -x "$TALKUB" ] || TALKUB=talkub\n'
+        'command -v "$TALKUB" >/dev/null 2>&1 || { echo "talkub pre-commit hook: talkub not found; '
+        "reinstall with 'talkub hooks install' or commit with --no-verify\" >&2; exit 1; }\n"
         '"$TALKUB" check && "$TALKUB" lint --offline\n'
     )
 

@@ -12,6 +12,7 @@ from helpers import FakeRunner, need
 from talkub import apps, coredns, yamlio
 from talkub.cli.main import main
 from talkub.context import Context
+from talkub.errors import ValidationError
 from talkub.lint import (
     DEFAULT_YAMLLINT,
     Finding,
@@ -99,6 +100,21 @@ def test_sops_yaml_ignored_by_default(empty_repo):
     report = LintReport()
     lint_yaml(empty_repo, report)
     assert not any(f.path == "secret.sops.yaml" for f in report.findings)
+
+
+def test_non_utf8_yaml_file_is_an_error_finding_not_a_crash(empty_repo):
+    (empty_repo.root / "bad.yaml").write_bytes(b"a: \xff\xfe bad\n")
+    report = LintReport()
+    lint_yaml(empty_repo, report)  # must not raise UnicodeDecodeError
+    assert [f for f in report.findings if f.path == "bad.yaml"] == [Finding("error", "bad.yaml", "not valid UTF-8")]
+
+
+def test_malformed_yamllint_extends_raises_validation_error(empty_repo):
+    (empty_repo.root / ".yamllint").write_text("extends: relaxd\n")  # typo: not a built-in name
+    report = LintReport()
+    with pytest.raises(ValidationError) as exc:
+        lint_yaml(empty_repo, report)
+    assert "invalid .yamllint" in str(exc.value)
 
 
 def test_repo_yamllint_overrides_default(empty_repo):
@@ -270,6 +286,19 @@ def test_parse_kubeconform_offline_download_error_is_skipped():
     assert skipped == ["schema not cached for Namespace/test (offline)"]
 
 
+def test_parse_kubeconform_offline_alt_download_error_prefix_is_skipped():
+    stdout = _kubeconform_json([
+        {
+            "filename": "gitops/apps/x.yaml", "kind": "Namespace", "name": "test", "version": "v1",
+            "status": "statusError",
+            "msg": "error while downloading schema at https://nonexistent.invalid/namespace.json: dial tcp: lookup nonexistent.invalid: no such host",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout, offline=True)
+    assert findings == []
+    assert skipped == ["schema not cached for Namespace/test (offline)"]
+
+
 def test_parse_kubeconform_online_download_error_stays_an_error():
     stdout = _kubeconform_json([
         {
@@ -309,6 +338,19 @@ def test_parse_kubeconform_prefix_prepended_to_path():
     ])
     findings, _ = parse_kubeconform(stdout, prefix="coredns: ")
     assert findings[0].path == "coredns: -"
+
+
+def test_parse_kubeconform_stdin_filename_drops_suffix_with_prefix():
+    """A Helm-rendered manifest is validated via stdin; kubeconform names it "stdin", which must
+    not show up as "app coredns: stdin" — just "app coredns"."""
+    stdout = _kubeconform_json([
+        {
+            "filename": "stdin", "kind": "Pod", "name": "x", "version": "v1", "status": "statusInvalid",
+            "msg": "boom", "validationErrors": [{"path": "/spec", "msg": "boom"}],
+        },
+    ])
+    findings, _ = parse_kubeconform(stdout, prefix="app coredns: ")
+    assert findings[0].path == "app coredns"
 
 
 def _manifest(empty_repo, name="a.yaml"):
@@ -753,6 +795,55 @@ def test_helm_sources_skips_non_application_docs(empty_repo):
     )
     sources, findings = helm_sources(empty_repo)
     assert sources == [] and findings == []
+
+
+def test_helm_sources_skips_file_with_invalid_yaml_syntax(empty_repo):
+    apps_dir = empty_repo.root / "gitops" / "apps"
+    apps_dir.mkdir(parents=True)
+    (apps_dir / "broken.yaml").write_text("apiVersion: v1\nkind: [oops\n")
+    sources, findings = helm_sources(empty_repo)  # must not raise
+    assert sources == [] and findings == []
+
+
+def test_helm_sources_handles_non_mapping_spec_destination_and_helm(empty_repo):
+    doc = {
+        "apiVersion": "argoproj.io/v1alpha1", "kind": "Application",
+        "metadata": {"name": "weird"},
+        "spec": {
+            "destination": "not-a-mapping",
+            "sources": [{"repoURL": "r", "chart": "c", "targetRevision": "1.0.0", "helm": "not-a-mapping"}],
+        },
+    }
+    _write_app_doc(empty_repo, "weird", doc)
+    sources, findings = helm_sources(empty_repo)  # must not raise AttributeError
+    assert findings == []
+    assert sources == [
+        HelmSource(
+            app="weird", release="weird", namespace="default", repo="r", chart="c", version="1.0.0",
+            value_files=(), inline_values=None,
+        )
+    ]
+
+
+def test_helm_sources_handles_non_mapping_metadata_and_top_level_spec(empty_repo):
+    doc = {"apiVersion": "argoproj.io/v1alpha1", "kind": "Application", "metadata": "oops", "spec": "oops"}
+    _write_app_doc(empty_repo, "x", doc)
+    sources, findings = helm_sources(empty_repo)  # must not raise
+    assert sources == [] and findings == []
+
+
+def test_run_survives_broken_app_file_and_non_mapping_spec(empty_repo, monkeypatch, tmp_path):
+    """Integration-level regression for the crash: yamllint still reports the broken file; the
+    rest of `talkub lint` completes instead of raising."""
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # no helm/kubeconform: nothing else to run
+    apps_dir = empty_repo.root / "gitops" / "apps"
+    apps_dir.mkdir(parents=True)
+    (apps_dir / "broken.yaml").write_text("apiVersion: v1\nkind: [oops\n")
+    (apps_dir / "weird.yaml").write_text(
+        yamlio.dump({"apiVersion": "argoproj.io/v1alpha1", "kind": "Application", "metadata": {"name": "weird"}, "spec": "not-a-mapping"})
+    )
+    report = run(Context.open(empty_repo), offline=False)  # must not raise
+    assert any(f.path == "gitops/apps/broken.yaml" for f in report.findings)
 
 
 def test_helm_sources_ignores_sops_yaml_files(empty_repo):

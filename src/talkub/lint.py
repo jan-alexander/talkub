@@ -13,12 +13,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ruamel.yaml.error import YAMLError
 from yamllint import linter
-from yamllint.config import YamlLintConfig
+from yamllint.config import YamlLintConfig, YamlLintConfigError
 
 from talkub import bootstrap, yamlio
 from talkub.context import Context
 from talkub.ephemeral import private_tempdir
+from talkub.errors import ValidationError
 from talkub.repo import ChartSpec, Repo
 
 # CRD schemas not covered by the default (Kubernetes-owned) schema location.
@@ -84,9 +86,12 @@ def yaml_files(repo: Repo) -> list[Path]:
 
 def _yamllint_config(repo: Repo) -> YamlLintConfig:
     local = repo.root / ".yamllint"
-    if local.is_file():
-        return YamlLintConfig(content=local.read_text())
-    return YamlLintConfig(content=DEFAULT_YAMLLINT)
+    content = local.read_text() if local.is_file() else DEFAULT_YAMLLINT
+    try:
+        return YamlLintConfig(content=content)
+    except (YamlLintConfigError, OSError) as err:
+        # OSError: e.g. `extends: <not a built-in name>` makes yamllint try to open it as a file.
+        raise ValidationError(f"invalid .yamllint: {err}") from err
 
 
 def lint_yaml(repo: Repo, report: LintReport) -> None:
@@ -95,7 +100,12 @@ def lint_yaml(repo: Repo, report: LintReport) -> None:
         relpath = repo.rel(path)
         if conf.is_file_ignored(relpath):
             continue
-        for problem in linter.run(path.read_text(), conf, relpath):
+        try:
+            text = path.read_text()
+        except UnicodeDecodeError:
+            report.findings.append(Finding("error", relpath, "not valid UTF-8"))
+            continue
+        for problem in linter.run(text, conf, relpath):
             report.findings.append(Finding(problem.level, relpath, problem.message, problem.line))
 
 
@@ -140,6 +150,7 @@ def kubeconform_argv(version: str) -> list[str]:
 
 
 _DOWNLOAD_ERROR_PREFIX = "failed downloading schema"
+_DOWNLOAD_ERROR_PREFIX_ALT = "error while downloading schema"
 
 
 def _try_resources(stdout: str) -> list[dict] | None:
@@ -156,7 +167,8 @@ def _try_resources(stdout: str) -> list[dict] | None:
 
 def _is_download_error(res: dict) -> bool:
     """True for a schema-fetch failure (e.g. an unreachable host); unrelated to the k8s version."""
-    return str(res.get("msg", "")).startswith(_DOWNLOAD_ERROR_PREFIX)
+    msg = str(res.get("msg", ""))
+    return msg.startswith(_DOWNLOAD_ERROR_PREFIX) or msg.startswith(_DOWNLOAD_ERROR_PREFIX_ALT)
 
 
 # kubeconform has no schema for this *kind* in any -kubernetes-version (unlike a CRD-defined kind,
@@ -178,7 +190,13 @@ def _parse_resources(
             skipped.append(f"schema not cached for {ident} (offline)")
             continue
         if status in ("statusInvalid", "statusError"):
-            path = f"{prefix}{res.get('filename', '')}" if prefix else res.get("filename", "")
+            filename = res.get("filename", "")
+            if prefix:
+                # "stdin" is kubeconform's own name for our `-` input (Helm-rendered manifests);
+                # showing it after the app prefix ("app coredns: stdin") adds nothing real.
+                path = prefix.rstrip(": ") if filename == "stdin" else f"{prefix}{filename}"
+            else:
+                path = filename
             errors = res.get("validationErrors") or []
             if errors:
                 for err in errors:
@@ -296,6 +314,13 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
 _VALUES_PREFIX = "$values/"
 
 
+def _as_mapping(value: object) -> Mapping:
+    """`value` if it's a mapping, else `{}` — Application YAML is untrusted repo content, and a
+    `spec`/`destination`/`helm`/`metadata` that turns out to be a string or a list must be skipped,
+    not crash `talkub lint` with an AttributeError."""
+    return value if isinstance(value, Mapping) else {}
+
+
 @dataclass(frozen=True)
 class HelmSource:
     app: str
@@ -323,22 +348,30 @@ def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
     for path in sorted(apps_dir.glob("*.yaml")):
         if path.name.endswith(".sops.yaml"):
             continue
-        for doc in yamlio.load_all(path.read_text()):
+        try:
+            docs = yamlio.load_all(path.read_text())
+        except YAMLError:
+            continue  # yamllint already reports the syntax error as a finding
+        for doc in docs:
             if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
                 continue
-            name = str((doc.get("metadata") or {}).get("name", path.stem))
-            spec = doc.get("spec") or {}
-            namespace = ((spec.get("destination") or {}).get("namespace")) or "default"
+            metadata = _as_mapping(doc.get("metadata"))
+            name = str(metadata.get("name", path.stem))
+            spec = _as_mapping(doc.get("spec"))
+            destination = _as_mapping(spec.get("destination"))
+            namespace = destination.get("namespace") or "default"
 
             raw_sources = spec.get("sources")
             if raw_sources is None:
                 single = spec.get("source")
                 raw_sources = [single] if single else []
+            if not isinstance(raw_sources, list):
+                raw_sources = []
 
             for source in raw_sources:
                 if not isinstance(source, Mapping) or "chart" not in source:
                     continue
-                helm = source.get("helm") or {}
+                helm = _as_mapping(source.get("helm"))
                 release = helm.get("releaseName") or name
 
                 value_files: list[Path] = []

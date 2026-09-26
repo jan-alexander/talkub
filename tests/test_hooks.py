@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -72,6 +73,8 @@ def test_render_hook_content():
         "# talkub pre-commit hook (managed by talkub; reinstall with `talkub hooks install`)\n"
         "TALKUB=/usr/local/bin/talkub\n"
         '[ -x "$TALKUB" ] || TALKUB=talkub\n'
+        'command -v "$TALKUB" >/dev/null 2>&1 || { echo "talkub pre-commit hook: talkub not found; '
+        "reinstall with 'talkub hooks install' or commit with --no-verify\" >&2; exit 1; }\n"
         '"$TALKUB" check && "$TALKUB" lint --offline\n'
     )
 
@@ -247,3 +250,24 @@ def test_real_commit_is_blocked_then_allowed_by_installed_hook(tmp_path, monkeyp
         cwd=repo.root, capture_output=True,
     )
     assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+
+
+def test_real_commit_reports_missing_talkub_when_stored_path_and_path_both_lack_it(tmp_path, monkeypatch):
+    repo = _git_repo(tmp_path)
+    fake = _fake_talkub(tmp_path / "fake", 0)
+    monkeypatch.setattr(sys, "argv", [str(fake)])
+    hooks.install(repo, Runner())
+    fake.unlink()  # the stored path is gone, and this PATH has no bare `talkub` either
+
+    (repo.root / "f.txt").write_text("x\n")
+    subprocess.run(["git", "add", "."], cwd=repo.root, check=True)
+    env = {**os.environ, "PATH": "/usr/bin:/bin"}
+    result = subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-m", "x"],
+        cwd=repo.root, capture_output=True, env=env,
+    )
+    assert result.returncode != 0
+    assert (
+        "talkub pre-commit hook: talkub not found; reinstall with 'talkub hooks install' or commit with --no-verify"
+        in result.stderr.decode()
+    )
