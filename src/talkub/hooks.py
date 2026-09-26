@@ -39,14 +39,19 @@ def render_hook(talkub: str) -> str:
 
 
 def hook_path(repo: Repo, runner: Runner) -> Path:
-    """`<git-dir>/hooks/pre-commit`; raises if `repo.root` is not a git repository."""
-    proc = runner.run(["git", "rev-parse", "--git-dir"], cwd=repo.root, check=False)
+    """`<hooks dir>/pre-commit`; raises if `repo.root` is not a git repository.
+
+    Uses `git rev-parse --git-path hooks` (not `--git-dir` + "hooks"), which resolves to the
+    *common* git dir's hooks in a linked worktree (worktrees do not have their own hooks/) and
+    honors `core.hooksPath` when set.
+    """
+    proc = runner.run(["git", "rev-parse", "--git-path", "hooks"], cwd=repo.root, check=False)
     if proc.returncode != 0:
         raise ValidationError(f"{repo.root} is not a git repository", hint="git init")
-    git_dir = Path(proc.stdout.decode(errors="replace").strip())
-    if not git_dir.is_absolute():
-        git_dir = repo.root / git_dir
-    return git_dir / "hooks" / "pre-commit"
+    hooks_dir = Path(proc.stdout.decode(errors="replace").strip())
+    if not hooks_dir.is_absolute():
+        hooks_dir = repo.root / hooks_dir
+    return hooks_dir / "pre-commit"
 
 
 def install(repo: Repo, runner: Runner, *, force: bool = False) -> list[str]:

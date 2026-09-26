@@ -98,6 +98,27 @@ def test_hook_path_not_a_git_repo(tmp_path):
     assert exc.value.hint == "git init"
 
 
+def test_hook_path_in_linked_worktree_uses_common_hooks_dir(tmp_path):
+    """A linked worktree has no .git/hooks of its own; hooks live in the main repo's git dir."""
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=main, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--allow-empty", "-q", "-m", "x"],
+        cwd=main, check=True,
+    )
+    worktree = tmp_path / "wt"
+    subprocess.run(["git", "worktree", "add", "-q", str(worktree)], cwd=main, check=True)
+
+    assert hooks.hook_path(Repo(worktree), Runner()) == main / ".git" / "hooks" / "pre-commit"
+
+
+def test_hook_path_honors_relative_core_hooks_path(tmp_path):
+    repo = _git_repo(tmp_path)
+    subprocess.run(["git", "config", "core.hooksPath", "custom-hooks"], cwd=repo.root, check=True)
+    assert hooks.hook_path(repo, Runner()) == repo.root / "custom-hooks" / "pre-commit"
+
+
 # -- install ----------------------------------------------------------------
 
 
