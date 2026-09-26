@@ -32,7 +32,11 @@ def chart_apps(ctx: Context) -> list[str]:
     Helm chart source, in file order (for `--all`); other chart-app files (more than one chart
     source, more than one Application document, ...) are skipped — see `upgrade`, which reports
     them by name instead of silently dropping them."""
-    return [stem for stem in argoapps.chart_app_stems(ctx.repo) if argoapps.is_single_chart_app(ctx.repo, stem)]
+    return [
+        stem
+        for stem in argoapps.chart_app_stems(ctx.repo)
+        if argoapps.is_single_chart_app(ctx.repo, stem)
+    ]
 
 
 def _skipped_chart_apps(ctx: Context) -> list[str]:
@@ -43,12 +47,26 @@ def _skipped_chart_apps(ctx: Context) -> list[str]:
 
 
 def _show_values(ctx: Context, chart: ChartSpec) -> str:
-    argv = ["helm", "show", "values", *bootstrap.chart_ref(chart), "--version", chart.version]
+    argv = [
+        "helm",
+        "show",
+        "values",
+        *bootstrap.chart_ref(chart),
+        "--version",
+        chart.version,
+    ]
     return ctx.runner.run(argv).stdout.decode()
 
 
 def _diff(old: str, new: str, *, old_label: str, new_label: str) -> str:
-    lines = list(difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True), old_label, new_label))
+    lines = list(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            old_label,
+            new_label,
+        )
+    )
     if not lines:
         return ""
     if len(lines) > MAX_DIFF_LINES:
@@ -102,17 +120,26 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
 
     old_chart = ChartSpec(source.repo, source.chart, source.version)
     new_chart = ChartSpec(source.repo, source.chart, target)
-    old_doc = charts.show_chart(ctx.runner, old_chart.repo, old_chart.chart, old_chart.version)
-    new_doc = charts.show_chart(ctx.runner, new_chart.repo, new_chart.chart, new_chart.version)
+    old_doc = charts.show_chart(
+        ctx.runner, old_chart.repo, old_chart.chart, old_chart.version
+    )
+    new_doc = charts.show_chart(
+        ctx.runner, new_chart.repo, new_chart.chart, new_chart.version
+    )
 
     print(f"{app}: chart: {source.version} → {target}")
-    old_app_version, new_app_version = old_doc.get("appVersion"), new_doc.get("appVersion")
+    old_app_version, new_app_version = (
+        old_doc.get("appVersion"),
+        new_doc.get("appVersion"),
+    )
     if isinstance(old_app_version, str) and isinstance(new_app_version, str):
         print(f"{app}: appVersion: {old_app_version} → {new_app_version}")
 
     diff = _diff(
-        _show_values(ctx, old_chart), _show_values(ctx, new_chart),
-        old_label=f"{source.chart}-{source.version}/values.yaml", new_label=f"{source.chart}-{target}/values.yaml",
+        _show_values(ctx, old_chart),
+        _show_values(ctx, new_chart),
+        old_label=f"{source.chart}-{source.version}/values.yaml",
+        new_label=f"{source.chart}-{target}/values.yaml",
     )
     if diff:
         print(diff, end="")
@@ -139,7 +166,9 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
     # cluster's Kubernetes schemas; still a success, but worth calling out rather than looking
     # identical to a fully validated upgrade.
     if shutil.which("kubeconform") is None:
-        print(f"{app}: note: rendered with helm but not validated against Kubernetes schemas (kubeconform not found)")
+        print(
+            f"{app}: note: rendered with helm but not validated against Kubernetes schemas (kubeconform not found)"
+        )
 
     if app in SELF_MANAGED:
         print(f"{app}: commit and push — Argo CD upgrades itself")
@@ -148,7 +177,14 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
     return True
 
 
-def upgrade(ctx: Context, app: str | None, *, all_apps: bool, version: str | None, confirm: Confirm) -> int:
+def upgrade(
+    ctx: Context,
+    app: str | None,
+    *,
+    all_apps: bool,
+    version: str | None,
+    confirm: Confirm,
+) -> int:
     """`talkub chart upgrade (<app> | --all) [--version X]`. Returns the process exit code."""
     if all_apps and app is not None:
         raise ValidationError("give an app or --all, not both")
@@ -171,7 +207,9 @@ def upgrade(ctx: Context, app: str | None, *, all_apps: bool, version: str | Non
     return 1 if failed else 0
 
 
-def _upgrade_app(ctx: Context, app: str, version: str | None, confirm: Confirm, *, isolate: bool) -> bool:
+def _upgrade_app(
+    ctx: Context, app: str, version: str | None, confirm: Confirm, *, isolate: bool
+) -> bool:
     """`_upgrade_one`, but with `--all`'s per-app isolation: a `TalkubError` (a broken app file, a
     failed `helm`/kubeconform call, ...) is reported like any other failure and does not abort the
     rest of `--all`. In single-app mode it keeps propagating, for a normal CLI error exit."""

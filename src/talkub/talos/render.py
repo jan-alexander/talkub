@@ -47,7 +47,9 @@ def _plain_key(path: Path) -> str:
     return f"patch-{path.name}"
 
 
-def render_configs(ctx: Context, settings: Settings, names: Sequence[str]) -> dict[str, bytes]:
+def render_configs(
+    ctx: Context, settings: Settings, names: Sequence[str]
+) -> dict[str, bytes]:
     """Render and validate the machine config of each node. Decrypts secrets and patches once."""
     refs: dict[str, list[PatchRef]] = {}
     images: dict[str, str] = {}
@@ -57,9 +59,13 @@ def render_configs(ctx: Context, settings: Settings, names: Sequence[str]) -> di
         node_patch = node_patch_path(ctx.repo, name)
         if not node_patch.is_file():
             raise ValidationError(
-                f"{ctx.repo.rel(node_patch)} does not exist", hint=f"create it with `talkub node add {name} …`"
+                f"{ctx.repo.rel(node_patch)} does not exist",
+                hint=f"create it with `talkub node add {name} …`",
             )
-        refs[name] = [*select_patches(ctx.repo, node.role), PatchRef("--config-patch", node_patch)]
+        refs[name] = [
+            *select_patches(ctx.repo, node.role),
+            PatchRef("--config-patch", node_patch),
+        ]
 
     encrypted = {_SECRETS: ctx.repo.talos_secrets}
     for ref in (r for node_refs in refs.values() for r in node_refs):
@@ -67,7 +73,10 @@ def render_configs(ctx: Context, settings: Settings, names: Sequence[str]) -> di
             encrypted[_plain_key(ref.path)] = ref.path
 
     with decrypted(ctx.sops, encrypted) as plain:
-        return {name: _render(ctx.runner, settings, name, images[name], refs[name], plain) for name in names}
+        return {
+            name: _render(ctx.runner, settings, name, images[name], refs[name], plain)
+            for name in names
+        }
 
 
 def _render(
@@ -80,13 +89,23 @@ def _render(
 ) -> bytes:
     node = settings.node(name)
     argv = [
-        "talosctl", "gen", "config", settings.name, settings.endpoint,
-        "--with-secrets", str(plain[_SECRETS]),
-        "--talos-version", settings.talos_version,
-        "--kubernetes-version", settings.kubernetes_version,
-        "--install-image", image,
-        "-t", node.role,
-        "-o", "-",
+        "talosctl",
+        "gen",
+        "config",
+        settings.name,
+        settings.endpoint,
+        "--with-secrets",
+        str(plain[_SECRETS]),
+        "--talos-version",
+        settings.talos_version,
+        "--kubernetes-version",
+        settings.kubernetes_version,
+        "--install-image",
+        image,
+        "-t",
+        node.role,
+        "-o",
+        "-",
         "--with-docs=false",
         "--with-examples=false",
     ]
@@ -94,7 +113,11 @@ def _render(
     if sans:
         argv += ["--additional-sans", ",".join(sans)]
     for ref in refs:
-        source = plain[_plain_key(ref.path)] if ref.path.name.endswith(".sops.yaml") else ref.path
+        source = (
+            plain[_plain_key(ref.path)]
+            if ref.path.name.endswith(".sops.yaml")
+            else ref.path
+        )
         argv += [ref.flag, f"@{source}"]
     config = runner.run(argv).stdout
     _validate(runner, name, config, VALIDATE_MODE[settings.node_platform(name)])
@@ -114,11 +137,17 @@ def _cert_sans(settings: Settings, name: str) -> list[str]:
     API and talosctl endpoints) plus the node's own names, since talkub connects to every
     node by its management address (`-n/-e <mgmt>`), after lockdown `<node>.<tailnet>`."""
     tailnet = settings.tailscale.tailnet if settings.tailscale is not None else None
-    sans = [n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt]
+    sans = [
+        n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt
+    ]
     if tailnet is not None:
         # So the LAN `apply` recommended between `tailscale enable` and `tailscale lockdown`
         # already issues certificates for the tailnet names lockdown will switch clients to.
-        sans += [f"{cp_name}.{tailnet}" for cp_name, cp in settings.nodes.items() if cp.role == "controlplane"]
+        sans += [
+            f"{cp_name}.{tailnet}"
+            for cp_name, cp in settings.nodes.items()
+            if cp.role == "controlplane"
+        ]
     own = settings.node(name).mgmt
     if own and not _is_ip(own):
         sans.append(own)
@@ -129,10 +158,15 @@ def _cert_sans(settings: Settings, name: str) -> list[str]:
 
 def _validate(runner: Runner, name: str, config: bytes, mode: str) -> None:
     with private_file(f"{name}.yaml", config) as path:
-        proc = runner.run(["talosctl", "validate", "--config", str(path), "--mode", mode], check=False)
+        proc = runner.run(
+            ["talosctl", "validate", "--config", str(path), "--mode", mode], check=False
+        )
     if proc.returncode != 0:
         output = (proc.stdout or b"") + (proc.stderr or b"")
-        raise ValidationError(f"rendered config for node '{name}' is invalid", hint=output.decode().strip())
+        raise ValidationError(
+            f"rendered config for node '{name}' is invalid",
+            hint=output.decode().strip(),
+        )
 
 
 def install_summary(config: bytes) -> tuple[str, str]:
@@ -143,7 +177,9 @@ def install_summary(config: bytes) -> tuple[str, str]:
             continue
         if doc.get("kind") == "UnattendedInstallConfig":
             image = (doc.get("installer") or {}).get("image", image)
-            disk = ((doc.get("provisioning") or {}).get("diskSelector") or {}).get("match", disk)
+            disk = ((doc.get("provisioning") or {}).get("diskSelector") or {}).get(
+                "match", disk
+            )
         elif doc.get("version") == "v1alpha1":
             install = (doc.get("machine") or {}).get("install") or {}
             image = install.get("image", image)

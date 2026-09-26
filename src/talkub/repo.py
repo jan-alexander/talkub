@@ -43,7 +43,9 @@ def _valid_port_spec(value: str) -> bool:
     match = _PORT_SPEC.match(value)
     if match is None:
         return False
-    return all(1 <= int(group) <= 65535 for group in match.groups() if group is not None)
+    return all(
+        1 <= int(group) <= 65535 for group in match.groups() if group is not None
+    )
 
 
 @dataclass(frozen=True)
@@ -75,7 +77,9 @@ class SchematicSpec:
 
     @property
     def is_current(self) -> bool:
-        return self.id is not None and self.hash == customization_hash(self.extensions, self.kernel_args)
+        return self.id is not None and self.hash == customization_hash(
+            self.extensions, self.kernel_args
+        )
 
 
 @dataclass(frozen=True)
@@ -119,7 +123,8 @@ def parse_installer_image(image: str) -> tuple[str, str]:
 def _check_choice(value: object, choices: tuple[str, ...], where: str) -> str:
     if value not in choices:
         raise ValidationError(
-            f"{MARKER}: {where} has invalid value {value!r}", hint=f"use one of: {', '.join(choices)}"
+            f"{MARKER}: {where} has invalid value {value!r}",
+            hint=f"use one of: {', '.join(choices)}",
         )
     return str(value)
 
@@ -169,9 +174,16 @@ def _shortcut_from_dict(name: str, spec: object) -> Shortcut:
         secret_name = _label(raw.get("name"), f"{where}.secret.name")
         key = raw.get("key")
         if not isinstance(key, str) or not key.strip() or not _SECRET_KEY.match(key):
-            raise ValidationError(f"{MARKER}: {where}.secret.key must be a valid secret key")
+            raise ValidationError(
+                f"{MARKER}: {where}.secret.key must be a valid secret key"
+            )
         return Shortcut(
-            name=name, kind=kind, description=description, namespace=namespace, secret=secret_name, key=key
+            name=name,
+            kind=kind,
+            description=description,
+            namespace=namespace,
+            secret=secret_name,
+            key=key,
         )
 
     if kind == "job":
@@ -184,13 +196,24 @@ def _shortcut_from_dict(name: str, spec: object) -> Shortcut:
         if not isinstance(follow, bool):
             raise ValidationError(f"{MARKER}: {where}.job.follow must be a boolean")
         return Shortcut(
-            name=name, kind=kind, description=description, namespace=namespace, cronjob=cronjob, follow=follow
+            name=name,
+            kind=kind,
+            description=description,
+            namespace=namespace,
+            cronjob=cronjob,
+            follow=follow,
         )
 
     if kind == "run":
         raw = spec["run"]
-        if not isinstance(raw, list) or not raw or not all(isinstance(item, str) for item in raw):
-            raise ValidationError(f"{MARKER}: {where}.run must be a non-empty list of strings")
+        if (
+            not isinstance(raw, list)
+            or not raw
+            or not all(isinstance(item, str) for item in raw)
+        ):
+            raise ValidationError(
+                f"{MARKER}: {where}.run must be a non-empty list of strings"
+            )
         if raw[0] not in _RUN_TOOLS:
             raise ValidationError(
                 f"{MARKER}: {where}.run must start with one of: {', '.join(_RUN_TOOLS)}"
@@ -203,13 +226,26 @@ def _shortcut_from_dict(name: str, spec: object) -> Shortcut:
     namespace = _label(raw.get("namespace"), f"{where}.portForward.namespace")
     service = _label(raw.get("service"), f"{where}.portForward.service")
     ports = raw.get("ports")
-    if not isinstance(ports, list) or not ports or not all(isinstance(item, str) for item in ports):
-        raise ValidationError(f"{MARKER}: {where}.portForward.ports must be a non-empty list of strings")
+    if (
+        not isinstance(ports, list)
+        or not ports
+        or not all(isinstance(item, str) for item in ports)
+    ):
+        raise ValidationError(
+            f"{MARKER}: {where}.portForward.ports must be a non-empty list of strings"
+        )
     for port in ports:
         if not _valid_port_spec(port):
-            raise ValidationError(f"{MARKER}: {where}.portForward.ports has invalid entry {port!r}")
+            raise ValidationError(
+                f"{MARKER}: {where}.portForward.ports has invalid entry {port!r}"
+            )
     return Shortcut(
-        name=name, kind=kind, description=description, namespace=namespace, service=service, ports=tuple(ports)
+        name=name,
+        kind=kind,
+        description=description,
+        namespace=namespace,
+        service=service,
+        ports=tuple(ports),
     )
 
 
@@ -218,7 +254,11 @@ def _shortcut_dict(shortcut: Shortcut) -> dict:
     if shortcut.description is not None:
         data["description"] = shortcut.description
     if shortcut.kind == "secret":
-        data["secret"] = {"namespace": shortcut.namespace, "name": shortcut.secret, "key": shortcut.key}
+        data["secret"] = {
+            "namespace": shortcut.namespace,
+            "name": shortcut.secret,
+            "key": shortcut.key,
+        }
     elif shortcut.kind == "job":
         job: dict = {"namespace": shortcut.namespace, "cronjob": shortcut.cronjob}
         if shortcut.follow:
@@ -228,7 +268,9 @@ def _shortcut_dict(shortcut: Shortcut) -> dict:
         data["run"] = list(shortcut.argv)
     else:
         data["portForward"] = {
-            "namespace": shortcut.namespace, "service": shortcut.service, "ports": list(shortcut.ports)
+            "namespace": shortcut.namespace,
+            "service": shortcut.service,
+            "ports": list(shortcut.ports),
         }
     return data
 
@@ -251,7 +293,8 @@ class Settings:
             return self.nodes[name]
         except KeyError:
             raise ValidationError(
-                f"unknown node '{name}'", hint=f"known nodes: {', '.join(self.nodes) or 'none'}"
+                f"unknown node '{name}'",
+                hint=f"known nodes: {', '.join(self.nodes) or 'none'}",
             ) from None
 
     def node_platform(self, name: str) -> str:
@@ -285,13 +328,18 @@ class Settings:
             "nodes": {name: _node_dict(n) for name, n in self.nodes.items()},
         }
         if self.tailscale is not None:
-            data["tailscale"] = {"tailnet": self.tailscale.tailnet, "nodeCidr": self.tailscale.node_cidr}
+            data["tailscale"] = {
+                "tailnet": self.tailscale.tailnet,
+                "nodeCidr": self.tailscale.node_cidr,
+            }
             if self.tailscale.use_ips:
                 data["tailscale"]["useIps"] = True
         if self.git is not None:
             data["git"] = {"url": self.git.url}
         if self.shortcuts:
-            data["shortcuts"] = {name: _shortcut_dict(s) for name, s in self.shortcuts.items()}
+            data["shortcuts"] = {
+                name: _shortcut_dict(s) for name, s in self.shortcuts.items()
+            }
         return data
 
     @classmethod
@@ -303,7 +351,8 @@ class Settings:
             value = data.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 raise ValidationError(
-                    f"{MARKER}: '{key}' must be a string", hint=f'quote it, e.g. {key}: "{value}"'
+                    f"{MARKER}: '{key}' must be a string",
+                    hint=f'quote it, e.g. {key}: "{value}"',
                 )
             if not isinstance(value, str) or not value.strip():
                 raise ValidationError(f"{MARKER}: '{key}' must be a non-empty string")
@@ -312,7 +361,8 @@ class Settings:
         endpoint = text("endpoint")
         if not endpoint.startswith("https://"):
             raise ValidationError(
-                f"{MARKER}: 'endpoint' must start with https://", hint="e.g. https://10.0.0.10:6443"
+                f"{MARKER}: 'endpoint' must start with https://",
+                hint="e.g. https://10.0.0.10:6443",
             )
 
         platform = _check_choice(data.get("platform", "metal"), PLATFORMS, "'platform'")
@@ -327,8 +377,12 @@ class Settings:
                 if not isinstance(spec, Mapping):
                     raise ValidationError(f"{MARKER}: {where} must be a mapping")
                 schematics[str(name)] = SchematicSpec(
-                    extensions=_text_list(spec.get("extensions"), f"{where}.extensions"),
-                    kernel_args=_text_list(spec.get("kernelArgs"), f"{where}.kernelArgs"),
+                    extensions=_text_list(
+                        spec.get("extensions"), f"{where}.extensions"
+                    ),
+                    kernel_args=_text_list(
+                        spec.get("kernelArgs"), f"{where}.kernelArgs"
+                    ),
                     id=_optional_text(spec.get("id"), f"{where}.id"),
                     hash=_optional_text(spec.get("hash"), f"{where}.hash"),
                 )
@@ -336,7 +390,9 @@ class Settings:
             # Phase-1 format: a single installer image without extension intent.
             legacy_platform, legacy_id = parse_installer_image(text("installImage"))
             _check_choice(legacy_platform, PLATFORMS, "installImage platform")
-            schematics[legacy_platform] = SchematicSpec(id=legacy_id, hash=customization_hash([], []))
+            schematics[legacy_platform] = SchematicSpec(
+                id=legacy_id, hash=customization_hash([], [])
+            )
             if "platform" not in data:
                 platform = legacy_platform
 
@@ -373,13 +429,19 @@ class Settings:
             if not isinstance(raw_tailscale, Mapping):
                 raise ValidationError(f"{MARKER}: 'tailscale' must be a mapping")
             tailnet = _optional_text(raw_tailscale.get("tailnet"), "tailscale.tailnet")
-            node_cidr = _optional_text(raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr")
+            node_cidr = _optional_text(
+                raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr"
+            )
             if tailnet is None or node_cidr is None:
-                raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet and nodeCidr")
+                raise ValidationError(
+                    f"{MARKER}: 'tailscale' needs tailnet and nodeCidr"
+                )
             use_ips = raw_tailscale.get("useIps", False)
             if not isinstance(use_ips, bool):
                 raise ValidationError(f"{MARKER}: 'tailscale.useIps' must be a boolean")
-            tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr, use_ips=use_ips)
+            tailscale = TailscaleSpec(
+                tailnet=tailnet, node_cidr=node_cidr, use_ips=use_ips
+            )
 
         git = None
         raw_git = data.get("git")
@@ -388,7 +450,9 @@ class Settings:
                 raise ValidationError(f"{MARKER}: 'git' must be a mapping")
             url = _optional_text(raw_git.get("url"), "git.url")
             if url is None:
-                raise ValidationError(f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>")
+                raise ValidationError(
+                    f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>"
+                )
             git = GitSpec(url=url)
 
         shortcuts: dict[str, Shortcut] = {}
@@ -414,7 +478,10 @@ class Settings:
 
 
 def _schematic_dict(spec: SchematicSpec) -> dict:
-    data: dict = {"extensions": list(spec.extensions), "kernelArgs": list(spec.kernel_args)}
+    data: dict = {
+        "extensions": list(spec.extensions),
+        "kernelArgs": list(spec.kernel_args),
+    }
     if spec.id is not None:
         data["id"] = spec.id
     if spec.hash is not None:
@@ -502,7 +569,8 @@ class Repo:
         return sorted(
             path
             for path in self.root.rglob("*.sops.yaml")
-            if path.name != ".sops.yaml" and ".git" not in path.relative_to(self.root).parts
+            if path.name != ".sops.yaml"
+            and ".git" not in path.relative_to(self.root).parts
         )
 
 

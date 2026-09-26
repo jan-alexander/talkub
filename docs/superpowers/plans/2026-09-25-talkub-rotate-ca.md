@@ -48,15 +48,32 @@
 ```python
 import base64
 
-CRT = base64.b64encode(b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n").decode()
-KEY = base64.b64encode(b"-----BEGIN ED25519 PRIVATE KEY-----\nMC4C\n-----END ED25519 PRIVATE KEY-----\n").decode()
+CRT = base64.b64encode(
+    b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+).decode()
+KEY = base64.b64encode(
+    b"-----BEGIN ED25519 PRIVATE KEY-----\nMC4C\n-----END ED25519 PRIVATE KEY-----\n"
+).decode()
 MACHINE = f"version: v1alpha1\nmachine:\n  type: controlplane\n  ca:\n    crt: {CRT}\n    key: {KEY}\ncluster:\n  id: x\n---\napiVersion: v1alpha1\nkind: HostnameConfig\nhostname: cp-01\n"
 
 
 def _resource(spec) -> str:
     from talkub import yamlio
 
-    return yamlio.dump({"node": "10.0.0.10", "metadata": {"namespace": "config", "type": "MachineConfigs.config.talos.dev", "id": "v1alpha1"}, "spec": spec}) + "---\n"
+    return (
+        yamlio.dump(
+            {
+                "node": "10.0.0.10",
+                "metadata": {
+                    "namespace": "config",
+                    "type": "MachineConfigs.config.talos.dev",
+                    "id": "v1alpha1",
+                },
+                "spec": spec,
+            }
+        )
+        + "---\n"
+    )
 
 
 def test_machine_ca_from_spec_string():
@@ -99,7 +116,10 @@ def test_replace_os_ca_changes_only_certs_os():
     out = rotation.replace_os_ca(BUNDLE.encode(), "NEWCRT", "NEWKEY").decode()
     assert out == BUNDLE.replace("OLDCRT", "NEWCRT").replace("OLDKEY", "NEWKEY")
     doc = yamlio.load(out)
-    assert doc["certs"]["etcd"]["key"] == "ETCDKEY" and doc["secrets"]["bootstraptoken"] == "abc.def"
+    assert (
+        doc["certs"]["etcd"]["key"] == "ETCDKEY"
+        and doc["secrets"]["bootstraptoken"] == "abc.def"
+    )
 ```
 
 - [ ] **Step 2: Run, expect FAIL** — `uv run pytest tests/test_inspect.py tests/test_rotation_ca.py -q`
@@ -117,8 +137,16 @@ def machine_ca(text: str) -> tuple[str, str]:
         spec = resource.get("spec")
         documents = yamlio.load_all(spec) if isinstance(spec, str) else [spec]
         for doc in documents:
-            ca = (doc or {}).get("machine", {}).get("ca") if isinstance(doc, dict) else None
-            if isinstance(ca, dict) and isinstance(ca.get("crt"), str) and isinstance(ca.get("key"), str):
+            ca = (
+                (doc or {}).get("machine", {}).get("ca")
+                if isinstance(doc, dict)
+                else None
+            )
+            if (
+                isinstance(ca, dict)
+                and isinstance(ca.get("crt"), str)
+                and isinstance(ca.get("key"), str)
+            ):
                 return ca["crt"], ca["key"]
     raise ValidationError("no machine CA in the machine config")
 ```
@@ -203,38 +231,61 @@ Behaviour (spec §3), implement exactly:
 def rotate(ctx, confirm):
     repo = ctx.repo
     if previous_path(repo).exists():
-        raise ValidationError("a CA rotation is in progress", hint="talkub rotate-ca --finish")
+        raise ValidationError(
+            "a CA rotation is in progress", hint="talkub rotate-ca --finish"
+        )
     settings, order, configs = prepare(ctx, [], refresh=False)
     cps = [n for n in order if settings.nodes[n].role == "controlplane"]
     workers = [n for n in order if n not in cps]
     cp_addrs = [settings.mgmt_address(n) for n in cps]
-    rotate_args = ["rotate-ca", "--talos=true", "--kubernetes=false", "--with-docs=false",
-                   "--with-examples=false", "--control-plane-nodes", ",".join(cp_addrs)]
+    rotate_args = [
+        "rotate-ca",
+        "--talos=true",
+        "--kubernetes=false",
+        "--with-docs=false",
+        "--with-examples=false",
+        "--control-plane-nodes",
+        ",".join(cp_addrs),
+    ]
     if workers:
-        rotate_args += ["--worker-nodes", ",".join(settings.mgmt_address(n) for n in workers)]
+        rotate_args += [
+            "--worker-nodes",
+            ",".join(settings.mgmt_address(n) for n in workers),
+        ]
     with talos_session(ctx) as talos:
         wait_healthy(talos, cp_addrs[0])
-        drifting = [n for n in order if node_drift(talos, settings, n, configs[n]) != "in sync"]
+        drifting = [
+            n for n in order if node_drift(talos, settings, n, configs[n]) != "in sync"
+        ]
         if drifting:
-            raise ValidationError(f"the repo is not in sync with: {', '.join(drifting)}",
-                                  hint="run `talkub plan`/`talkub apply` first")
+            raise ValidationError(
+                f"the repo is not in sync with: {', '.join(drifting)}",
+                hint="run `talkub plan`/`talkub apply` first",
+            )
         print("== rotate-ca dry-run", flush=True)
         if talos.call_global_redacted([*rotate_args, "--dry-run=true"], cp_addrs) != 0:
             raise CommandFailed("rotate-ca dry-run failed")
         if not confirm("Rotate the Talos CA now?"):
             raise ValidationError("aborted; nothing was changed")
         atomic_write(previous_path(repo), repo.talosconfig.read_bytes())
-        work = Path(tempfile.mkdtemp(prefix="talkub-rotate-"))   # 0700; deleted only on success
+        work = Path(
+            tempfile.mkdtemp(prefix="talkub-rotate-")
+        )  # 0700; deleted only on success
         new = work / "talosconfig"
         try:
-            code = talos.call_global_redacted([*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs)
+            code = talos.call_global_redacted(
+                [*rotate_args, "--dry-run=false", "-o", str(new)], cp_addrs
+            )
             if code != 0 or not new.is_file():
                 raise CommandFailed(f"rotate-ca failed (exit {code})")
             _store_talosconfig(ctx, settings, new.read_bytes())
         except BaseException:
-            print(f"warning: the new talosconfig (if any) is kept in {work}; if the rotation completed, "
-                  f"only it works: `talkub rotate-ca --finish --talosconfig {new}`; delete {work} afterwards",
-                  file=sys.stderr, flush=True)
+            print(
+                f"warning: the new talosconfig (if any) is kept in {work}; if the rotation completed, "
+                f"only it works: `talkub rotate-ca --finish --talosconfig {new}`; delete {work} afterwards",
+                file=sys.stderr,
+                flush=True,
+            )
             raise
         shutil.rmtree(work, ignore_errors=True)
     return finish(ctx)
@@ -291,17 +342,28 @@ from talkub.errors import ValidationError
 def rotate_ca(
     ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", help="Do not ask before rotating."),
-    finish: bool = typer.Option(False, "--finish", help="Finish an interrupted rotation."),
-    talosconfig: Path = typer.Option(None, "--talosconfig", help="With --finish: plaintext talosconfig left by an interrupted rotation."),
+    finish: bool = typer.Option(
+        False, "--finish", help="Finish an interrupted rotation."
+    ),
+    talosconfig: Path = typer.Option(
+        None,
+        "--talosconfig",
+        help="With --finish: plaintext talosconfig left by an interrupted rotation.",
+    ),
 ) -> None:
     """Rotate the Talos API CA and update the talosconfig and secrets bundle in the repo."""
     context = ctx.obj.context()
     if talosconfig is not None and not finish:
         raise ValidationError("--talosconfig needs --finish")
     if finish:
-        notes = rotation.finish(context, talosconfig.expanduser() if talosconfig else None)
+        notes = rotation.finish(
+            context, talosconfig.expanduser() if talosconfig else None
+        )
     else:
-        notes = rotation.rotate(context, confirm=lambda question: yes or typer.confirm(question, default=False))
+        notes = rotation.rotate(
+            context,
+            confirm=lambda question: yes or typer.confirm(question, default=False),
+        )
     for note in notes:
         print(f"note: {note}")
 ```

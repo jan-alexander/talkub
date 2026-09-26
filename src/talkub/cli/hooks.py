@@ -8,13 +8,18 @@ from talkub import hooks
 from talkub.cli.tailscale import print_notes
 from talkub.runner import Runner
 
-app = typer.Typer(help="Manage the pre-commit hook (talkub check && talkub lint --offline).", no_args_is_help=True)
+app = typer.Typer(
+    help="Manage the pre-commit hook (talkub check && talkub lint --offline).",
+    no_args_is_help=True,
+)
 
 
 @app.command("install")
 def install(
     ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Overwrite a pre-commit hook not managed by talkub."),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite a pre-commit hook not managed by talkub."
+    ),
 ) -> None:
     """Install the pre-commit hook into the repo's git hooks directory."""
     repo = ctx.obj.repo()

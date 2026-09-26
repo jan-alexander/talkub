@@ -47,7 +47,9 @@ def hook_path(repo: Repo, runner: Runner) -> Path:
     *common* git dir's hooks in a linked worktree (worktrees do not have their own hooks/) and
     honors `core.hooksPath` when set.
     """
-    proc = runner.run(["git", "rev-parse", "--git-path", "hooks"], cwd=repo.root, check=False)
+    proc = runner.run(
+        ["git", "rev-parse", "--git-path", "hooks"], cwd=repo.root, check=False
+    )
     if proc.returncode != 0:
         raise ValidationError(f"{repo.root} is not a git repository", hint="git init")
     hooks_dir = Path(proc.stdout.decode(errors="replace").strip())

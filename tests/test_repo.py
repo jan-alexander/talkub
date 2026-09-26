@@ -26,14 +26,22 @@ def test_settings_roundtrip(tmp_path):
 
 
 def test_legacy_charts_block_is_ignored_and_dropped_on_write(tmp_path):
-    legacy = {"argocd": {"repo": "https://argoproj.github.io/argo-helm", "chart": "argo-cd", "version": "10.9.2"}}
+    legacy = {
+        "argocd": {
+            "repo": "https://argoproj.github.io/argo-helm",
+            "chart": "argo-cd",
+            "version": "10.9.2",
+        }
+    }
     settings = Settings.from_dict(_data(charts=legacy))
     assert settings == sample_settings()
     assert "charts" not in settings.to_dict()
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert "charts" not in repo.settings_file.read_text()
-    assert Settings.from_dict(_data(charts="garbage")) == sample_settings()  # not even validated
+    assert (
+        Settings.from_dict(_data(charts="garbage")) == sample_settings()
+    )  # not even validated
 
 
 def test_find_repo_searches_upwards(tmp_path):
@@ -102,9 +110,18 @@ def test_full_settings_roundtrip(tmp_path):
     settings = sample_settings()
     settings.platform = "hcloud"
     settings.schematics["hcloud"] = SchematicSpec(
-        extensions=["siderolabs/tailscale"], kernel_args=["console=ttyS0"], id="abc", hash="def"
+        extensions=["siderolabs/tailscale"],
+        kernel_args=["console=ttyS0"],
+        id="abc",
+        hash="def",
     )
-    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net", platform="metal", arch="arm64")
+    settings.nodes["w-01"] = NodeSpec(
+        ip="10.0.0.11",
+        role="worker",
+        mgmt="w-01.tail.ts.net",
+        platform="metal",
+        arch="arm64",
+    )
     settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24")
     repo = Repo(tmp_path)
     repo.write_settings(settings)
@@ -117,7 +134,9 @@ def test_full_settings_roundtrip(tmp_path):
 
 def test_tailscale_use_ips_roundtrip(tmp_path):
     settings = sample_settings()
-    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24", use_ips=True)
+    settings.tailscale = TailscaleSpec(
+        tailnet="tail.ts.net", node_cidr="10.0.0.0/24", use_ips=True
+    )
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert repo.load_settings() == settings
@@ -154,7 +173,10 @@ def test_phase1_install_image_must_be_a_factory_image():
 
 
 def test_parse_installer_image():
-    assert parse_installer_image("factory.talos.dev/hcloud-installer/abc123") == ("hcloud", "abc123")
+    assert parse_installer_image("factory.talos.dev/hcloud-installer/abc123") == (
+        "hcloud",
+        "abc123",
+    )
 
 
 def test_unknown_platform_and_arch_rejected():
@@ -166,8 +188,13 @@ def test_unknown_platform_and_arch_rejected():
 
 def test_installer_image_and_node_helpers():
     settings = sample_settings()
-    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud")
-    assert settings.installer_image("metal") == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    settings.nodes["w-01"] = NodeSpec(
+        ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud"
+    )
+    assert (
+        settings.installer_image("metal")
+        == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    )
     assert settings.node_platform("cp-01") == "metal"
     assert settings.node_platform("w-01") == "hcloud"
     assert settings.mgmt_address("cp-01") == "10.0.0.10"
@@ -202,6 +229,7 @@ def test_schematic_is_current_only_with_matching_hash():
 
 def test_git_block_round_trips(tmp_path):
     from helpers import sample_settings
+
     from talkub.repo import GitSpec, Repo
 
     repo = Repo(tmp_path)
@@ -217,6 +245,7 @@ def test_git_block_round_trips(tmp_path):
 @pytest.mark.parametrize("raw", ["git: nope\n", "git: {}\n", "git: {url: ''}\n"])
 def test_git_block_must_have_url(tmp_path, raw):
     from helpers import sample_settings
+
     from talkub import yamlio
     from talkub.errors import ValidationError
     from talkub.repo import Repo
@@ -261,7 +290,11 @@ def test_shortcuts_full_example_roundtrip(tmp_path):
             key="password",
         ),
         "backup": Shortcut(
-            name="backup", kind="job", namespace="prod", cronjob="backup-job", follow=True
+            name="backup",
+            kind="job",
+            namespace="prod",
+            cronjob="backup-job",
+            follow=True,
         ),
         "argocd-password": Shortcut(
             name="argocd-password",
@@ -321,7 +354,9 @@ def test_shortcut_name_must_be_valid_label():
     assert "shortcuts.Bad_Name" in str(exc.value)
 
 
-@pytest.mark.parametrize("spec", [{}, {"run": ["k", "x"], "job": {"namespace": "a", "cronjob": "b"}}])
+@pytest.mark.parametrize(
+    "spec", [{}, {"run": ["k", "x"], "job": {"namespace": "a", "cronjob": "b"}}]
+)
 def test_shortcut_must_have_exactly_one_kind(spec):
     with pytest.raises(ValidationError) as exc:
         Settings.from_dict(_shortcuts_data(backup=spec))
@@ -330,16 +365,27 @@ def test_shortcut_must_have_exactly_one_kind(spec):
 
 def test_shortcut_description_must_be_non_empty_string():
     with pytest.raises(ValidationError) as exc:
-        Settings.from_dict(_shortcuts_data(backup={"description": "", "run": ["k", "x"]}))
+        Settings.from_dict(
+            _shortcuts_data(backup={"description": "", "run": ["k", "x"]})
+        )
     assert "shortcuts.backup.description" in str(exc.value)
 
 
 @pytest.mark.parametrize(
     "secret,path",
     [
-        ({"namespace": "Bad_NS", "name": "s", "key": "k"}, "shortcuts.backup.secret.namespace"),
-        ({"namespace": "prod", "name": "Bad_Name", "key": "k"}, "shortcuts.backup.secret.name"),
-        ({"namespace": "prod", "name": "s", "key": "bad key!"}, "shortcuts.backup.secret.key"),
+        (
+            {"namespace": "Bad_NS", "name": "s", "key": "k"},
+            "shortcuts.backup.secret.namespace",
+        ),
+        (
+            {"namespace": "prod", "name": "Bad_Name", "key": "k"},
+            "shortcuts.backup.secret.name",
+        ),
+        (
+            {"namespace": "prod", "name": "s", "key": "bad key!"},
+            "shortcuts.backup.secret.key",
+        ),
         ({"namespace": "prod", "name": "s", "key": ""}, "shortcuts.backup.secret.key"),
     ],
 )
@@ -351,7 +397,9 @@ def test_shortcut_secret_field_rules(secret, path):
 
 def test_shortcut_secret_key_may_contain_dot_and_underscore():
     settings = Settings.from_dict(
-        _shortcuts_data(backup={"secret": {"namespace": "prod", "name": "s", "key": "tls.crt_1"}})
+        _shortcuts_data(
+            backup={"secret": {"namespace": "prod", "name": "s", "key": "tls.crt_1"}}
+        )
     )
     assert settings.shortcuts["backup"].key == "tls.crt_1"
 
@@ -361,7 +409,10 @@ def test_shortcut_secret_key_may_contain_dot_and_underscore():
     [
         ({"namespace": "Bad_NS", "cronjob": "cj"}, "shortcuts.backup.job.namespace"),
         ({"namespace": "prod", "cronjob": "Bad_CJ"}, "shortcuts.backup.job.cronjob"),
-        ({"namespace": "prod", "cronjob": "cj", "follow": "yes"}, "shortcuts.backup.job.follow"),
+        (
+            {"namespace": "prod", "cronjob": "cj", "follow": "yes"},
+            "shortcuts.backup.job.follow",
+        ),
     ],
 )
 def test_shortcut_job_field_rules(job, path):
@@ -387,13 +438,34 @@ def test_shortcut_run_field_rules(run):
 @pytest.mark.parametrize(
     "pf,path",
     [
-        ({"namespace": "Bad_NS", "service": "svc", "ports": ["80"]}, "shortcuts.backup.portForward.namespace"),
-        ({"namespace": "prod", "service": "Bad_SVC", "ports": ["80"]}, "shortcuts.backup.portForward.service"),
-        ({"namespace": "prod", "service": "svc", "ports": []}, "shortcuts.backup.portForward.ports"),
-        ({"namespace": "prod", "service": "svc", "ports": ["0"]}, "shortcuts.backup.portForward.ports"),
-        ({"namespace": "prod", "service": "svc", "ports": ["70000"]}, "shortcuts.backup.portForward.ports"),
-        ({"namespace": "prod", "service": "svc", "ports": ["abc"]}, "shortcuts.backup.portForward.ports"),
-        ({"namespace": "prod", "service": "svc", "ports": ["1:2:3"]}, "shortcuts.backup.portForward.ports"),
+        (
+            {"namespace": "Bad_NS", "service": "svc", "ports": ["80"]},
+            "shortcuts.backup.portForward.namespace",
+        ),
+        (
+            {"namespace": "prod", "service": "Bad_SVC", "ports": ["80"]},
+            "shortcuts.backup.portForward.service",
+        ),
+        (
+            {"namespace": "prod", "service": "svc", "ports": []},
+            "shortcuts.backup.portForward.ports",
+        ),
+        (
+            {"namespace": "prod", "service": "svc", "ports": ["0"]},
+            "shortcuts.backup.portForward.ports",
+        ),
+        (
+            {"namespace": "prod", "service": "svc", "ports": ["70000"]},
+            "shortcuts.backup.portForward.ports",
+        ),
+        (
+            {"namespace": "prod", "service": "svc", "ports": ["abc"]},
+            "shortcuts.backup.portForward.ports",
+        ),
+        (
+            {"namespace": "prod", "service": "svc", "ports": ["1:2:3"]},
+            "shortcuts.backup.portForward.ports",
+        ),
     ],
 )
 def test_shortcut_portforward_field_rules(pf, path):
@@ -405,7 +477,13 @@ def test_shortcut_portforward_field_rules(pf, path):
 def test_shortcut_portforward_accepts_single_and_mapped_ports():
     settings = Settings.from_dict(
         _shortcuts_data(
-            backup={"portForward": {"namespace": "prod", "service": "svc", "ports": ["8080", "3000:3000"]}}
+            backup={
+                "portForward": {
+                    "namespace": "prod",
+                    "service": "svc",
+                    "ports": ["8080", "3000:3000"],
+                }
+            }
         )
     )
     assert settings.shortcuts["backup"].ports == ("8080", "3000:3000")

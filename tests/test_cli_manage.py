@@ -1,8 +1,8 @@
 import os
 
 import pytest
-
 from helpers import need
+
 from talkub.cli.main import main
 from talkub.identity import identities_dir
 
@@ -30,15 +30,23 @@ def test_identity_new_rejects_two_kinds(capfd):
 
 
 @need("age", "age-keygen", "sops", "talosctl")
-def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd, monkeypatch):
+def test_init_then_admin_and_check(
+    tmp_path, software_identity, fake_bin, capfd, monkeypatch
+):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
-    code = _run([
-        "init", "demo",
-        "--endpoint", "https://10.0.0.10:6443",
-        "--node", "cp-01=10.0.0.10",
-        "--git-url", "https://git.example.com/demo.git",
-    ])
+    code = _run(
+        [
+            "init",
+            "demo",
+            "--endpoint",
+            "https://10.0.0.10:6443",
+            "--node",
+            "cp-01=10.0.0.10",
+            "--git-url",
+            "https://git.example.com/demo.git",
+        ]
+    )
     assert code == 0
     assert (tmp_path / "demo" / ".talkub.yaml").is_file()
 
@@ -47,7 +55,9 @@ def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd,
 
     if _shutil.which("git"):
         remote = _subprocess.run(
-            ["git", "-C", str(tmp_path / "demo"), "remote", "get-url", "origin"], capture_output=True, text=True
+            ["git", "-C", str(tmp_path / "demo"), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
         )
         assert remote.stdout.strip() == "https://git.example.com/demo.git"
 
@@ -121,6 +131,17 @@ def test_hooks_install_and_uninstall(tmp_path, monkeypatch, capfd):
 
 def test_init_rejects_bad_node_syntax(tmp_path, capfd, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    code = _run(["init", "demo", "--endpoint", "https://x:6443", "--node", "cp-01", "--git-url", "https://g"])
+    code = _run(
+        [
+            "init",
+            "demo",
+            "--endpoint",
+            "https://x:6443",
+            "--node",
+            "cp-01",
+            "--git-url",
+            "https://g",
+        ]
+    )
     assert code == 1
     assert "name=ip" in capfd.readouterr().err

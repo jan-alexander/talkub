@@ -1,8 +1,8 @@
 from string import Template
 
 import pytest
-
 from helpers import need
+
 from talkub import gitrepo, yamlio
 from talkub.context import Context
 from talkub.errors import ValidationError
@@ -19,9 +19,15 @@ SSH_URL = "git@github.com:me/test.git"
 
 @pytest.fixture
 def ctx(repo_with_configs):
-    for rel in ("gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml"):
+    for rel in (
+        "gitops/root.yaml",
+        "gitops/apps/argocd.yaml",
+        "gitops/apps/sealed-secrets.yaml",
+    ):
         template = (TEMPLATES / "repo" / (rel + ".tmpl")).read_text()
-        text = Template(template).safe_substitute({"git_url": PLACEHOLDER, "name": "test"})
+        text = Template(template).safe_substitute(
+            {"git_url": PLACEHOLDER, "name": "test"}
+        )
         atomic_write(repo_with_configs.root / rel, text.encode())
     return Context.open(repo_with_configs)
 
@@ -32,7 +38,11 @@ def _creds(ctx, url, **kind):
 
 def test_set_url_from_placeholder_without_git_block(ctx):
     result = gitrepo.set_url(ctx, SSH_URL)
-    assert len(result.changed) == 3 and not result.credentials_updated and not result.unchanged
+    assert (
+        len(result.changed) == 3
+        and not result.credentials_updated
+        and not result.unchanged
+    )
     assert ctx.repo.load_settings().git == GitSpec(SSH_URL)
     assert PLACEHOLDER not in (ctx.repo.gitops_dir / "root.yaml").read_text()
 
@@ -51,7 +61,9 @@ def test_set_url_from_stored_url_updates_credentials(ctx):
     secret = yamlio.load(ctx.sops.decrypt(gitrepo.credentials_path(ctx.repo)).decode())
     import base64
 
-    assert base64.b64decode(secret["data"]["url"]).decode() == "git@gitlab.com:me/test.git"
+    assert (
+        base64.b64decode(secret["data"]["url"]).decode() == "git@gitlab.com:me/test.git"
+    )
 
 
 def test_set_url_to_different_ssh_host_flags_credentials_need_refresh(ctx):
@@ -80,14 +92,18 @@ def test_set_url_kind_mismatch_changes_nothing(ctx):
     with pytest.raises(ValidationError) as exc:
         gitrepo.set_url(ctx, "https://github.com/me/test.git")
     assert "--remove" in (exc.value.hint or "")
-    assert {p: p.read_bytes() for p in ctx.repo.root.rglob("*") if p.is_file()} == before
+    assert {
+        p: p.read_bytes() for p in ctx.repo.root.rglob("*") if p.is_file()
+    } == before
 
 
 def test_set_url_without_git_block_and_no_placeholder_match_fails(ctx):
     root = ctx.repo.gitops_dir / "root.yaml"
     root.write_text(root.read_text().replace(PLACEHOLDER, "https://hand.example/x.git"))
     for app in (ctx.repo.gitops_dir / "apps").iterdir():
-        app.write_text(app.read_text().replace(PLACEHOLDER, "https://hand.example/x.git"))
+        app.write_text(
+            app.read_text().replace(PLACEHOLDER, "https://hand.example/x.git")
+        )
     with pytest.raises(ValidationError):
         gitrepo.set_url(ctx, SSH_URL)
     assert ctx.repo.load_settings().git is None
@@ -106,7 +122,9 @@ def test_apply_credentials_then_root(ctx, spy):
     with kube_session(ctx) as kube:
         gitrepo.apply(ctx, kube)
     first, second = kubectl.calls
-    assert first["args"][:3] == ["apply", "--server-side", "-f"] and first["files"]["-f"]
+    assert (
+        first["args"][:3] == ["apply", "--server-side", "-f"] and first["files"]["-f"]
+    )
     assert second["args"] == ["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")]
 
 

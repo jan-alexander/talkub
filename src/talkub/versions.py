@@ -93,7 +93,9 @@ def _talos_running(ctx: Context, settings: Settings) -> str:
         with talos_session(ctx) as session:
             versions: list[str] = []
             for name in order:
-                result = session.run(settings.mgmt_address(name), ["version"], check=False)
+                result = session.run(
+                    settings.mgmt_address(name), ["version"], check=False
+                )
                 if result.returncode != 0:
                     return "?"
                 version = inspect.server_version(result.stdout.decode())
@@ -110,7 +112,9 @@ def _kubernetes_running(ctx: Context) -> str:
     """Distinct kubelet versions across every node, comma-joined; "?" on any error."""
     try:
         with kube_session(ctx) as kube:
-            result = kube.kubectl(["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False)
+            result = kube.kubectl(
+                ["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False
+            )
     except TalkubError:
         return "?"
     if result.returncode != 0:
@@ -136,7 +140,10 @@ def _kubernetes_row(ctx: Context, settings: Settings, *, offline: bool) -> Row:
     latest = "-" if offline else (_kubernetes_latest() or "?")
     note = ""
     if latest not in ("?", "-"):
-        target_v, latest_v = _version_tuple(settings.kubernetes_version), _version_tuple(latest)
+        target_v, latest_v = (
+            _version_tuple(settings.kubernetes_version),
+            _version_tuple(latest),
+        )
         if target_v is not None and latest_v is not None and latest_v > target_v:
             note = "check the Talos support matrix before upgrading"
     return Row("kubernetes", settings.kubernetes_version, running, latest, note)
@@ -146,13 +153,25 @@ def _chart_running(ctx: Context, source: HelmSource, source_index: int | None) -
     try:
         with kube_session(ctx) as kube:
             result = kube.kubectl(
-                ["-n", "argocd", "get", "application", source.app, "-o", "json", KUBECTL_TIMEOUT], check=False
+                [
+                    "-n",
+                    "argocd",
+                    "get",
+                    "application",
+                    source.app,
+                    "-o",
+                    "json",
+                    KUBECTL_TIMEOUT,
+                ],
+                check=False,
             )
     except TalkubError:
         return "?"
     if result.returncode != 0:
         return "?"
-    revision = inspect.application_sync_revision(result.stdout.decode(), source_index=source_index)
+    revision = inspect.application_sync_revision(
+        result.stdout.decode(), source_index=source_index
+    )
     return revision or "?"
 
 
@@ -160,8 +179,12 @@ def _app_version_note(ctx: Context, source: HelmSource, latest: str) -> str:
     """`appVersion a -> b`, via `helm show chart` of the target and latest chart version;
     empty if either lookup fails or the appVersion did not change."""
     try:
-        old = charts.show_chart(ctx.runner, source.repo, source.chart, source.version).get("appVersion")
-        new = charts.show_chart(ctx.runner, source.repo, source.chart, latest).get("appVersion")
+        old = charts.show_chart(
+            ctx.runner, source.repo, source.chart, source.version
+        ).get("appVersion")
+        new = charts.show_chart(ctx.runner, source.repo, source.chart, latest).get(
+            "appVersion"
+        )
     except TalkubError:
         return ""
     if isinstance(old, str) and isinstance(new, str) and old != new:
@@ -169,12 +192,21 @@ def _app_version_note(ctx: Context, source: HelmSource, latest: str) -> str:
     return ""
 
 
-def _chart_row(ctx: Context, component: str, source: HelmSource, source_index: int | None, *, offline: bool) -> Row:
+def _chart_row(
+    ctx: Context,
+    component: str,
+    source: HelmSource,
+    source_index: int | None,
+    *,
+    offline: bool,
+) -> Row:
     """One chart app's row. `component` is the `gitops/apps/*.yaml` file stem (see `_chart_rows`);
     `source.app` — the Application's `metadata.name`, which may differ — is still what identifies
     the actual Argo CD Application resource to `_chart_running`."""
     running = _chart_running(ctx, source, source_index)
-    target = source.version or "?"  # an invalid/empty targetRevision must not crash `versions`
+    target = (
+        source.version or "?"
+    )  # an invalid/empty targetRevision must not crash `versions`
     if offline:
         return Row(component, target, running, "-")
     try:
@@ -206,14 +238,19 @@ def _chart_rows(ctx: Context, *, offline: bool) -> list[Row]:
 def collect(ctx: Context, *, offline: bool = False) -> list[Row]:
     """Talos, Kubernetes and every chart app (`gitops/apps/*.yaml` with a Helm chart source)."""
     settings = ctx.repo.load_settings()
-    rows = [_talos_row(ctx, settings, offline=offline), _kubernetes_row(ctx, settings, offline=offline)]
+    rows = [
+        _talos_row(ctx, settings, offline=offline),
+        _kubernetes_row(ctx, settings, offline=offline),
+    ]
     rows.extend(_chart_rows(ctx, offline=offline))
     return rows
 
 
 def render(rows: list[Row]) -> str:
     header = ("COMPONENT", "TARGET", "RUNNING", "LATEST", "NOTE")
-    body = [(row.component, row.target, row.running, row.latest, row.note) for row in rows]
+    body = [
+        (row.component, row.target, row.running, row.latest, row.note) for row in rows
+    ]
     table = [header, *body]
     widths = [max(len(entry[i]) for entry in table) for i in range(len(header))]
     lines = []
@@ -223,7 +260,11 @@ def render(rows: list[Row]) -> str:
             row = rows[index - 1]
             if row.latest not in ("?", "-") and row.latest != row.target:
                 marker = "*"
-        line = marker + " " + "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(entry))
+        line = (
+            marker
+            + " "
+            + "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(entry))
+        )
         lines.append(line.rstrip())
     return "\n".join(lines) + "\n"
 
@@ -235,18 +276,22 @@ def set_version(repo: Repo, component: str, version: str) -> str:
     if component == "talos":
         if not _TALOS_VERSION_RE.match(version):
             raise ValidationError(
-                f"not a Talos version: {version!r}", hint="expected vMAJOR.MINOR.PATCH, e.g. v1.14.0"
+                f"not a Talos version: {version!r}",
+                hint="expected vMAJOR.MINOR.PATCH, e.g. v1.14.0",
             )
         settings.talos_version = version
         hint = "run `talkub upgrade talos`"
     elif component == "kubernetes":
         if not _K8S_VERSION_RE.match(version):
             raise ValidationError(
-                f"not a Kubernetes version: {version!r}", hint="expected MAJOR.MINOR.PATCH, e.g. 1.37.0"
+                f"not a Kubernetes version: {version!r}",
+                hint="expected MAJOR.MINOR.PATCH, e.g. 1.37.0",
             )
         settings.kubernetes_version = version.removeprefix("v")
         hint = "run `talkub upgrade k8s`"
     else:
-        raise ValidationError(f"unknown component: {component!r}", hint="use one of: talos, kubernetes")
+        raise ValidationError(
+            f"unknown component: {component!r}", hint="use one of: talos, kubernetes"
+        )
     repo.write_settings(settings)
     return hint

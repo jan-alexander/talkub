@@ -50,19 +50,37 @@ TALOS_DEFAULT_PLUGINS = [
     {"name": "ready"},
     {"name": "log", "parameters": ".", "configBlock": "class error"},
     {"name": "prometheus", "parameters": ":9153"},
-    {"name": "kubernetes", "parameters": "cluster.local in-addr.arpa ip6.arpa",
-     "configBlock": "pods insecure\nfallthrough in-addr.arpa ip6.arpa\nttl 30"},
-    {"name": "forward", "parameters": ". /etc/resolv.conf", "configBlock": "max_concurrent 1000"},
-    {"name": "cache", "parameters": 30, "configBlock": "disable success cluster.local\ndisable denial cluster.local"},
+    {
+        "name": "kubernetes",
+        "parameters": "cluster.local in-addr.arpa ip6.arpa",
+        "configBlock": "pods insecure\nfallthrough in-addr.arpa ip6.arpa\nttl 30",
+    },
+    {
+        "name": "forward",
+        "parameters": ". /etc/resolv.conf",
+        "configBlock": "max_concurrent 1000",
+    },
+    {
+        "name": "cache",
+        "parameters": 30,
+        "configBlock": "disable success cluster.local\ndisable denial cluster.local",
+    },
     {"name": "loop"},
     {"name": "reload"},
     {"name": "loadbalance"},
 ]
 
+
 def _stub_server(tailnet: str) -> dict:
-    return {"zones": [{"zone": tailnet}], "port": 53,
-            "plugins": [{"name": "errors"}, {"name": "cache", "parameters": 30},
-                        {"name": "forward", "parameters": f". {TS_NAMESERVER_IP}"}]}
+    return {
+        "zones": [{"zone": tailnet}],
+        "port": 53,
+        "plugins": [
+            {"name": "errors"},
+            {"name": "cache", "parameters": 30},
+            {"name": "forward", "parameters": f". {TS_NAMESERVER_IP}"},
+        ],
+    }
 ```
 
 Top-level values: `fullnameOverride: coredns-talkub`, `k8sAppLabelOverride: kube-dns`, `replicaCount: 2`, `priorityClassName: system-cluster-critical`, `tolerations: [{key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}]`, `service: {name: kube-dns, clusterIP: 10.96.0.10, selector: {k8s-app: kube-dns}}`, `servers: [{zones: [{zone: .}], port: 53, plugins: TALOS_DEFAULT_PLUGINS}, (stub)]`. First line comment `# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.`

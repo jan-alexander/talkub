@@ -49,11 +49,18 @@ def test_run_raises_with_stderr_as_hint():
 
 
 def test_run_without_check_returns_returncode():
-    assert Runner().run([sys.executable, "-c", "raise SystemExit(4)"], check=False).returncode == 4
+    assert (
+        Runner()
+        .run([sys.executable, "-c", "raise SystemExit(4)"], check=False)
+        .returncode
+        == 4
+    )
 
 
 def test_run_timeout_without_check_returns_124():
-    proc = Runner().run([sys.executable, "-c", "import time; time.sleep(30)"], check=False, timeout=0.5)
+    proc = Runner().run(
+        [sys.executable, "-c", "import time; time.sleep(30)"], check=False, timeout=0.5
+    )
     assert proc.returncode == 124
     assert b"timed out after 0.5s" in proc.stderr
 
@@ -79,7 +86,6 @@ def test_call_maps_signal_death_to_shell_exit_code():
     assert Runner().call([sys.executable, "-c", code]) == 143
 
 
-
 SLOW_CHILD = "import sys, time; time.sleep(1); print('MARKER'); sys.stderr.write('ERR\\n'); sys.exit(3)"
 
 
@@ -89,9 +95,14 @@ def _send_later(signum: int, delay: float = 0.2) -> threading.Timer:
     return timer
 
 
-def test_run_uninterruptible_writes_output_privately_and_returns_the_exit_code(tmp_path):
+def test_run_uninterruptible_writes_output_privately_and_returns_the_exit_code(
+    tmp_path,
+):
     out = tmp_path / "out"
-    assert Runner().run_uninterruptible([sys.executable, "-c", SLOW_CHILD], output=out) == 3
+    assert (
+        Runner().run_uninterruptible([sys.executable, "-c", SLOW_CHILD], output=out)
+        == 3
+    )
     assert out.stat().st_mode & 0o777 == 0o600
     assert sorted(out.read_text().split()) == ["ERR", "MARKER"]
 
@@ -103,10 +114,18 @@ def test_run_uninterruptible_refuses_an_existing_output_file(tmp_path):
         Runner().run_uninterruptible([sys.executable, "-c", "pass"], output=out)
 
 
-@pytest.mark.parametrize(("signum", "expected"), [(signal.SIGINT, KeyboardInterrupt), (signal.SIGTERM, SystemExit)])
-def test_run_uninterruptible_waits_for_the_child_on_signals(tmp_path, capfd, signum, expected):
+@pytest.mark.parametrize(
+    ("signum", "expected"),
+    [(signal.SIGINT, KeyboardInterrupt), (signal.SIGTERM, SystemExit)],
+)
+def test_run_uninterruptible_waits_for_the_child_on_signals(
+    tmp_path, capfd, signum, expected
+):
     out = tmp_path / "out"
-    before = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    before = {
+        sig: signal.getsignal(sig)
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    }
     start = time.monotonic()
     timer = _send_later(signum)
     try:
@@ -115,8 +134,14 @@ def test_run_uninterruptible_waits_for_the_child_on_signals(tmp_path, capfd, sig
     finally:
         timer.cancel()
     assert time.monotonic() - start >= 1.0  # raised only after the child finished
-    assert sorted(out.read_text().split()) == ["ERR", "MARKER"]  # the child was not killed
-    assert f"{Path(sys.executable).name} is still running; waiting for it to finish (do not kill it)" in capfd.readouterr().err
+    assert sorted(out.read_text().split()) == [
+        "ERR",
+        "MARKER",
+    ]  # the child was not killed
+    assert (
+        f"{Path(sys.executable).name} is still running; waiting for it to finish (do not kill it)"
+        in capfd.readouterr().err
+    )
     assert {sig: signal.getsignal(sig) for sig in before} == before
 
 
@@ -141,7 +166,10 @@ def test_run_uninterruptible_survives_a_closed_terminal(tmp_path, monkeypatch):
     finally:
         timer.cancel()
     assert time.monotonic() - start >= 1.0  # raised only after the child finished
-    assert sorted(out.read_text().split()) == ["ERR", "MARKER"]  # output file is complete
+    assert sorted(out.read_text().split()) == [
+        "ERR",
+        "MARKER",
+    ]  # output file is complete
 
 
 def test_run_uninterruptible_restores_handlers_when_popen_fails(tmp_path, monkeypatch):
@@ -165,7 +193,10 @@ def test_run_uninterruptible_restores_handlers_when_popen_fails(tmp_path, monkey
 
 def test_run_uninterruptible_new_session(tmp_path):
     out = tmp_path / "out"
-    Runner().run_uninterruptible([sys.executable, "-c", "import os; print(os.getsid(0) == os.getpid())"], output=out)
+    Runner().run_uninterruptible(
+        [sys.executable, "-c", "import os; print(os.getsid(0) == os.getpid())"],
+        output=out,
+    )
     assert out.read_text().strip() == "True"
 
 
@@ -173,7 +204,9 @@ def test_spawn_detached_writes_stdin_to_the_child_and_does_not_wait(tmp_path):
     out = tmp_path / "out"
     code = "import sys; open(sys.argv[1], 'wb').write(sys.stdin.buffer.read())"
     started = time.monotonic()
-    Runner().spawn_detached([sys.executable, "-c", code, str(out)], input=b"detached-payload")
+    Runner().spawn_detached(
+        [sys.executable, "-c", code, str(out)], input=b"detached-payload"
+    )
     assert time.monotonic() - started < 1.0  # returned without waiting for the child
     deadline = time.monotonic() + 5
     while not out.exists() and time.monotonic() < deadline:
@@ -187,7 +220,9 @@ def test_spawn_detached_requires_the_tool():
 
 
 def test_spawn_detached_does_not_warn_about_the_unwaited_child(recwarn):
-    Runner().spawn_detached([sys.executable, "-c", "import time; time.sleep(0.2)"], input=b"")
+    Runner().spawn_detached(
+        [sys.executable, "-c", "import time; time.sleep(0.2)"], input=b""
+    )
     assert not any(issubclass(w.category, ResourceWarning) for w in recwarn.list)
 
 
@@ -210,7 +245,9 @@ def test_spawn_detached_raises_command_failed_on_a_broken_pipe(monkeypatch):
 
 
 def test_feed_returns_the_exit_code():
-    assert Runner().feed([sys.executable, "-c", "import sys; sys.exit(5)"], input=b"") == 5
+    assert (
+        Runner().feed([sys.executable, "-c", "import sys; sys.exit(5)"], input=b"") == 5
+    )
 
 
 def test_feed_does_not_wait_for_a_backgrounded_child_holding_stdout(fake_bin):

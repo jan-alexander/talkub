@@ -47,7 +47,9 @@ def child_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
 def require_tool(name: str) -> str:
     path = shutil.which(name)
     if path is None:
-        raise ToolMissing(f"required tool '{name}' not found in PATH", hint=INSTALL_HINTS.get(name))
+        raise ToolMissing(
+            f"required tool '{name}' not found in PATH", hint=INSTALL_HINTS.get(name)
+        )
     return path
 
 
@@ -87,7 +89,8 @@ class Runner:
         if check and proc.returncode != 0:
             stderr = (proc.stderr or b"").decode(errors="replace").strip()
             raise CommandFailed(
-                f"{Path(argv[0]).name} exited with {proc.returncode}", hint=stderr or None
+                f"{Path(argv[0]).name} exited with {proc.returncode}",
+                hint=stderr or None,
             )
         return proc
 
@@ -112,24 +115,35 @@ class Runner:
                 try:
                     print(
                         f"{Path(argv[0]).name} is still running; waiting for it to finish (do not kill it)",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
                 except OSError:
                     pass  # e.g. the terminal hung up (EIO); keep waiting regardless
             received.append(signum)
 
-        previous = {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS} if on_main_thread else {}
+        previous = (
+            {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS}
+            if on_main_thread
+            else {}
+        )
         try:
             try:
                 proc = subprocess.Popen(
-                    list(argv), stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT,
-                    env=child_env(env), start_new_session=True,
+                    list(argv),
+                    stdin=subprocess.DEVNULL,
+                    stdout=fd,
+                    stderr=subprocess.STDOUT,
+                    env=child_env(env),
+                    start_new_session=True,
                 )
             finally:
                 os.close(fd)
             if not on_main_thread:
                 return proc.wait()
-            code = proc.wait()  # the handler does not raise, so wait() resumes after each signal
+            code = (
+                proc.wait()
+            )  # the handler does not raise, so wait() resumes after each signal
         finally:
             for sig, old in previous.items():
                 signal.signal(sig, old)
@@ -158,7 +172,9 @@ class Runner:
             proc.stdin.write(input)
             proc.stdin.close()
         except BrokenPipeError as exc:
-            raise CommandFailed(f"{Path(argv[0]).name} closed its stdin before receiving input") from exc
+            raise CommandFailed(
+                f"{Path(argv[0]).name} closed its stdin before receiving input"
+            ) from exc
         # We deliberately never wait() on a detached child; mark it as already reaped so
         # Popen.__del__ does not emit a ResourceWarning about it still running.
         proc.returncode = 0

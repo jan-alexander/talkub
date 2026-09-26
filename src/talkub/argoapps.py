@@ -21,7 +21,9 @@ from talkub.repo import Repo
 
 _VALUES_PREFIX = "$values/"
 
-_NO_CHART_SOURCE_HINT = "add exactly one Helm chart source under spec.source or spec.sources"
+_NO_CHART_SOURCE_HINT = (
+    "add exactly one Helm chart source under spec.source or spec.sources"
+)
 
 
 def _as_mapping(value: object) -> Mapping:
@@ -51,10 +53,18 @@ def _chart_sources(spec: Mapping) -> list[tuple[int | None, Mapping]]:
     raw_sources = spec.get("sources")
     if raw_sources is None:
         single = spec.get("source")
-        return [(None, single)] if isinstance(single, Mapping) and "chart" in single else []
+        return (
+            [(None, single)]
+            if isinstance(single, Mapping) and "chart" in single
+            else []
+        )
     if not isinstance(raw_sources, list):
         return []
-    return [(index, source) for index, source in enumerate(raw_sources) if isinstance(source, Mapping) and "chart" in source]
+    return [
+        (index, source)
+        for index, source in enumerate(raw_sources)
+        if isinstance(source, Mapping) and "chart" in source
+    ]
 
 
 def _scalar_str(source: Mapping, field: str, name: str, findings: list[Finding]) -> str:
@@ -79,14 +89,18 @@ def _target_revision_str(source: Mapping, name: str, findings: list[Finding]) ->
     if value is None:
         value = ""
     elif not isinstance(value, str):
-        findings.append(Finding("error", f"app {name}", "targetRevision must be a quoted string"))
+        findings.append(
+            Finding("error", f"app {name}", "targetRevision must be a quoted string")
+        )
         return ""
     if not value:
         findings.append(Finding("error", f"app {name}", "targetRevision is empty"))
     return value
 
 
-def _build_helm_source(repo: Repo, name: str, namespace: str, source: Mapping) -> tuple[HelmSource, list[Finding]]:
+def _build_helm_source(
+    repo: Repo, name: str, namespace: str, source: Mapping
+) -> tuple[HelmSource, list[Finding]]:
     """A `HelmSource` for `source` (a single `chart` entry), plus findings for its value files:
     an error if a `$values/`-prefixed entry doesn't resolve to a repo file, a warning (skipped,
     not fatal) for any other, unsupported entry."""
@@ -99,13 +113,25 @@ def _build_helm_source(repo: Repo, name: str, namespace: str, source: Mapping) -
         if not isinstance(entry, str):
             continue
         if entry.startswith(_VALUES_PREFIX):
-            candidate = repo.root / entry[len(_VALUES_PREFIX):]
+            candidate = repo.root / entry[len(_VALUES_PREFIX) :]
             if candidate.is_file():
                 value_files.append(candidate)
             else:
-                findings.append(Finding("error", f"app {name}", f"values file {repo.rel(candidate)} not found"))
+                findings.append(
+                    Finding(
+                        "error",
+                        f"app {name}",
+                        f"values file {repo.rel(candidate)} not found",
+                    )
+                )
         else:
-            findings.append(Finding("warning", f"app {name}", f"valueFiles entry {entry!r} is unsupported, skipped"))
+            findings.append(
+                Finding(
+                    "warning",
+                    f"app {name}",
+                    f"valueFiles entry {entry!r} is unsupported, skipped",
+                )
+            )
 
     inline_values: str | None = None
     if "valuesObject" in helm:
@@ -126,7 +152,9 @@ def _build_helm_source(repo: Repo, name: str, namespace: str, source: Mapping) -
     return helm_source, findings
 
 
-def _file_chart_sources(repo: Repo, path: Path) -> tuple[list[HelmSource], list[Finding]]:
+def _file_chart_sources(
+    repo: Repo, path: Path
+) -> tuple[list[HelmSource], list[Finding]]:
     """Every Helm source (a `chart` entry) of every Argo CD Application document in `path`, the
     per-file body shared by `helm_sources` (whole-repo scan, keyed by `metadata.name`) and
     `app_chart_sources` (one file, keyed by its stem). Empty, with no findings, if `path` doesn't
@@ -147,7 +175,9 @@ def _file_chart_sources(repo: Repo, path: Path) -> tuple[list[HelmSource], list[
         namespace = destination.get("namespace") or "default"
 
         for _index, source in _chart_sources(spec):
-            helm_source, source_findings = _build_helm_source(repo, name, namespace, source)
+            helm_source, source_findings = _build_helm_source(
+                repo, name, namespace, source
+            )
             sources.append(helm_source)
             findings.extend(source_findings)
     return sources, findings
@@ -231,15 +261,24 @@ def _locate_single_chart_source(repo: Repo, key: str) -> tuple[list, Mapping]:
     path = repo.gitops_dir / "apps" / f"{key}.yaml"
     if not path.is_file():
         raise ValidationError(
-            f"gitops/apps/{key}.yaml does not exist", hint="run `talkub init`, or create the app file"
+            f"gitops/apps/{key}.yaml does not exist",
+            hint="run `talkub init`, or create the app file",
         )
     try:
         docs = yamlio.load_all(path.read_text())
     except YAMLError as err:
-        raise ValidationError(f"gitops/apps/{key}.yaml is not valid YAML: {err}") from None
+        raise ValidationError(
+            f"gitops/apps/{key}.yaml is not valid YAML: {err}"
+        ) from None
 
-    error = ValidationError(f"gitops/apps/{key}.yaml has no Helm chart source", hint=_NO_CHART_SOURCE_HINT)
-    applications = [doc for doc in docs if isinstance(doc, Mapping) and doc.get("kind") == "Application"]
+    error = ValidationError(
+        f"gitops/apps/{key}.yaml has no Helm chart source", hint=_NO_CHART_SOURCE_HINT
+    )
+    applications = [
+        doc
+        for doc in docs
+        if isinstance(doc, Mapping) and doc.get("kind") == "Application"
+    ]
     if len(applications) != 1:
         raise error
     spec = _as_mapping(applications[0].get("spec"))
@@ -268,7 +307,11 @@ def app_source(repo: Repo, key: str) -> HelmSource:
     is no report to attach it to and no other source to fall back on.
     """
     docs, source = _locate_single_chart_source(repo, key)
-    application = next(doc for doc in docs if isinstance(doc, Mapping) and doc.get("kind") == "Application")
+    application = next(
+        doc
+        for doc in docs
+        if isinstance(doc, Mapping) and doc.get("kind") == "Application"
+    )
     metadata = _as_mapping(application.get("metadata"))
     name = str(metadata.get("name", key))
     spec = _as_mapping(application.get("spec"))
@@ -278,7 +321,8 @@ def app_source(repo: Repo, key: str) -> HelmSource:
     helm_source, findings = _build_helm_source(repo, name, namespace, source)
     if not helm_source.version:
         raise ValidationError(
-            f"gitops/apps/{key}.yaml: targetRevision is empty", hint="pin a chart version in targetRevision"
+            f"gitops/apps/{key}.yaml: targetRevision is empty",
+            hint="pin a chart version in targetRevision",
         )
     errors = [finding for finding in findings if finding.level == "error"]
     if errors:

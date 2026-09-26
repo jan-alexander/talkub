@@ -26,9 +26,13 @@ class KubeSession:
     def kubectl(
         self, args: Sequence[str], *, input: bytes | None = None, check: bool = True
     ) -> subprocess.CompletedProcess[bytes]:
-        return self.runner.run(["kubectl", *args], input=input, env=self.env, check=check)
+        return self.runner.run(
+            ["kubectl", *args], input=input, env=self.env, check=check
+        )
 
-    def helm(self, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+    def helm(
+        self, args: Sequence[str], *, check: bool = True
+    ) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(["helm", *args], env=self.env, check=check)
 
 
@@ -37,6 +41,9 @@ def kube_session(ctx: Context) -> Iterator[KubeSession]:
     require_tool("kubectl")
     source = ctx.repo.kubeconfig
     if not source.is_file():
-        raise ValidationError(f"{ctx.repo.rel(source)} does not exist", hint="it is created by `talkub bootstrap`")
+        raise ValidationError(
+            f"{ctx.repo.rel(source)} does not exist",
+            hint="it is created by `talkub bootstrap`",
+        )
     with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
         yield KubeSession(ctx.runner, paths["kubeconfig"])

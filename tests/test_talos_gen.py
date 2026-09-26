@@ -1,8 +1,8 @@
 import re
 
 import pytest
-
 from helpers import need
+
 from talkub import yamlio
 from talkub.errors import ValidationError
 from talkub.runner import Runner
@@ -40,7 +40,9 @@ def test_parse_defaults_multidoc():
 
 
 def test_parse_defaults_legacy_v1alpha1():
-    assert gen.parse_defaults(LEGACY) == gen.Defaults("v1.9.0", "1.32.0", "ghcr.io/siderolabs/installer")
+    assert gen.parse_defaults(LEGACY) == gen.Defaults(
+        "v1.9.0", "1.32.0", "ghcr.io/siderolabs/installer"
+    )
 
 
 def test_parse_defaults_unknown_layout():
@@ -56,7 +58,13 @@ def test_detect_defaults_and_talosconfig(tmp_path):
     assert re.fullmatch(r"v\d+\.\d+\.\d+", defaults.talos_version)
     assert re.fullmatch(r"\d+\.\d+\.\d+", defaults.kubernetes_version)
     config = gen.gen_talosconfig(
-        runner, "demo", "https://10.0.0.10:6443", secrets, tmp_path, endpoints=["10.0.0.10"], node="10.0.0.10"
+        runner,
+        "demo",
+        "https://10.0.0.10:6443",
+        secrets,
+        tmp_path,
+        endpoints=["10.0.0.10"],
+        node="10.0.0.10",
     )
     context = yamlio.load(config.read_text())["contexts"]["demo"]
     assert list(context["endpoints"]) == ["10.0.0.10"]

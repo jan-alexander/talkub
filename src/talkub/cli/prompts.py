@@ -16,7 +16,9 @@ def read_secret(path: Path | None, prompt: str, repo_root: Path | None = None) -
         value = path.expanduser().read_text().strip()
     except OSError as err:
         raise ValidationError(f"cannot read {path}: {err.strerror}") from None
-    if repo_root is not None and path.expanduser().resolve().is_relative_to(repo_root.resolve()):
+    if repo_root is not None and path.expanduser().resolve().is_relative_to(
+        repo_root.resolve()
+    ):
         print(
             f"warning: {path} is inside the cluster repo; the plaintext secret file must not be "
             "committed — delete it after use",

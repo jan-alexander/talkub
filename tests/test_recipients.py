@@ -10,7 +10,12 @@ KEY_B = "age1yubikey1qgw6x0m7l9t6tg3hvc8d0x3q7tnfq8m5h4k6s2r3v4w5x6y7z8a9bcdefg"
 def test_render_parse_roundtrip():
     items = [Recipient("alice", KEY_A), Recipient("bob-yubikey", KEY_B)]
     text = render(items)
-    assert text.splitlines()[1:] == ["# name: alice", KEY_A, "# name: bob-yubikey", KEY_B]
+    assert text.splitlines()[1:] == [
+        "# name: alice",
+        KEY_A,
+        "# name: bob-yubikey",
+        KEY_B,
+    ]
     assert parse(text) == items
 
 

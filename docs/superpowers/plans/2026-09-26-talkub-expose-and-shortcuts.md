@@ -39,16 +39,16 @@
 @dataclass(frozen=True)
 class Shortcut:
     name: str
-    kind: str                     # "secret" | "job" | "run" | "portForward"
+    kind: str  # "secret" | "job" | "run" | "portForward"
     description: str | None = None
     namespace: str | None = None  # secret, job, portForward
-    secret: str | None = None     # secret: Secret name
-    key: str | None = None        # secret
-    cronjob: str | None = None    # job
-    follow: bool = False          # job
-    argv: tuple[str, ...] = ()    # run
-    service: str | None = None    # portForward
-    ports: tuple[str, ...] = ()   # portForward
+    secret: str | None = None  # secret: Secret name
+    key: str | None = None  # secret
+    cronjob: str | None = None  # job
+    follow: bool = False  # job
+    argv: tuple[str, ...] = ()  # run
+    service: str | None = None  # portForward
+    ports: tuple[str, ...] = ()  # portForward
 ```
 `Settings.shortcuts: dict[str, Shortcut] = field(default_factory=dict)` (after `git`); `to_dict` writes `shortcuts` only when non-empty, in the YAML shape of spec §3 (keys `secret: {namespace, name, key}`, `job: {namespace, cronjob, follow}` — `follow` only when true —, `run: [...]`, `portForward: {namespace, service, ports}`, plus `description` when set); `repo.DNS_LABEL` regex + `valid_label(value) -> bool` helper (≤ 63).
 

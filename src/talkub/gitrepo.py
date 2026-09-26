@@ -25,7 +25,13 @@ from talkub.repo import GitSpec, Repo
 from talkub.runner import Runner
 
 ARGOCD_KNOWN_HOSTS = frozenset(
-    {"github.com", "gitlab.com", "bitbucket.org", "ssh.dev.azure.com", "vs-ssh.visualstudio.com"}
+    {
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "ssh.dev.azure.com",
+        "vs-ssh.visualstudio.com",
+    }
 )
 URL_HINT = "e.g. git@github.com:me/cluster.git or https://github.com/me/cluster.git"
 _SCP = re.compile(r"(?P<user>[^@/:\s]+)@(?P<host>[A-Za-z0-9.-]+):(?P<path>\S+)")
@@ -57,7 +63,12 @@ def classify_url(url: str) -> GitUrl:
                 "the git URL must not contain credentials",
                 hint="use a plain https:// URL and store the token with `talkub repo credentials`",
             )
-        if not parts.hostname or parts.path in ("", "/") or parts.query or parts.fragment:
+        if (
+            not parts.hostname
+            or parts.path in ("", "/")
+            or parts.query
+            or parts.fragment
+        ):
             raise ValidationError("invalid git URL", hint=URL_HINT)
         kind = "ssh" if parts.scheme == "ssh" else "https"
         if kind == "ssh" and port == 22:
@@ -72,15 +83,28 @@ def classify_url(url: str) -> GitUrl:
 def git_init(root: Path, url: str, runner: Runner) -> list[str]:
     """`git init -b main` and `origin` = url where missing. Problems become warnings, not errors."""
     if shutil.which("git") is None:
-        return [f"git not found; run `git init -b main && git remote add origin {url}` in {root}"]
+        return [
+            f"git not found; run `git init -b main && git remote add origin {url}` in {root}"
+        ]
     if not (root / ".git").exists():
         proc = runner.run(["git", "init", "-q", "-b", "main"], cwd=root, check=False)
         if proc.returncode != 0:
-            return [f"git init failed: {(proc.stderr or b'').decode(errors='replace').strip()}"]
-    if runner.run(["git", "remote", "get-url", "origin"], cwd=root, check=False).returncode != 0:
-        proc = runner.run(["git", "remote", "add", "origin", url], cwd=root, check=False)
+            return [
+                f"git init failed: {(proc.stderr or b'').decode(errors='replace').strip()}"
+            ]
+    if (
+        runner.run(
+            ["git", "remote", "get-url", "origin"], cwd=root, check=False
+        ).returncode
+        != 0
+    ):
+        proc = runner.run(
+            ["git", "remote", "add", "origin", url], cwd=root, check=False
+        )
         if proc.returncode != 0:
-            return [f"could not add remote origin: {(proc.stderr or b'').decode(errors='replace').strip()}"]
+            return [
+                f"could not add remote origin: {(proc.stderr or b'').decode(errors='replace').strip()}"
+            ]
     return []
 
 
@@ -89,7 +113,9 @@ def origin_hint(root: Path, url: str, runner: Runner) -> str | None:
     if shutil.which("git") is None:
         return None
     proc = runner.run(["git", "remote", "get-url", "origin"], cwd=root, check=False)
-    current = proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else None
+    current = (
+        proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else None
+    )
     if current == url:
         return None
     if current is None:
@@ -101,7 +127,9 @@ def _manifest_files(repo: Repo) -> list[Path]:
     files = [repo.gitops_dir / "root.yaml"]
     apps = repo.gitops_dir / "apps"
     if apps.is_dir():
-        files += sorted(p for p in apps.iterdir() if p.suffix in (".yaml", ".yml") and p.is_file())
+        files += sorted(
+            p for p in apps.iterdir() if p.suffix in (".yaml", ".yml") and p.is_file()
+        )
     return [p for p in files if p.is_file()]
 
 
@@ -123,7 +151,10 @@ def rewrite_repo_urls(repo: Repo, old: str, new: str) -> list[Path]:
         try:
             docs = yamlio.load_all(path.read_text())
         except YAMLError:
-            raise ValidationError(f"{repo.rel(path)} is not valid YAML", hint="fix it, then run set-url again") from None
+            raise ValidationError(
+                f"{repo.rel(path)} is not valid YAML",
+                hint="fix it, then run set-url again",
+            ) from None
         hits = 0
         for doc in docs:
             for source in _sources(doc):
@@ -194,7 +225,12 @@ def replace_secret_url(manifest: bytes, url: str) -> bytes:
 
 def write_credentials(ctx: Context, manifest: bytes) -> Path:
     path = credentials_path(ctx.repo)
-    atomic_write(path, ctx.sops.encrypt(manifest, filename=path.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        path,
+        ctx.sops.encrypt(
+            manifest, filename=path.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     return path
 
 
@@ -202,12 +238,27 @@ def generate_ssh_key(runner: Runner, comment: str) -> tuple[str, str]:
     """A fresh ed25519 key pair; the private half only exists in a private temp dir and in memory."""
     with private_tempdir() as work:
         key = work / "key"
-        runner.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", comment, "-f", str(key)])
+        runner.run(
+            [
+                "ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                comment,
+                "-f",
+                str(key),
+            ]
+        )
         return key.read_text(), (work / "key.pub").read_text().strip()
 
 
 def needs_known_hosts(url: GitUrl) -> bool:
-    return url.kind == "ssh" and (url.host not in ARGOCD_KNOWN_HOSTS or url.port is not None)
+    return url.kind == "ssh" and (
+        url.host not in ARGOCD_KNOWN_HOSTS or url.port is not None
+    )
 
 
 def scan_host_keys(runner: Runner, url: GitUrl) -> list[str]:
@@ -223,7 +274,10 @@ def scan_host_keys(runner: Runner, url: GitUrl) -> list[str]:
     ]
     if not lines:
         where = f"{url.host}:{url.port}" if url.port else url.host
-        raise CommandFailed(f"no SSH host keys from {where}", hint="host unreachable or no SSH on that port")
+        raise CommandFailed(
+            f"no SSH host keys from {where}",
+            hint="host unreachable or no SSH on that port",
+        )
     return lines
 
 
@@ -248,7 +302,9 @@ def add_extra_hosts(repo: Repo, lines: list[str]) -> bool:
     path = repo.gitops_dir / "values" / "argocd.yaml"
     data = (yamlio.load(path.read_text()) if path.is_file() else None) or CommentedMap()
     ssh = _submap(_submap(data, "configs"), "ssh")
-    existing = [line for line in str(ssh.get("extraHosts") or "").splitlines() if line.strip()]
+    existing = [
+        line for line in str(ssh.get("extraHosts") or "").splitlines() if line.strip()
+    ]
     new = [line for line in lines if line not in existing]
     if not new:
         return False
@@ -293,7 +349,9 @@ def create_ssh_credentials(
     if needs_known_hosts(url):
         host_lines = scan_host_keys(ctx.runner, url)
         shown = "\n".join(f"  {fingerprint(line)}" for line in host_lines)
-        if not confirm(f"SSH host keys of {url.host}:\n{shown}\nTrust them for Argo CD?"):
+        if not confirm(
+            f"SSH host keys of {url.host}:\n{shown}\nTrust them for Argo CD?"
+        ):
             raise ValidationError("host keys not confirmed; nothing was written")
     private, public = generate_ssh_key(ctx.runner, f"talkub-{name}")
     written = add_extra_hosts(ctx.repo, host_lines) if host_lines else False
@@ -301,8 +359,12 @@ def create_ssh_credentials(
     return SshCredentials(path, public, written)
 
 
-def create_https_credentials(ctx: Context, name: str, url: GitUrl, username: str, token: str) -> Path:
-    return write_credentials(ctx, build_secret(name, url.url, username=username, password=token))
+def create_https_credentials(
+    ctx: Context, name: str, url: GitUrl, username: str, token: str
+) -> Path:
+    return write_credentials(
+        ctx, build_secret(name, url.url, username=username, password=token)
+    )
 
 
 @dataclass(frozen=True)
@@ -317,7 +379,9 @@ def set_url(ctx: Context, url: str) -> SetUrlResult:
     """Point settings, gitops repoURLs and stored credentials at `url`. Never touches the cluster."""
     new = classify_url(url)
     settings = ctx.repo.load_settings()
-    old = settings.git.url if settings.git is not None else placeholder_url(settings.name)
+    old = (
+        settings.git.url if settings.git is not None else placeholder_url(settings.name)
+    )
     if old == new.url:
         return SetUrlResult([], False, True)
 
@@ -336,7 +400,10 @@ def set_url(ctx: Context, url: str) -> SetUrlResult:
         except ValidationError:
             credentials_need_refresh = True
         else:
-            credentials_need_refresh = (old_url.host, old_url.port) != (new.host, new.port)
+            credentials_need_refresh = (old_url.host, old_url.port) != (
+                new.host,
+                new.port,
+            )
 
     changed = rewrite_repo_urls(ctx.repo, old, new.url)
     if not changed and settings.git is None:
@@ -356,7 +423,9 @@ def apply(ctx: Context, kube: KubeSession) -> None:
     creds = credentials_path(ctx.repo)
     if creds.is_file():
         with decrypted(ctx.sops, {"repo-credentials.yaml": creds}) as plain:
-            kube.kubectl(["apply", "--server-side", "-f", str(plain["repo-credentials.yaml"])])
+            kube.kubectl(
+                ["apply", "--server-side", "-f", str(plain["repo-credentials.yaml"])]
+            )
     kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
 
 

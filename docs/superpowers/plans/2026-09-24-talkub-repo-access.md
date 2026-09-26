@@ -61,13 +61,50 @@ from talkub.gitrepo import GitUrl, classify_url
 @pytest.mark.parametrize(
     ("url", "expected"),
     [
-        ("git@github.com:me/cluster.git", GitUrl("git@github.com:me/cluster.git", "ssh", "github.com", None)),
-        ("  git@git.example.com:/srv/cluster.git ", GitUrl("git@git.example.com:/srv/cluster.git", "ssh", "git.example.com", None)),
-        ("ssh://git@git.example.com/me/c.git", GitUrl("ssh://git@git.example.com/me/c.git", "ssh", "git.example.com", None)),
-        ("ssh://git@git.example.com:2222/me/c.git", GitUrl("ssh://git@git.example.com:2222/me/c.git", "ssh", "git.example.com", 2222)),
-        ("ssh://git@git.example.com:22/me/c.git", GitUrl("ssh://git@git.example.com:22/me/c.git", "ssh", "git.example.com", None)),
-        ("https://github.com/me/cluster.git", GitUrl("https://github.com/me/cluster.git", "https", "github.com", None)),
-        ("https://git.example.com:8443/me/c.git", GitUrl("https://git.example.com:8443/me/c.git", "https", "git.example.com", 8443)),
+        (
+            "git@github.com:me/cluster.git",
+            GitUrl("git@github.com:me/cluster.git", "ssh", "github.com", None),
+        ),
+        (
+            "  git@git.example.com:/srv/cluster.git ",
+            GitUrl(
+                "git@git.example.com:/srv/cluster.git", "ssh", "git.example.com", None
+            ),
+        ),
+        (
+            "ssh://git@git.example.com/me/c.git",
+            GitUrl(
+                "ssh://git@git.example.com/me/c.git", "ssh", "git.example.com", None
+            ),
+        ),
+        (
+            "ssh://git@git.example.com:2222/me/c.git",
+            GitUrl(
+                "ssh://git@git.example.com:2222/me/c.git",
+                "ssh",
+                "git.example.com",
+                2222,
+            ),
+        ),
+        (
+            "ssh://git@git.example.com:22/me/c.git",
+            GitUrl(
+                "ssh://git@git.example.com:22/me/c.git", "ssh", "git.example.com", None
+            ),
+        ),
+        (
+            "https://github.com/me/cluster.git",
+            GitUrl("https://github.com/me/cluster.git", "https", "github.com", None),
+        ),
+        (
+            "https://git.example.com:8443/me/c.git",
+            GitUrl(
+                "https://git.example.com:8443/me/c.git",
+                "https",
+                "git.example.com",
+                8443,
+            ),
+        ),
     ],
 )
 def test_classify_url_accepts(url, expected):
@@ -76,8 +113,17 @@ def test_classify_url_accepts(url, expected):
 
 @pytest.mark.parametrize(
     "url",
-    ["", "http://github.com/me/c.git", "file:///srv/c.git", "github.com/me/c.git", "https://github.com",
-     "https://github.com/", "ssh://git@host:notaport/x.git", "git@:path", "https://github.com/me/c.git?x=1"],
+    [
+        "",
+        "http://github.com/me/c.git",
+        "file:///srv/c.git",
+        "github.com/me/c.git",
+        "https://github.com",
+        "https://github.com/",
+        "ssh://git@host:notaport/x.git",
+        "git@:path",
+        "https://github.com/me/c.git?x=1",
+    ],
 )
 def test_classify_url_rejects(url):
     with pytest.raises(ValidationError) as exc:
@@ -94,7 +140,10 @@ def test_classify_url_rejects_embedded_credentials_without_echoing_them():
 
 
 def test_placeholder_url():
-    assert gitrepo.placeholder_url("homelab") == "https://example.invalid/CHANGE-ME/homelab.git"
+    assert (
+        gitrepo.placeholder_url("homelab")
+        == "https://example.invalid/CHANGE-ME/homelab.git"
+    )
 ```
 
 Append to `tests/test_repo.py`:
@@ -157,15 +206,17 @@ Add `git: GitSpec | None = None` as the **last** field of `Settings`. In `to_dic
 In `from_dict`, before `return cls(...)`, and pass `git=git`:
 
 ```python
-        git = None
-        raw_git = data.get("git")
-        if raw_git is not None:
-            if not isinstance(raw_git, Mapping):
-                raise ValidationError(f"{MARKER}: 'git' must be a mapping")
-            url = _optional_text(raw_git.get("url"), "git.url")
-            if url is None:
-                raise ValidationError(f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>")
-            git = GitSpec(url=url)
+git = None
+raw_git = data.get("git")
+if raw_git is not None:
+    if not isinstance(raw_git, Mapping):
+        raise ValidationError(f"{MARKER}: 'git' must be a mapping")
+    url = _optional_text(raw_git.get("url"), "git.url")
+    if url is None:
+        raise ValidationError(
+            f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>"
+        )
+    git = GitSpec(url=url)
 ```
 
 (`repo.py` must not import `gitrepo`: `gitrepo` imports `repo`. URL syntax is checked by `gitrepo.classify_url` at the places that act on it.)
@@ -184,7 +235,13 @@ from urllib.parse import urlsplit
 from talkub.errors import ValidationError
 
 ARGOCD_KNOWN_HOSTS = frozenset(
-    {"github.com", "gitlab.com", "bitbucket.org", "ssh.dev.azure.com", "vs-ssh.visualstudio.com"}
+    {
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "ssh.dev.azure.com",
+        "vs-ssh.visualstudio.com",
+    }
 )
 URL_HINT = "e.g. git@github.com:me/cluster.git or https://github.com/me/cluster.git"
 _SCP = re.compile(r"(?P<user>[^@/:\s]+)@(?P<host>[A-Za-z0-9.-]+):(?P<path>\S+)")
@@ -216,7 +273,12 @@ def classify_url(url: str) -> GitUrl:
                 "the git URL must not contain credentials",
                 hint="use a plain https:// URL and store the token with `talkub repo credentials`",
             )
-        if not parts.hostname or parts.path in ("", "/") or parts.query or parts.fragment:
+        if (
+            not parts.hostname
+            or parts.path in ("", "/")
+            or parts.query
+            or parts.fragment
+        ):
             raise ValidationError("invalid git URL", hint=URL_HINT)
         kind = "ssh" if parts.scheme == "ssh" else "https"
         if kind == "ssh" and port == 22:
@@ -272,9 +334,15 @@ def _gitops(tmp_path) -> Repo:
 
     repo = Repo(tmp_path)
     values = {"git_url": OLD, "name": "test"}
-    for rel in ("gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml"):
+    for rel in (
+        "gitops/root.yaml",
+        "gitops/apps/argocd.yaml",
+        "gitops/apps/sealed-secrets.yaml",
+    ):
         template = (TEMPLATES / "repo" / (rel + ".tmpl")).read_text()
-        atomic_write(repo.root / rel, Template(template).safe_substitute(values).encode())
+        atomic_write(
+            repo.root / rel, Template(template).safe_substitute(values).encode()
+        )
     return repo
 
 
@@ -283,11 +351,18 @@ def test_rewrite_changes_only_matching_repo_urls_and_keeps_comments(tmp_path):
     before = {p: p.read_text() for p in (repo.gitops_dir).rglob("*.yaml")}
     changed = gitrepo.rewrite_repo_urls(repo, OLD, NEW)
     assert [repo.rel(p) for p in changed] == [
-        "gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml",
+        "gitops/root.yaml",
+        "gitops/apps/argocd.yaml",
+        "gitops/apps/sealed-secrets.yaml",
     ]
     for path, text in before.items():
-        assert path.read_text() == text.replace(OLD, NEW)  # byte-identical apart from the URL
-    assert "argoproj.github.io/argo-helm" in (repo.gitops_dir / "apps/argocd.yaml").read_text()
+        assert path.read_text() == text.replace(
+            OLD, NEW
+        )  # byte-identical apart from the URL
+    assert (
+        "argoproj.github.io/argo-helm"
+        in (repo.gitops_dir / "apps/argocd.yaml").read_text()
+    )
 
 
 def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path):
@@ -295,7 +370,9 @@ def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path
     other = repo.gitops_dir / "apps" / "extra.yml"
     other.write_text(
         "# two apps\n"
-        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: " + OLD + "\n"
+        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: "
+        + OLD
+        + "\n"
         "---\n"
         "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: https://charts.example.com\n"
     )
@@ -304,7 +381,11 @@ def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path
     mtime = unrelated.stat().st_mtime_ns
     gitrepo.rewrite_repo_urls(repo, OLD, NEW)
     text = other.read_text()
-    assert text.startswith("# two apps\n") and text.count(NEW) == 1 and "https://charts.example.com" in text
+    assert (
+        text.startswith("# two apps\n")
+        and text.count(NEW) == 1
+        and "https://charts.example.com" in text
+    )
     assert unrelated.stat().st_mtime_ns == mtime
 
 
@@ -346,7 +427,9 @@ def _manifest_files(repo: Repo) -> list[Path]:
     files = [repo.gitops_dir / "root.yaml"]
     apps = repo.gitops_dir / "apps"
     if apps.is_dir():
-        files += sorted(p for p in apps.iterdir() if p.suffix in (".yaml", ".yml") and p.is_file())
+        files += sorted(
+            p for p in apps.iterdir() if p.suffix in (".yaml", ".yml") and p.is_file()
+        )
     return [p for p in files if p.is_file()]
 
 
@@ -368,7 +451,10 @@ def rewrite_repo_urls(repo: Repo, old: str, new: str) -> list[Path]:
         try:
             docs = yamlio.load_all(path.read_text())
         except YAMLError:
-            raise ValidationError(f"{repo.rel(path)} is not valid YAML", hint="fix it, then run set-url again") from None
+            raise ValidationError(
+                f"{repo.rel(path)} is not valid YAML",
+                hint="fix it, then run set-url again",
+            ) from None
         hits = 0
         for doc in docs:
             for source in _sources(doc):
@@ -446,7 +532,9 @@ VALUES = "# Helm values for Argo CD\ndex:\n  enabled: false\n"
 
 def _host_line(tmp_path, host="[git.example.com]:2222"):
     key = tmp_path / "hostkey"
-    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True
+    )
     kind, blob = key.with_suffix(".pub").read_text().split()[:2]
     return f"{host} {kind} {blob}"
 
@@ -467,78 +555,133 @@ def ctx(repo_with_configs):
 
 
 def test_build_secret_shape():
-    doc = yamlio.load(gitrepo.build_secret("homelab", "https://h/x.git", username="u", password="p").decode())
+    doc = yamlio.load(
+        gitrepo.build_secret(
+            "homelab", "https://h/x.git", username="u", password="p"
+        ).decode()
+    )
     assert doc["kind"] == "Secret" and doc["metadata"]["name"] == "repo-homelab"
     assert doc["metadata"]["namespace"] == "argocd"
     assert doc["metadata"]["labels"] == {"argocd.argoproj.io/secret-type": "repository"}
     assert {k: _b64(v) for k, v in doc["data"].items()} == {
-        "type": "git", "url": "https://h/x.git", "username": "u", "password": "p",
+        "type": "git",
+        "url": "https://h/x.git",
+        "username": "u",
+        "password": "p",
     }
-    assert gitrepo.credentials_kind(gitrepo.build_secret("c", "u", username="u", password="p")) == "https"
-    assert gitrepo.credentials_kind(gitrepo.build_secret("c", "u", ssh_private_key="k")) == "ssh"
+    assert (
+        gitrepo.credentials_kind(
+            gitrepo.build_secret("c", "u", username="u", password="p")
+        )
+        == "https"
+    )
+    assert (
+        gitrepo.credentials_kind(gitrepo.build_secret("c", "u", ssh_private_key="k"))
+        == "ssh"
+    )
 
 
-@pytest.mark.parametrize(("username", "password"), [("", "p"), ("u", ""), ("u\nx", "p"), ("u", "p\n")])
+@pytest.mark.parametrize(
+    ("username", "password"), [("", "p"), ("u", ""), ("u\nx", "p"), ("u", "p\n")]
+)
 def test_build_secret_rejects_empty_or_multiline_https_values(username, password):
     with pytest.raises(ValidationError):
-        gitrepo.build_secret("c", "https://h/x.git", username=username, password=password)
+        gitrepo.build_secret(
+            "c", "https://h/x.git", username=username, password=password
+        )
 
 
 def test_replace_secret_url():
     manifest = gitrepo.build_secret("c", "git@a:x.git", ssh_private_key="KEY\n")
     doc = yamlio.load(gitrepo.replace_secret_url(manifest, "git@b:y.git").decode())
-    assert _b64(doc["data"]["url"]) == "git@b:y.git" and _b64(doc["data"]["sshPrivateKey"]) == "KEY\n"
+    assert (
+        _b64(doc["data"]["url"]) == "git@b:y.git"
+        and _b64(doc["data"]["sshPrivateKey"]) == "KEY\n"
+    )
 
 
 def test_needs_known_hosts():
     assert not gitrepo.needs_known_hosts(classify_url("git@github.com:me/x.git"))
     assert gitrepo.needs_known_hosts(classify_url("ssh://git@github.com:2222/me/x.git"))
     assert gitrepo.needs_known_hosts(classify_url("git@git.example.com:me/x.git"))
-    assert not gitrepo.needs_known_hosts(classify_url("https://git.example.com/me/x.git"))
+    assert not gitrepo.needs_known_hosts(
+        classify_url("https://git.example.com/me/x.git")
+    )
 
 
 def test_fingerprint_matches_ssh_keygen(tmp_path):
     line = _host_line(tmp_path, host="git.example.com")
     (tmp_path / "kh").write_text(line + "\n")
-    expected = subprocess.run(["ssh-keygen", "-lf", str(tmp_path / "kh")], capture_output=True, text=True, check=True)
+    expected = subprocess.run(
+        ["ssh-keygen", "-lf", str(tmp_path / "kh")],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert gitrepo.fingerprint(line).split()[1] in expected.stdout
 
 
 def test_ssh_credentials_for_github_skip_keyscan(ctx, spy):
     keyscan = spy("ssh-keyscan")
-    result = gitrepo.create_ssh_credentials(ctx, "test", classify_url("git@github.com:me/x.git"), confirm=lambda q: False)
+    result = gitrepo.create_ssh_credentials(
+        ctx, "test", classify_url("git@github.com:me/x.git"), confirm=lambda q: False
+    )
     assert keyscan.calls == []
-    assert result.public_key.startswith("ssh-ed25519 ") and result.public_key.endswith(" talkub-test")
+    assert result.public_key.startswith("ssh-ed25519 ") and result.public_key.endswith(
+        " talkub-test"
+    )
     assert not result.known_hosts_written
     secret = _secret(ctx)
     assert _b64(secret["data"]["url"]) == "git@github.com:me/x.git"
     assert "OPENSSH PRIVATE KEY" in _b64(secret["data"]["sshPrivateKey"])
     for path in ctx.repo.root.rglob("*"):
         if path.is_file():
-            assert b"PRIVATE KEY" not in path.read_bytes(), path  # only ciphertext on disk
+            assert b"PRIVATE KEY" not in path.read_bytes(), (
+                path
+            )  # only ciphertext on disk
 
 
-def test_ssh_credentials_custom_host_confirmed_adds_extra_hosts_once(ctx, spy, tmp_path):
+def test_ssh_credentials_custom_host_confirmed_adds_extra_hosts_once(
+    ctx, spy, tmp_path
+):
     line = _host_line(tmp_path)
-    spy("ssh-keyscan").on("-p", "2222", "git.example.com", stdout=f"# git.example.com:2222 SSH-2.0\n{line}\n")
+    spy("ssh-keyscan").on(
+        "-p",
+        "2222",
+        "git.example.com",
+        stdout=f"# git.example.com:2222 SSH-2.0\n{line}\n",
+    )
     url = classify_url("ssh://git@git.example.com:2222/me/x.git")
     questions = []
-    result = gitrepo.create_ssh_credentials(ctx, "test", url, confirm=lambda q: questions.append(q) or True)
+    result = gitrepo.create_ssh_credentials(
+        ctx, "test", url, confirm=lambda q: questions.append(q) or True
+    )
     assert result.known_hosts_written
     assert gitrepo.fingerprint(line) in questions[0]
     values_path = ctx.repo.gitops_dir / "values" / "argocd.yaml"
     values = yamlio.load(values_path.read_text())
     assert values["configs"]["ssh"]["extraHosts"].splitlines() == [line]
-    assert values_path.read_text().startswith("# Helm values for Argo CD\n")  # comment kept
+    assert values_path.read_text().startswith(
+        "# Helm values for Argo CD\n"
+    )  # comment kept
     again = gitrepo.create_ssh_credentials(ctx, "test", url, confirm=lambda q: True)
     assert not again.known_hosts_written
-    assert yamlio.load(values_path.read_text())["configs"]["ssh"]["extraHosts"].splitlines() == [line]
+    assert yamlio.load(values_path.read_text())["configs"]["ssh"][
+        "extraHosts"
+    ].splitlines() == [line]
 
 
 def test_ssh_credentials_declined_host_keys_write_nothing(ctx, spy, tmp_path):
-    spy("ssh-keyscan").on("git.example.com", stdout=_host_line(tmp_path, host="git.example.com") + "\n")
+    spy("ssh-keyscan").on(
+        "git.example.com", stdout=_host_line(tmp_path, host="git.example.com") + "\n"
+    )
     with pytest.raises(ValidationError):
-        gitrepo.create_ssh_credentials(ctx, "test", classify_url("git@git.example.com:me/x.git"), confirm=lambda q: False)
+        gitrepo.create_ssh_credentials(
+            ctx,
+            "test",
+            classify_url("git@git.example.com:me/x.git"),
+            confirm=lambda q: False,
+        )
     assert not gitrepo.credentials_path(ctx.repo).exists()
     assert (ctx.repo.gitops_dir / "values" / "argocd.yaml").read_text() == VALUES
 
@@ -547,14 +690,21 @@ def test_ssh_credentials_unreachable_host_fails_before_keygen(ctx, spy):
     spy("ssh-keyscan")  # prints nothing, exit 0 (like a real unreachable host)
     keygen = spy("ssh-keygen")
     with pytest.raises(CommandFailed) as exc:
-        gitrepo.create_ssh_credentials(ctx, "test", classify_url("git@git.example.com:me/x.git"), confirm=lambda q: True)
+        gitrepo.create_ssh_credentials(
+            ctx,
+            "test",
+            classify_url("git@git.example.com:me/x.git"),
+            confirm=lambda q: True,
+        )
     assert "git.example.com" in str(exc.value)
     assert keygen.calls == []
     assert not gitrepo.credentials_path(ctx.repo).exists()
 
 
 def test_https_credentials(ctx):
-    path = gitrepo.create_https_credentials(ctx, "test", classify_url("https://h.example/x.git"), "jam", "tok-123")
+    path = gitrepo.create_https_credentials(
+        ctx, "test", classify_url("https://h.example/x.git"), "jam", "tok-123"
+    )
     assert path == gitrepo.credentials_path(ctx.repo)
     assert b"tok-123" not in path.read_bytes()
     data = _secret(ctx)["data"]
@@ -630,7 +780,12 @@ def replace_secret_url(manifest: bytes, url: str) -> bytes:
 
 def write_credentials(ctx: Context, manifest: bytes) -> Path:
     path = credentials_path(ctx.repo)
-    atomic_write(path, ctx.sops.encrypt(manifest, filename=path.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        path,
+        ctx.sops.encrypt(
+            manifest, filename=path.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     return path
 
 
@@ -638,12 +793,27 @@ def generate_ssh_key(runner: Runner, comment: str) -> tuple[str, str]:
     """A fresh ed25519 key pair; the private half only exists in a private temp dir and in memory."""
     with private_tempdir() as work:
         key = work / "key"
-        runner.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", comment, "-f", str(key)])
+        runner.run(
+            [
+                "ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                comment,
+                "-f",
+                str(key),
+            ]
+        )
         return key.read_text(), (work / "key.pub").read_text().strip()
 
 
 def needs_known_hosts(url: GitUrl) -> bool:
-    return url.kind == "ssh" and (url.host not in ARGOCD_KNOWN_HOSTS or url.port is not None)
+    return url.kind == "ssh" and (
+        url.host not in ARGOCD_KNOWN_HOSTS or url.port is not None
+    )
 
 
 def scan_host_keys(runner: Runner, url: GitUrl) -> list[str]:
@@ -659,7 +829,10 @@ def scan_host_keys(runner: Runner, url: GitUrl) -> list[str]:
     ]
     if not lines:
         where = f"{url.host}:{url.port}" if url.port else url.host
-        raise CommandFailed(f"no SSH host keys from {where}", hint="host unreachable or no SSH on that port")
+        raise CommandFailed(
+            f"no SSH host keys from {where}",
+            hint="host unreachable or no SSH on that port",
+        )
     return lines
 
 
@@ -675,7 +848,9 @@ def add_extra_hosts(repo: Repo, lines: list[str]) -> bool:
     path = repo.gitops_dir / "values" / "argocd.yaml"
     data = (yamlio.load(path.read_text()) if path.is_file() else None) or CommentedMap()
     ssh = data.setdefault("configs", CommentedMap()).setdefault("ssh", CommentedMap())
-    existing = [line for line in str(ssh.get("extraHosts") or "").splitlines() if line.strip()]
+    existing = [
+        line for line in str(ssh.get("extraHosts") or "").splitlines() if line.strip()
+    ]
     new = [line for line in lines if line not in existing]
     if not new:
         return False
@@ -699,7 +874,9 @@ def create_ssh_credentials(
     if needs_known_hosts(url):
         host_lines = scan_host_keys(ctx.runner, url)
         shown = "\n".join(f"  {fingerprint(line)}" for line in host_lines)
-        if not confirm(f"SSH host keys of {url.host}:\n{shown}\nTrust them for Argo CD?"):
+        if not confirm(
+            f"SSH host keys of {url.host}:\n{shown}\nTrust them for Argo CD?"
+        ):
             raise ValidationError("host keys not confirmed; nothing was written")
     private, public = generate_ssh_key(ctx.runner, f"talkub-{name}")
     path = write_credentials(ctx, build_secret(name, url.url, ssh_private_key=private))
@@ -707,8 +884,12 @@ def create_ssh_credentials(
     return SshCredentials(path, public, written)
 
 
-def create_https_credentials(ctx: Context, name: str, url: GitUrl, username: str, token: str) -> Path:
-    return write_credentials(ctx, build_secret(name, url.url, username=username, password=token))
+def create_https_credentials(
+    ctx: Context, name: str, url: GitUrl, username: str, token: str
+) -> Path:
+    return write_credentials(
+        ctx, build_secret(name, url.url, username=username, password=token)
+    )
 ```
 
 Note: `gitrepo` now imports `talkub.context`; `context` does not import `gitrepo`, so there is no cycle. If `CommentedMap.setdefault` on a mapping loaded from YAML returns a plain dict for an existing `configs: {}` flow mapping, it still works (`setdefault` then assignment); the test covers the block-style file written by `init`.
@@ -768,9 +949,15 @@ SSH_URL = "git@github.com:me/test.git"
 
 @pytest.fixture
 def ctx(repo_with_configs):
-    for rel in ("gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml"):
+    for rel in (
+        "gitops/root.yaml",
+        "gitops/apps/argocd.yaml",
+        "gitops/apps/sealed-secrets.yaml",
+    ):
         template = (TEMPLATES / "repo" / (rel + ".tmpl")).read_text()
-        text = Template(template).safe_substitute({"git_url": PLACEHOLDER, "name": "test"})
+        text = Template(template).safe_substitute(
+            {"git_url": PLACEHOLDER, "name": "test"}
+        )
         atomic_write(repo_with_configs.root / rel, text.encode())
     return Context.open(repo_with_configs)
 
@@ -781,7 +968,11 @@ def _creds(ctx, url, **kind):
 
 def test_set_url_from_placeholder_without_git_block(ctx):
     result = gitrepo.set_url(ctx, SSH_URL)
-    assert len(result.changed) == 3 and not result.credentials_updated and not result.unchanged
+    assert (
+        len(result.changed) == 3
+        and not result.credentials_updated
+        and not result.unchanged
+    )
     assert ctx.repo.load_settings().git == GitSpec(SSH_URL)
     assert PLACEHOLDER not in (ctx.repo.gitops_dir / "root.yaml").read_text()
 
@@ -800,7 +991,9 @@ def test_set_url_from_stored_url_updates_credentials(ctx):
     secret = yamlio.load(ctx.sops.decrypt(gitrepo.credentials_path(ctx.repo)).decode())
     import base64
 
-    assert base64.b64decode(secret["data"]["url"]).decode() == "git@gitlab.com:me/test.git"
+    assert (
+        base64.b64decode(secret["data"]["url"]).decode() == "git@gitlab.com:me/test.git"
+    )
 
 
 def test_set_url_kind_mismatch_changes_nothing(ctx):
@@ -810,14 +1003,18 @@ def test_set_url_kind_mismatch_changes_nothing(ctx):
     with pytest.raises(ValidationError) as exc:
         gitrepo.set_url(ctx, "https://github.com/me/test.git")
     assert "--remove" in (exc.value.hint or "")
-    assert {p: p.read_bytes() for p in ctx.repo.root.rglob("*") if p.is_file()} == before
+    assert {
+        p: p.read_bytes() for p in ctx.repo.root.rglob("*") if p.is_file()
+    } == before
 
 
 def test_set_url_without_git_block_and_no_placeholder_match_fails(ctx):
     root = ctx.repo.gitops_dir / "root.yaml"
     root.write_text(root.read_text().replace(PLACEHOLDER, "https://hand.example/x.git"))
     for app in (ctx.repo.gitops_dir / "apps").iterdir():
-        app.write_text(app.read_text().replace(PLACEHOLDER, "https://hand.example/x.git"))
+        app.write_text(
+            app.read_text().replace(PLACEHOLDER, "https://hand.example/x.git")
+        )
     with pytest.raises(ValidationError):
         gitrepo.set_url(ctx, SSH_URL)
     assert ctx.repo.load_settings().git is None
@@ -836,7 +1033,9 @@ def test_apply_credentials_then_root(ctx, spy):
     with kube_session(ctx) as kube:
         gitrepo.apply(ctx, kube)
     first, second = kubectl.calls
-    assert first["args"][:3] == ["apply", "--server-side", "-f"] and first["files"]["-f"]
+    assert (
+        first["args"][:3] == ["apply", "--server-side", "-f"] and first["files"]["-f"]
+    )
     assert second["args"] == ["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")]
 
 
@@ -861,11 +1060,20 @@ def test_bootstrap_applies_repo_credentials_before_root(cluster):
 
     repo, spies = cluster
     ctx = Context.open(repo)
-    gitrepo.write_credentials(ctx, gitrepo.build_secret("test", "git@github.com:me/x.git", ssh_private_key="K\n"))
+    gitrepo.write_credentials(
+        ctx,
+        gitrepo.build_secret("test", "git@github.com:me/x.git", ssh_private_key="K\n"),
+    )
     bootstrap.run(ctx)
     applies = [c for c in spies["kubectl"].calls if c["args"][0] == "apply"]
-    root = [i for i, c in enumerate(applies) if c["args"] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]]
-    creds = [i for i, c in enumerate(applies) if c["args"][:2] == ["apply", "--server-side"]]
+    root = [
+        i
+        for i, c in enumerate(applies)
+        if c["args"] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]
+    ]
+    creds = [
+        i for i, c in enumerate(applies) if c["args"][:2] == ["apply", "--server-side"]
+    ]
     assert root and creds and max(creds) < root[0]
 ```
 
@@ -892,7 +1100,9 @@ def set_url(ctx: Context, url: str) -> SetUrlResult:
     """Point settings, gitops repoURLs and stored credentials at `url`. Never touches the cluster."""
     new = classify_url(url)
     settings = ctx.repo.load_settings()
-    old = settings.git.url if settings.git is not None else placeholder_url(settings.name)
+    old = (
+        settings.git.url if settings.git is not None else placeholder_url(settings.name)
+    )
     if old == new.url:
         return SetUrlResult([], False, True)
 
@@ -922,7 +1132,9 @@ def apply(ctx: Context, kube: KubeSession) -> None:
     creds = credentials_path(ctx.repo)
     if creds.is_file():
         with decrypted(ctx.sops, {"repo-credentials.yaml": creds}) as plain:
-            kube.kubectl(["apply", "--server-side", "-f", str(plain["repo-credentials.yaml"])])
+            kube.kubectl(
+                ["apply", "--server-side", "-f", str(plain["repo-credentials.yaml"])]
+            )
     kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
 
 
@@ -1007,18 +1219,39 @@ def _run(argv):
 
 @pytest.fixture
 def repo(repo_with_configs):
-    for rel in ("gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml", "gitops/values/argocd.yaml"):
-        template = (TEMPLATES / "repo" / (rel + ".tmpl")) if (TEMPLATES / "repo" / (rel + ".tmpl")).is_file() else (TEMPLATES / "repo" / rel)
-        text = Template(template.read_text()).safe_substitute({"git_url": PLACEHOLDER, "name": "test"})
+    for rel in (
+        "gitops/root.yaml",
+        "gitops/apps/argocd.yaml",
+        "gitops/apps/sealed-secrets.yaml",
+        "gitops/values/argocd.yaml",
+    ):
+        template = (
+            (TEMPLATES / "repo" / (rel + ".tmpl"))
+            if (TEMPLATES / "repo" / (rel + ".tmpl")).is_file()
+            else (TEMPLATES / "repo" / rel)
+        )
+        text = Template(template.read_text()).safe_substitute(
+            {"git_url": PLACEHOLDER, "name": "test"}
+        )
         atomic_write(repo_with_configs.root / rel, text.encode())
     return repo_with_configs
 
 
 def test_set_url_prints_files_and_next_step(repo, capfd):
-    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]) == 0
+    assert (
+        _run(
+            ["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]
+        )
+        == 0
+    )
     out = capfd.readouterr().out
     assert "updated gitops/root.yaml" in out and "talkub repo apply" in out
-    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]) == 0
+    assert (
+        _run(
+            ["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]
+        )
+        == 0
+    )
     assert "already set" in capfd.readouterr().out
 
 
@@ -1036,10 +1269,29 @@ def test_ssh_credentials_print_public_key(repo, capfd):
 
 
 def test_https_credentials_from_token_file(repo, tmp_path, capfd):
-    _run(["--repo", str(repo.root), "repo", "set-url", "https://git.example.com/me/test.git"])
+    _run(
+        [
+            "--repo",
+            str(repo.root),
+            "repo",
+            "set-url",
+            "https://git.example.com/me/test.git",
+        ]
+    )
     token = tmp_path / "token"
     token.write_text("tok-abc\n")
-    code = _run(["--repo", str(repo.root), "repo", "credentials", "--username", "jam", "--token-file", str(token)])
+    code = _run(
+        [
+            "--repo",
+            str(repo.root),
+            "repo",
+            "credentials",
+            "--username",
+            "jam",
+            "--token-file",
+            str(token),
+        ]
+    )
     assert code == 0
     assert "tok-abc" not in capfd.readouterr().out
     assert gitrepo.credentials_path(repo).is_file()
@@ -1047,7 +1299,10 @@ def test_https_credentials_from_token_file(repo, tmp_path, capfd):
 
 def test_ssh_url_rejects_https_options(repo, tmp_path, capfd):
     _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"])
-    assert _run(["--repo", str(repo.root), "repo", "credentials", "--username", "jam"]) == 1
+    assert (
+        _run(["--repo", str(repo.root), "repo", "credentials", "--username", "jam"])
+        == 1
+    )
 
 
 def test_existing_credentials_ask_before_replacing(repo, monkeypatch, capfd):
@@ -1105,7 +1360,9 @@ def read_secret(path: Path | None, prompt: str, repo_root: Path | None = None) -
         value = path.expanduser().read_text().strip()
     except OSError as err:
         raise ValidationError(f"cannot read {path}: {err.strerror}") from None
-    if repo_root is not None and path.expanduser().resolve().is_relative_to(repo_root.resolve()):
+    if repo_root is not None and path.expanduser().resolve().is_relative_to(
+        repo_root.resolve()
+    ):
         print(
             f"warning: {path} is inside the cluster repo; the plaintext secret file must not be "
             "committed — delete it after use",
@@ -1133,12 +1390,16 @@ from talkub.cli.prompts import read_secret
 from talkub.errors import ValidationError
 from talkub.kube import kube_session
 
-app = typer.Typer(help="The git repo Argo CD pulls from: URL and credentials.", no_args_is_help=True)
+app = typer.Typer(
+    help="The git repo Argo CD pulls from: URL and credentials.", no_args_is_help=True
+)
 NEXT = "next: commit, push, then `talkub repo apply`"
 
 
 @app.command("set-url")
-def set_url(ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTPS git URL.")) -> None:
+def set_url(
+    ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTPS git URL.")
+) -> None:
     """Store the git URL and point the gitops/ repoURLs at it (files only)."""
     context = ctx.obj.context()
     result = gitrepo.set_url(context, url)
@@ -1155,9 +1416,17 @@ def set_url(ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTP
 @app.command("credentials")
 def credentials(
     ctx: typer.Context,
-    username: str = typer.Option(None, "--username", help="HTTPS user name (default: prompt)."),
-    token_file: Path = typer.Option(None, "--token-file", help="File with the HTTPS token (default: hidden prompt)."),
-    remove: bool = typer.Option(False, "--remove", help="Delete the stored credentials (the cluster keeps its copy)."),
+    username: str = typer.Option(
+        None, "--username", help="HTTPS user name (default: prompt)."
+    ),
+    token_file: Path = typer.Option(
+        None, "--token-file", help="File with the HTTPS token (default: hidden prompt)."
+    ),
+    remove: bool = typer.Option(
+        False,
+        "--remove",
+        help="Delete the stored credentials (the cluster keeps its copy).",
+    ),
 ) -> None:
     """Create Argo CD credentials for the repo: SSH deploy key or HTTPS token."""
     context = ctx.obj.context()
@@ -1170,18 +1439,27 @@ def credentials(
             return
         path.unlink()
         print(f"removed {repo.rel(path)}")
-        print(f"note: the cluster keeps its copy; `talkub k -n argocd delete secret repo-{settings.name}` removes it")
+        print(
+            f"note: the cluster keeps its copy; `talkub k -n argocd delete secret repo-{settings.name}` removes it"
+        )
         return
     if settings.git is None:
-        raise ValidationError("no git URL in .talkub.yaml", hint="talkub repo set-url <url>")
+        raise ValidationError(
+            "no git URL in .talkub.yaml", hint="talkub repo set-url <url>"
+        )
     url = gitrepo.classify_url(settings.git.url)
     if url.kind == "ssh" and (username or token_file):
         raise ValidationError("--username/--token-file are for https URLs")
-    if path.exists() and not typer.confirm("Replace the existing repo credentials?", default=False):
+    if path.exists() and not typer.confirm(
+        "Replace the existing repo credentials?", default=False
+    ):
         raise typer.Exit(1)
     if url.kind == "ssh":
         result = gitrepo.create_ssh_credentials(
-            context, settings.name, url, confirm=lambda question: typer.confirm(question, default=False)
+            context,
+            settings.name,
+            url,
+            confirm=lambda question: typer.confirm(question, default=False),
         )
         print(f"wrote {repo.rel(result.path)}")
         if result.known_hosts_written:
@@ -1191,7 +1469,9 @@ def credentials(
     else:
         user = username or typer.prompt("User name")
         token = read_secret(token_file, "Token: ", repo_root=repo.root)
-        print(f"wrote {repo.rel(gitrepo.create_https_credentials(context, settings.name, url, user, token))}")
+        print(
+            f"wrote {repo.rel(gitrepo.create_https_credentials(context, settings.name, url, user, token))}"
+        )
     print(NEXT)
 
 
@@ -1249,12 +1529,26 @@ from talkub.runner import Runner
 @pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
 def test_git_init_creates_repo_and_origin(tmp_path):
     assert gitrepo.git_init(tmp_path, NEW, Runner()) == []
-    remote = subprocess.run(["git", "-C", str(tmp_path), "remote", "get-url", "origin"], capture_output=True, text=True)
+    remote = subprocess.run(
+        ["git", "-C", str(tmp_path), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+    )
     assert remote.stdout.strip() == NEW
-    branch = subprocess.run(["git", "-C", str(tmp_path), "symbolic-ref", "--short", "HEAD"], capture_output=True, text=True)
+    branch = subprocess.run(
+        ["git", "-C", str(tmp_path), "symbolic-ref", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
     assert branch.stdout.strip() == "main"
-    assert gitrepo.git_init(tmp_path, "git@other:x.git", Runner()) == []  # existing origin is kept
-    remote = subprocess.run(["git", "-C", str(tmp_path), "remote", "get-url", "origin"], capture_output=True, text=True)
+    assert (
+        gitrepo.git_init(tmp_path, "git@other:x.git", Runner()) == []
+    )  # existing origin is kept
+    remote = subprocess.run(
+        ["git", "-C", str(tmp_path), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+    )
     assert remote.stdout.strip() == NEW
 
 
@@ -1287,21 +1581,25 @@ def test_init_rejects_invalid_git_url(tmp_path, software_identity):
     from dataclasses import replace
 
     with pytest.raises(ValidationError):
-        init_cluster(replace(request, git_url="http://git.example.com/demo.git"), Runner())
+        init_cluster(
+            replace(request, git_url="http://git.example.com/demo.git"), Runner()
+        )
     assert not (tmp_path / "demo").exists()
 ```
 
 In `tests/test_cli_manage.py`, in the existing successful `init` test (the one running `init demo ... --git-url https://git.example.com/demo.git`), after `assert code == 0` add:
 
 ```python
-    import shutil as _shutil
-    import subprocess as _subprocess
+import shutil as _shutil
+import subprocess as _subprocess
 
-    if _shutil.which("git"):
-        remote = _subprocess.run(
-            ["git", "-C", str(tmp_path / "demo"), "remote", "get-url", "origin"], capture_output=True, text=True
-        )
-        assert remote.stdout.strip() == "https://git.example.com/demo.git"
+if _shutil.which("git"):
+    remote = _subprocess.run(
+        ["git", "-C", str(tmp_path / "demo"), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+    )
+    assert remote.stdout.strip() == "https://git.example.com/demo.git"
 ```
 
 In `tests/test_checks.py` add (reuse that file's existing fixture for a checked repo; look at how other tests there build a repo that passes `run_checks` and use the same one — named `checked_repo` below):
@@ -1313,7 +1611,9 @@ def test_plaintext_repo_secret_in_bootstrap_is_an_error(checked_repo):
 
     target = checked_repo.root / "bootstrap" / "repo.yaml"
     target.parent.mkdir(exist_ok=True)
-    target.write_bytes(gitrepo.build_secret("demo", "git@github.com:me/x.git", ssh_private_key="K\n"))
+    target.write_bytes(
+        gitrepo.build_secret("demo", "git@github.com:me/x.git", ssh_private_key="K\n")
+    )
     messages = [f.message for f in run_checks(checked_repo)]
     assert any("bootstrap/repo.yaml" in m and "plaintext" in m for m in messages)
 ```
@@ -1331,15 +1631,28 @@ Expected: FAIL (`AttributeError: ... git_init`, `settings.git is None`, no findi
 def git_init(root: Path, url: str, runner: Runner) -> list[str]:
     """`git init -b main` and `origin` = url where missing. Problems become warnings, not errors."""
     if shutil.which("git") is None:
-        return [f"git not found; run `git init -b main && git remote add origin {url}` in {root}"]
+        return [
+            f"git not found; run `git init -b main && git remote add origin {url}` in {root}"
+        ]
     if not (root / ".git").exists():
         proc = runner.run(["git", "init", "-q", "-b", "main"], cwd=root, check=False)
         if proc.returncode != 0:
-            return [f"git init failed: {(proc.stderr or b'').decode(errors='replace').strip()}"]
-    if runner.run(["git", "remote", "get-url", "origin"], cwd=root, check=False).returncode != 0:
-        proc = runner.run(["git", "remote", "add", "origin", url], cwd=root, check=False)
+            return [
+                f"git init failed: {(proc.stderr or b'').decode(errors='replace').strip()}"
+            ]
+    if (
+        runner.run(
+            ["git", "remote", "get-url", "origin"], cwd=root, check=False
+        ).returncode
+        != 0
+    ):
+        proc = runner.run(
+            ["git", "remote", "add", "origin", url], cwd=root, check=False
+        )
         if proc.returncode != 0:
-            return [f"could not add remote origin: {(proc.stderr or b'').decode(errors='replace').strip()}"]
+            return [
+                f"could not add remote origin: {(proc.stderr or b'').decode(errors='replace').strip()}"
+            ]
     return []
 ```
 
@@ -1355,21 +1668,30 @@ def git_init(root: Path, url: str, runner: Runner) -> list[str]:
 (import `from talkub import gitrepo` and `sys` if missing) and change the final line to:
 
 ```python
-    print("next: add a second admin or backup key (talkub admin add), then git add -A && git commit")
+print(
+    "next: add a second admin or backup key (talkub admin add), then git add -A && git commit"
+)
 ```
 
 `src/talkub/checks.py`, in `run_checks` before the `AGE-SECRET-KEY` loop (import `SECRET_TYPE_LABEL` from `talkub.gitrepo`; if that creates an import cycle, define the literal string locally with a comment pointing at `gitrepo.SECRET_TYPE_LABEL`):
 
 ```python
-    bootstrap_dir = repo.root / "bootstrap"
-    if bootstrap_dir.is_dir():
-        for path in sorted(bootstrap_dir.iterdir()):
-            if path.name.endswith(".sops.yaml") or path.suffix not in (".yaml", ".yml") or not path.is_file():
-                continue  # *.sops.yaml are checked for encryption above
-            if SECRET_TYPE_LABEL.encode() in path.read_bytes():
-                findings.append(
-                    Finding("error", f"{repo.rel(path)} is a plaintext Argo CD repository secret")
+bootstrap_dir = repo.root / "bootstrap"
+if bootstrap_dir.is_dir():
+    for path in sorted(bootstrap_dir.iterdir()):
+        if (
+            path.name.endswith(".sops.yaml")
+            or path.suffix not in (".yaml", ".yml")
+            or not path.is_file()
+        ):
+            continue  # *.sops.yaml are checked for encryption above
+        if SECRET_TYPE_LABEL.encode() in path.read_bytes():
+            findings.append(
+                Finding(
+                    "error",
+                    f"{repo.rel(path)} is a plaintext Argo CD repository secret",
                 )
+            )
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**

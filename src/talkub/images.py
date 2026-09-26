@@ -11,10 +11,14 @@ from talkub.schematic import customization_hash
 
 
 def used_platforms(settings: Settings) -> list[str]:
-    return sorted({settings.platform} | {settings.node_platform(name) for name in settings.nodes})
+    return sorted(
+        {settings.platform} | {settings.node_platform(name) for name in settings.nodes}
+    )
 
 
-def refresh(settings: Settings, client: FactoryClient, platforms: Iterable[str]) -> bool:
+def refresh(
+    settings: Settings, client: FactoryClient, platforms: Iterable[str]
+) -> bool:
     """Resolve schematic IDs whose cache is missing or outdated. Returns True if anything changed."""
     changed = False
     for platform in platforms:

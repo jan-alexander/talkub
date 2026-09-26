@@ -12,12 +12,16 @@ from talkub.cli.prompts import read_secret
 from talkub.errors import ValidationError
 from talkub.kube import kube_session
 
-app = typer.Typer(help="The git repo Argo CD pulls from: URL and credentials.", no_args_is_help=True)
+app = typer.Typer(
+    help="The git repo Argo CD pulls from: URL and credentials.", no_args_is_help=True
+)
 NEXT = "next: commit, push, then `talkub repo apply`"
 
 
 @app.command("set-url")
-def set_url(ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTPS git URL.")) -> None:
+def set_url(
+    ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTPS git URL.")
+) -> None:
     """Store the git URL and point the gitops/ repoURLs at it (files only)."""
     context = ctx.obj.context()
     result = gitrepo.set_url(context, url)
@@ -42,9 +46,17 @@ def set_url(ctx: typer.Context, url: str = typer.Argument(..., help="SSH or HTTP
 @app.command("credentials")
 def credentials(
     ctx: typer.Context,
-    username: str = typer.Option(None, "--username", help="HTTPS user name (default: prompt)."),
-    token_file: Path = typer.Option(None, "--token-file", help="File with the HTTPS token (default: hidden prompt)."),
-    remove: bool = typer.Option(False, "--remove", help="Delete the stored credentials (the cluster keeps its copy)."),
+    username: str = typer.Option(
+        None, "--username", help="HTTPS user name (default: prompt)."
+    ),
+    token_file: Path = typer.Option(
+        None, "--token-file", help="File with the HTTPS token (default: hidden prompt)."
+    ),
+    remove: bool = typer.Option(
+        False,
+        "--remove",
+        help="Delete the stored credentials (the cluster keeps its copy).",
+    ),
 ) -> None:
     """Create Argo CD credentials for the repo: SSH deploy key or HTTPS token."""
     context = ctx.obj.context()
@@ -57,18 +69,27 @@ def credentials(
             return
         path.unlink()
         print(f"removed {repo.rel(path)}")
-        print(f"note: the cluster keeps its copy; `talkub k -n argocd delete secret repo-{settings.name}` removes it")
+        print(
+            f"note: the cluster keeps its copy; `talkub k -n argocd delete secret repo-{settings.name}` removes it"
+        )
         return
     if settings.git is None:
-        raise ValidationError("no git URL in .talkub.yaml", hint="talkub repo set-url <url>")
+        raise ValidationError(
+            "no git URL in .talkub.yaml", hint="talkub repo set-url <url>"
+        )
     url = gitrepo.classify_url(settings.git.url)
     if url.kind == "ssh" and (username or token_file):
         raise ValidationError("--username/--token-file are for https URLs")
-    if path.exists() and not typer.confirm("Replace the existing repo credentials?", default=False):
+    if path.exists() and not typer.confirm(
+        "Replace the existing repo credentials?", default=False
+    ):
         raise typer.Exit(1)
     if url.kind == "ssh":
         result = gitrepo.create_ssh_credentials(
-            context, settings.name, url, confirm=lambda question: typer.confirm(question, default=False)
+            context,
+            settings.name,
+            url,
+            confirm=lambda question: typer.confirm(question, default=False),
         )
         print(f"wrote {repo.rel(result.path)}")
         if result.known_hosts_written:
@@ -79,7 +100,9 @@ def credentials(
     else:
         user = username or typer.prompt("User name")
         token = read_secret(token_file, "Token: ", repo_root=repo.root)
-        print(f"wrote {repo.rel(gitrepo.create_https_credentials(context, settings.name, url, user, token))}")
+        print(
+            f"wrote {repo.rel(gitrepo.create_https_credentials(context, settings.name, url, user, token))}"
+        )
     print(NEXT)
 
 
@@ -91,7 +114,9 @@ def apply(ctx: typer.Context) -> None:
         print(f"warning: {warning}", file=sys.stderr)
     with kube_session(context) as kube:
         if gitrepo.has_extra_hosts(context.repo):
-            print("upgrading Argo CD with the known hosts from gitops/values/argocd.yaml")
+            print(
+                "upgrading Argo CD with the known hosts from gitops/values/argocd.yaml"
+            )
             bootstrap.upgrade_argocd(context, kube)
         gitrepo.apply(context, kube)
     print("applied the repo credentials (if any) and gitops/root.yaml")

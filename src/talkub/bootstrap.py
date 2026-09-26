@@ -37,7 +37,11 @@ def upgrade_argocd(ctx: Context, kube: KubeSession) -> None:
 
 def _bootstrap_sources(repo: Repo) -> dict[str, HelmSource]:
     """The chart sources bootstrap installs, in install order (`ValidationError` if one is broken)."""
-    keys = [key for key in OPTIONAL_KEYS if (repo.gitops_dir / "apps" / f"{key}.yaml").exists()]
+    keys = [
+        key
+        for key in OPTIONAL_KEYS
+        if (repo.gitops_dir / "apps" / f"{key}.yaml").exists()
+    ]
     return {key: app_source(repo, key) for key in [*keys, *REQUIRED_KEYS]}
 
 
@@ -46,7 +50,11 @@ def run(ctx: Context) -> None:
         require_tool(tool)
     settings = ctx.repo.load_settings()
     sources = _bootstrap_sources(ctx.repo)
-    controlplanes = [n for n in ordered_nodes(settings, []) if settings.nodes[n].role == "controlplane"]
+    controlplanes = [
+        n
+        for n in ordered_nodes(settings, [])
+        if settings.nodes[n].role == "controlplane"
+    ]
     if not controlplanes:
         raise ValidationError("bootstrap needs a controlplane node")
     first = controlplanes[0]
@@ -56,16 +64,26 @@ def run(ctx: Context) -> None:
         _step(f"bootstrapping etcd on {first} ({address})")
         member = _etcd_member(talos, settings, controlplanes)
         if member is not None:
-            print(f"   etcd already has members on {member}; skipping bootstrap", flush=True)
+            print(
+                f"   etcd already has members on {member}; skipping bootstrap",
+                flush=True,
+            )
         else:
             _bootstrap_etcd(talos, address)
         _step("waiting for the cluster to become healthy")
-        code = talos.call(address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT])
+        code = talos.call(
+            address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT]
+        )
         if code != 0:
-            raise CommandFailed("the cluster did not become healthy", hint=f"talosctl health exited with {code}")
+            raise CommandFailed(
+                "the cluster did not become healthy",
+                hint=f"talosctl health exited with {code}",
+            )
         kubeconfig = talos.run(address, ["kubeconfig", "-", "--merge=false"]).stdout
     if tailscale.is_locked_down(ctx.repo):
-        kubeconfig = tailscale.rewrite_kubeconfig_server(kubeconfig, tailscale.admin_server(settings))
+        kubeconfig = tailscale.rewrite_kubeconfig_server(
+            kubeconfig, tailscale.admin_server(settings)
+        )
     _store_kubeconfig(ctx, kubeconfig)
 
     backup = sealing.key_backup_path(ctx.repo)
@@ -76,7 +94,9 @@ def run(ctx: Context) -> None:
                 _step("restoring the sealed-secrets key")
                 with decrypted(ctx.sops, {"sealing-key.yaml": backup}) as plain:
                     # server-side: no last-applied-configuration annotation carrying the private key
-                    kube.kubectl(["apply", "--server-side", "-f", str(plain["sealing-key.yaml"])])
+                    kube.kubectl(
+                        ["apply", "--server-side", "-f", str(plain["sealing-key.yaml"])]
+                    )
             _step(f"installing {source.release}")
             helm_install(kube, source, create_namespace=key in CREATE_NAMESPACE)
             if key != "sealed-secrets":
@@ -106,14 +126,27 @@ def run(ctx: Context) -> None:
 ETCD_PROBE_TIMEOUT = 20.0
 
 
-def _etcd_member(talos: TalosSession, settings: Settings, controlplanes: list[str]) -> str | None:
+def _etcd_member(
+    talos: TalosSession, settings: Settings, controlplanes: list[str]
+) -> str | None:
     """The first control plane whose etcd already has members (bootstrapping again would split etcd)."""
     for name in controlplanes:
-        proc = talos.run(settings.mgmt_address(name), ["etcd", "members"], check=False, timeout=ETCD_PROBE_TIMEOUT)
+        proc = talos.run(
+            settings.mgmt_address(name),
+            ["etcd", "members"],
+            check=False,
+            timeout=ETCD_PROBE_TIMEOUT,
+        )
         if proc.returncode == 124:
-            print(f"   etcd on {name} did not answer within {ETCD_PROBE_TIMEOUT:g}s; treating it as not bootstrapped", flush=True)
+            print(
+                f"   etcd on {name} did not answer within {ETCD_PROBE_TIMEOUT:g}s; treating it as not bootstrapped",
+                flush=True,
+            )
             continue
-        if proc.returncode == 0 and (etcd_member_count(proc.stdout.decode(errors="replace")) or 0) >= 1:
+        if (
+            proc.returncode == 0
+            and (etcd_member_count(proc.stdout.decode(errors="replace")) or 0) >= 1
+        ):
             return name
     return None
 
@@ -126,12 +159,17 @@ def _bootstrap_etcd(talos: TalosSession, address: str) -> None:
     if bootstrap_already_done(stderr):
         print("   etcd is already bootstrapped", flush=True)
         return
-    raise CommandFailed("talosctl bootstrap failed", hint=stderr.strip() or f"exit code {proc.returncode}")
+    raise CommandFailed(
+        "talosctl bootstrap failed",
+        hint=stderr.strip() or f"exit code {proc.returncode}",
+    )
 
 
 def _warn_if_restored_key_is_stale(ctx: Context, kube: KubeSession) -> None:
     """The controller may have rotated its key since the backup; warn, but do not back up automatically."""
-    proc = ctx.runner.run(["kubeseal", "--fetch-cert", *sealing.CONTROLLER], env=kube.env, check=False)
+    proc = ctx.runner.run(
+        ["kubeseal", "--fetch-cert", *sealing.CONTROLLER], env=kube.env, check=False
+    )
     if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
         sealing.warn_if_cert_changed(ctx.repo, proc.stdout)
 
@@ -141,7 +179,12 @@ def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
     if target.is_file() and ctx.sops.decrypt(target) == kubeconfig:
         print("   kubeconfig unchanged")
         return
-    atomic_write(target, ctx.sops.encrypt(kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        target,
+        ctx.sops.encrypt(
+            kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     print(f"   wrote {ctx.repo.rel(target)}")
 
 
@@ -152,19 +195,28 @@ def chart_ref(chart: ChartSpec) -> list[str]:
     return [chart.chart, "--repo", chart.repo]
 
 
-def helm_install(kube: KubeSession, source: HelmSource, *, create_namespace: bool) -> None:
+def helm_install(
+    kube: KubeSession, source: HelmSource, *, create_namespace: bool
+) -> None:
     """`helm upgrade --install` one Argo CD app's chart source as Argo CD would render it."""
     chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
     argv = [
-        "upgrade", "--install", source.release, *chart_ref(chart),
-        "--version", source.version,
-        "-n", source.namespace,
+        "upgrade",
+        "--install",
+        source.release,
+        *chart_ref(chart),
+        "--version",
+        source.version,
+        "-n",
+        source.namespace,
     ]
     for value_file in source.value_files:
         argv += ["-f", str(value_file)]
     with ExitStack() as stack:
         if source.inline_values is not None:
-            inline = stack.enter_context(private_file("values.yaml", source.inline_values.encode()))
+            inline = stack.enter_context(
+                private_file("values.yaml", source.inline_values.encode())
+            )
             argv += ["-f", str(inline)]
         argv += ["--wait", "--timeout", "10m"]
         if create_namespace:

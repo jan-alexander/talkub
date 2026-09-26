@@ -20,10 +20,21 @@ from talkub.kube import kube_session
 from talkub.repo import Repo
 from talkub.runner import require_tool
 
-CONTROLLER = ["--controller-name", "sealed-secrets-controller", "--controller-namespace", "kube-system"]
+CONTROLLER = [
+    "--controller-name",
+    "sealed-secrets-controller",
+    "--controller-namespace",
+    "kube-system",
+]
 KEY_LABEL = "sealedsecrets.bitnami.com/sealed-secrets-key"
 RUNTIME_FIELDS = (
-    "resourceVersion", "uid", "creationTimestamp", "managedFields", "ownerReferences", "generation", "selfLink",
+    "resourceVersion",
+    "uid",
+    "creationTimestamp",
+    "managedFields",
+    "ownerReferences",
+    "generation",
+    "selfLink",
 )
 _KEY = re.compile(r"[-._a-zA-Z0-9]+")
 
@@ -39,7 +50,9 @@ def key_backup_path(repo: Repo) -> Path:
 def check_key(key: str) -> None:
     """Secret data keys: letters, digits, '-', '_' and '.' (the Kubernetes rule)."""
     if not _KEY.fullmatch(key):
-        raise ValidationError(f"invalid secret key {key!r}", hint="use letters, digits, '-', '_' and '.'")
+        raise ValidationError(
+            f"invalid secret key {key!r}", hint="use letters, digits, '-', '_' and '.'"
+        )
 
 
 def _add(data: dict[str, str], key: str, value: bytes) -> None:
@@ -58,12 +71,16 @@ def secret_manifest(
 ) -> bytes:
     """A Secret manifest built in memory, so values never appear on a command line."""
     if not literals and not files and not prompted:
-        raise ValidationError("give at least one --from-literal, --from-file or --prompt")
+        raise ValidationError(
+            "give at least one --from-literal, --from-file or --prompt"
+        )
     data: dict[str, str] = {}
     for item in literals:
         key, sep, value = item.partition("=")
         if not sep:
-            raise ValidationError(f"invalid --from-literal {item!r}", hint="use key=value")
+            raise ValidationError(
+                f"invalid --from-literal {item!r}", hint="use key=value"
+            )
         _add(data, key, value.encode())
     for item in files:
         key, sep, path = item.partition("=")
@@ -91,11 +108,18 @@ def check_secret_manifest(manifest: bytes) -> None:
         docs = [doc for doc in yamlio.load_all(manifest.decode()) if doc]
     except (YAMLError, UnicodeDecodeError):
         raise ValidationError("input is not valid YAML") from None
-    if len(docs) != 1 or not isinstance(docs[0], Mapping) or docs[0].get("kind") != "Secret":
+    if (
+        len(docs) != 1
+        or not isinstance(docs[0], Mapping)
+        or docs[0].get("kind") != "Secret"
+    ):
         raise ValidationError("input must be exactly one `kind: Secret` manifest")
     metadata = docs[0].get("metadata")
     if not isinstance(metadata, Mapping) or not metadata.get("namespace"):
-        raise ValidationError("the Secret needs metadata.namespace", hint="sealed secrets are bound to their namespace")
+        raise ValidationError(
+            "the Secret needs metadata.namespace",
+            hint="sealed secrets are bound to their namespace",
+        )
 
 
 def warn_if_cert_changed(repo: Repo, live_cert: bytes) -> bool:
@@ -117,14 +141,18 @@ def sealing_cert(ctx: Context) -> bytes:
     if ctx.repo.kubeconfig.is_file():
         try:
             with kube_session(ctx) as kube:
-                proc = ctx.runner.run(["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env, check=False)
+                proc = ctx.runner.run(
+                    ["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env, check=False
+                )
         except TalkubError as err:
             reason = str(err)
         else:
             if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
                 warn_if_cert_changed(ctx.repo, proc.stdout)
                 return proc.stdout
-            reason = (proc.stderr or b"").decode().strip() or f"kubeseal exited with {proc.returncode}"
+            reason = (
+                proc.stderr or b""
+            ).decode().strip() or f"kubeseal exited with {proc.returncode}"
     fallback = cert_path(ctx.repo)
     if fallback.is_file():
         print(f"talkub: using {ctx.repo.rel(fallback)} ({reason})", file=sys.stderr)
@@ -143,12 +171,17 @@ def seal(ctx: Context, manifest: bytes) -> bytes:
     with private_file("sealing-cert.pem", cert) as cert_file:
         # Offline sealing against the certificate: kubeseal must not talk to any cluster here.
         argv = ["kubeseal", "--format", "yaml", "--cert", str(cert_file)]
-        return ctx.runner.run(argv, input=manifest, env={"KUBECONFIG": os.devnull}).stdout
+        return ctx.runner.run(
+            argv, input=manifest, env={"KUBECONFIG": os.devnull}
+        ).stdout
 
 
 def write_sealed(sealed: bytes, output: Path) -> None:
     if not output.name.endswith(".sealed.yaml"):
-        raise ValidationError(f"{output} must end with .sealed.yaml", hint="`talkub check` relies on the name")
+        raise ValidationError(
+            f"{output} must end with .sealed.yaml",
+            hint="`talkub check` relies on the name",
+        )
     atomic_write(output, sealed)
 
 
@@ -156,20 +189,32 @@ def backup_sealing_key(ctx: Context) -> list[Path]:
     """Store the controller key(s) SOPS-encrypted and the public certificate in bootstrap/."""
     require_tool("kubeseal")
     with kube_session(ctx) as kube:
-        listing = kube.kubectl(["get", "secret", "-n", "kube-system", "-l", KEY_LABEL, "-o", "yaml"]).stdout
-        cert = ctx.runner.run(["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env).stdout
+        listing = kube.kubectl(
+            ["get", "secret", "-n", "kube-system", "-l", KEY_LABEL, "-o", "yaml"]
+        ).stdout
+        cert = ctx.runner.run(
+            ["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env
+        ).stdout
     items = (yamlio.load(listing.decode()) or {}).get("items") or []
     if not items:
         raise ValidationError(
-            "no sealed-secrets key found in kube-system", hint="is the sealed-secrets controller running?"
+            "no sealed-secrets key found in kube-system",
+            hint="is the sealed-secrets controller running?",
         )
     for item in items:
         metadata = item.get("metadata") or {}
         for key in RUNTIME_FIELDS:
             metadata.pop(key, None)
-        (metadata.get("annotations") or {}).pop("kubectl.kubernetes.io/last-applied-configuration", None)
+        (metadata.get("annotations") or {}).pop(
+            "kubectl.kubernetes.io/last-applied-configuration", None
+        )
     plain = yamlio.dump({"apiVersion": "v1", "kind": "List", "items": items}).encode()
     backup = key_backup_path(ctx.repo)
-    atomic_write(backup, ctx.sops.encrypt(plain, filename=backup.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        backup,
+        ctx.sops.encrypt(
+            plain, filename=backup.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     atomic_write(cert_path(ctx.repo), cert)
     return [backup, cert_path(ctx.repo)]

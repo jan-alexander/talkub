@@ -98,15 +98,23 @@ def test_empty_customization():
 
 
 def test_customization_sorts_extensions_and_keeps_kernel_args():
-    assert customization(["siderolabs/tailscale", "siderolabs/intel-ucode"], ["console=ttyS0"]) == {
+    assert customization(
+        ["siderolabs/tailscale", "siderolabs/intel-ucode"], ["console=ttyS0"]
+    ) == {
         "extraKernelArgs": ["console=ttyS0"],
-        "systemExtensions": {"officialExtensions": ["siderolabs/intel-ucode", "siderolabs/tailscale"]},
+        "systemExtensions": {
+            "officialExtensions": ["siderolabs/intel-ucode", "siderolabs/tailscale"]
+        },
     }
 
 
 def test_document_is_the_factory_request_body():
     doc = yamlio.load(schematic_document(["siderolabs/tailscale"], []))
-    assert doc == {"customization": {"systemExtensions": {"officialExtensions": ["siderolabs/tailscale"]}}}
+    assert doc == {
+        "customization": {
+            "systemExtensions": {"officialExtensions": ["siderolabs/tailscale"]}
+        }
+    }
 
 
 def test_hash_ignores_extension_order_but_not_content():
@@ -128,9 +136,18 @@ def test_full_settings_roundtrip(tmp_path):
     settings = sample_settings()
     settings.platform = "hcloud"
     settings.schematics["hcloud"] = SchematicSpec(
-        extensions=["siderolabs/tailscale"], kernel_args=["console=ttyS0"], id="abc", hash="def"
+        extensions=["siderolabs/tailscale"],
+        kernel_args=["console=ttyS0"],
+        id="abc",
+        hash="def",
     )
-    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net", platform="metal", arch="arm64")
+    settings.nodes["w-01"] = NodeSpec(
+        ip="10.0.0.11",
+        role="worker",
+        mgmt="w-01.tail.ts.net",
+        platform="metal",
+        arch="arm64",
+    )
     settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24")
     repo = Repo(tmp_path)
     repo.write_settings(settings)
@@ -161,7 +178,10 @@ def test_phase1_install_image_must_be_a_factory_image():
 
 
 def test_parse_installer_image():
-    assert parse_installer_image("factory.talos.dev/hcloud-installer/abc123") == ("hcloud", "abc123")
+    assert parse_installer_image("factory.talos.dev/hcloud-installer/abc123") == (
+        "hcloud",
+        "abc123",
+    )
 
 
 def test_unknown_platform_and_arch_rejected():
@@ -173,8 +193,13 @@ def test_unknown_platform_and_arch_rejected():
 
 def test_installer_image_and_node_helpers():
     settings = sample_settings()
-    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud")
-    assert settings.installer_image("metal") == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    settings.nodes["w-01"] = NodeSpec(
+        ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud"
+    )
+    assert (
+        settings.installer_image("metal")
+        == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    )
     assert settings.node_platform("cp-01") == "metal"
     assert settings.node_platform("w-01") == "hcloud"
     assert settings.mgmt_address("cp-01") == "10.0.0.10"
@@ -225,9 +250,11 @@ def _request(target, public, platform="metal"):
 In `test_init_creates_complete_repo`, after `assert settings.talos_version.startswith("v")` add:
 
 ```python
-    assert settings.platform == "metal"
-    assert settings.schematics["metal"].is_current
-    assert settings.installer_image("metal").startswith("factory.talos.dev/metal-installer/")
+assert settings.platform == "metal"
+assert settings.schematics["metal"].is_current
+assert settings.installer_image("metal").startswith(
+    "factory.talos.dev/metal-installer/"
+)
 ```
 
 Add:
@@ -235,15 +262,22 @@ Add:
 ```python
 def test_init_with_hcloud_platform(tmp_path, software_identity, fake_bin):
     fake_bin("helm", HELM)
-    repo = init_cluster(_request(tmp_path / "demo", software_identity[1], platform="hcloud"), Runner())
+    repo = init_cluster(
+        _request(tmp_path / "demo", software_identity[1], platform="hcloud"), Runner()
+    )
     settings = repo.load_settings()
     assert settings.platform == "hcloud"
-    assert settings.installer_image("hcloud").startswith("factory.talos.dev/hcloud-installer/")
+    assert settings.installer_image("hcloud").startswith(
+        "factory.talos.dev/hcloud-installer/"
+    )
 
 
 def test_init_rejects_unknown_platform(tmp_path, software_identity):
     with pytest.raises(ValidationError):
-        init_cluster(_request(tmp_path / "demo", software_identity[1], platform="vmware"), Runner())
+        init_cluster(
+            _request(tmp_path / "demo", software_identity[1], platform="vmware"),
+            Runner(),
+        )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -280,7 +314,9 @@ def customization(extensions: Sequence[str], kernel_args: Sequence[str]) -> dict
 
 
 def customization_hash(extensions: Sequence[str], kernel_args: Sequence[str]) -> str:
-    data = json.dumps(customization(extensions, kernel_args), sort_keys=True, separators=(",", ":"))
+    data = json.dumps(
+        customization(extensions, kernel_args), sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(data.encode()).hexdigest()
 
 
@@ -345,7 +381,9 @@ class SchematicSpec:
 
     @property
     def is_current(self) -> bool:
-        return self.id is not None and self.hash == customization_hash(self.extensions, self.kernel_args)
+        return self.id is not None and self.hash == customization_hash(
+            self.extensions, self.kernel_args
+        )
 
 
 @dataclass(frozen=True)
@@ -368,7 +406,8 @@ def parse_installer_image(image: str) -> tuple[str, str]:
 def _check_choice(value: object, choices: tuple[str, ...], where: str) -> str:
     if value not in choices:
         raise ValidationError(
-            f"{MARKER}: {where} has invalid value {value!r}", hint=f"use one of: {', '.join(choices)}"
+            f"{MARKER}: {where} has invalid value {value!r}",
+            hint=f"use one of: {', '.join(choices)}",
         )
     return str(value)
 
@@ -406,7 +445,8 @@ class Settings:
             return self.nodes[name]
         except KeyError:
             raise ValidationError(
-                f"unknown node '{name}'", hint=f"known nodes: {', '.join(self.nodes) or 'none'}"
+                f"unknown node '{name}'",
+                hint=f"known nodes: {', '.join(self.nodes) or 'none'}",
             ) from None
 
     def node_platform(self, name: str) -> str:
@@ -444,7 +484,10 @@ class Settings:
             },
         }
         if self.tailscale is not None:
-            data["tailscale"] = {"tailnet": self.tailscale.tailnet, "nodeCidr": self.tailscale.node_cidr}
+            data["tailscale"] = {
+                "tailnet": self.tailscale.tailnet,
+                "nodeCidr": self.tailscale.node_cidr,
+            }
         return data
 
     @classmethod
@@ -456,7 +499,8 @@ class Settings:
             value = data.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 raise ValidationError(
-                    f"{MARKER}: '{key}' must be a string", hint=f'quote it, e.g. {key}: "{value}"'
+                    f"{MARKER}: '{key}' must be a string",
+                    hint=f'quote it, e.g. {key}: "{value}"',
                 )
             if not isinstance(value, str) or not value.strip():
                 raise ValidationError(f"{MARKER}: '{key}' must be a non-empty string")
@@ -465,7 +509,8 @@ class Settings:
         endpoint = text("endpoint")
         if not endpoint.startswith("https://"):
             raise ValidationError(
-                f"{MARKER}: 'endpoint' must start with https://", hint="e.g. https://10.0.0.10:6443"
+                f"{MARKER}: 'endpoint' must start with https://",
+                hint="e.g. https://10.0.0.10:6443",
             )
 
         platform = _check_choice(data.get("platform", "metal"), PLATFORMS, "'platform'")
@@ -480,8 +525,12 @@ class Settings:
                 if not isinstance(spec, Mapping):
                     raise ValidationError(f"{MARKER}: {where} must be a mapping")
                 schematics[str(name)] = SchematicSpec(
-                    extensions=_text_list(spec.get("extensions"), f"{where}.extensions"),
-                    kernel_args=_text_list(spec.get("kernelArgs"), f"{where}.kernelArgs"),
+                    extensions=_text_list(
+                        spec.get("extensions"), f"{where}.extensions"
+                    ),
+                    kernel_args=_text_list(
+                        spec.get("kernelArgs"), f"{where}.kernelArgs"
+                    ),
                     id=_optional_text(spec.get("id"), f"{where}.id"),
                     hash=_optional_text(spec.get("hash"), f"{where}.hash"),
                 )
@@ -489,7 +538,9 @@ class Settings:
             # Phase-1 format: a single installer image without extension intent.
             legacy_platform, legacy_id = parse_installer_image(text("installImage"))
             _check_choice(legacy_platform, PLATFORMS, "installImage platform")
-            schematics[legacy_platform] = SchematicSpec(id=legacy_id, hash=customization_hash([], []))
+            schematics[legacy_platform] = SchematicSpec(
+                id=legacy_id, hash=customization_hash([], [])
+            )
             if "platform" not in data:
                 platform = legacy_platform
 
@@ -521,7 +572,9 @@ class Settings:
         for name, spec in (data.get("charts") or {}).items():
             try:
                 charts[str(name)] = ChartSpec(
-                    repo=str(spec["repo"]), chart=str(spec["chart"]), version=str(spec["version"])
+                    repo=str(spec["repo"]),
+                    chart=str(spec["chart"]),
+                    version=str(spec["version"]),
                 )
             except (KeyError, TypeError):
                 raise ValidationError(
@@ -534,9 +587,13 @@ class Settings:
             if not isinstance(raw_tailscale, Mapping):
                 raise ValidationError(f"{MARKER}: 'tailscale' must be a mapping")
             tailnet = _optional_text(raw_tailscale.get("tailnet"), "tailscale.tailnet")
-            node_cidr = _optional_text(raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr")
+            node_cidr = _optional_text(
+                raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr"
+            )
             if tailnet is None or node_cidr is None:
-                raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet and nodeCidr")
+                raise ValidationError(
+                    f"{MARKER}: 'tailscale' needs tailnet and nodeCidr"
+                )
             tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr)
 
         return cls(
@@ -553,7 +610,10 @@ class Settings:
 
 
 def _schematic_dict(spec: SchematicSpec) -> dict:
-    data: dict = {"extensions": list(spec.extensions), "kernelArgs": list(spec.kernel_args)}
+    data: dict = {
+        "extensions": list(spec.extensions),
+        "kernelArgs": list(spec.kernel_args),
+    }
     if spec.id is not None:
         data["id"] = spec.id
     if spec.hash is not None:
@@ -641,7 +701,8 @@ class Repo:
         return sorted(
             path
             for path in self.root.rglob("*.sops.yaml")
-            if path.name != ".sops.yaml" and ".git" not in path.relative_to(self.root).parts
+            if path.name != ".sops.yaml"
+            and ".git" not in path.relative_to(self.root).parts
         )
 
 
@@ -666,7 +727,9 @@ def find_repo(start: Path, explicit: Path | None = None) -> Repo:
 Replace the `sample_settings` function and add the constant:
 
 ```python
-DEFAULT_SCHEMATIC_ID = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+DEFAULT_SCHEMATIC_ID = (
+    "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+)
 
 
 def sample_settings():
@@ -679,7 +742,11 @@ def sample_settings():
         talos_version="v1.14.0",
         kubernetes_version="1.37.0",
         platform="metal",
-        schematics={"metal": SchematicSpec(id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], []))},
+        schematics={
+            "metal": SchematicSpec(
+                id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], [])
+            )
+        },
         nodes={"cp-01": NodeSpec(ip="10.0.0.10")},
     )
 ```
@@ -689,7 +756,14 @@ def sample_settings():
 Change the imports:
 
 ```python
-from talkub.repo import PLATFORMS, NodeSpec, Repo, SchematicSpec, Settings, parse_installer_image
+from talkub.repo import (
+    PLATFORMS,
+    NodeSpec,
+    Repo,
+    SchematicSpec,
+    Settings,
+    parse_installer_image,
+)
 from talkub.schematic import customization_hash
 ```
 
@@ -702,28 +776,31 @@ Add the field to `InitRequest` (last field):
 In `_validate`, add after the endpoint check:
 
 ```python
-    if request.platform not in PLATFORMS:
-        raise ValidationError(
-            f"unknown platform {request.platform!r}", hint=f"use one of: {', '.join(PLATFORMS)}"
-        )
+if request.platform not in PLATFORMS:
+    raise ValidationError(
+        f"unknown platform {request.platform!r}",
+        hint=f"use one of: {', '.join(PLATFORMS)}",
+    )
 ```
 
 In `_populate`, replace the `settings = Settings(...)` statement with:
 
 ```python
-    # The schematic ID depends only on the customization, not on the platform, so the
-    # default (empty) schematic from talosctl is valid for every platform.
-    _, default_id = parse_installer_image(defaults.install_image)
-    settings = Settings(
-        name=request.name,
-        endpoint=request.endpoint,
-        talos_version=defaults.talos_version,
-        kubernetes_version=defaults.kubernetes_version,
-        platform=request.platform,
-        schematics={request.platform: SchematicSpec(id=default_id, hash=customization_hash([], []))},
-        nodes=dict(request.nodes),
-        charts=chart_specs,
-    )
+# The schematic ID depends only on the customization, not on the platform, so the
+# default (empty) schematic from talosctl is valid for every platform.
+_, default_id = parse_installer_image(defaults.install_image)
+settings = Settings(
+    name=request.name,
+    endpoint=request.endpoint,
+    talos_version=defaults.talos_version,
+    kubernetes_version=defaults.kubernetes_version,
+    platform=request.platform,
+    schematics={
+        request.platform: SchematicSpec(id=default_id, hash=customization_hash([], []))
+    },
+    nodes=dict(request.nodes),
+    charts=chart_specs,
+)
 ```
 
 - [ ] **Step 7: Run tests to verify they pass**
@@ -759,12 +836,12 @@ git commit -m "feat: platforms and schematics in .talkub.yaml, migrate installIm
 In `isolated_env`, extend the tuple of removed variables with the proxy variables so the local stub is reached directly:
 
 ```python
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
+("HTTP_PROXY",)
+("HTTPS_PROXY",)
+("ALL_PROXY",)
+("http_proxy",)
+("https_proxy",)
+("all_proxy",)
 ```
 
 Append the fixture:
@@ -785,7 +862,11 @@ def factory_stub(monkeypatch):
 
     state = SimpleNamespace(
         requests=[],
-        extensions=["siderolabs/intel-ucode", "siderolabs/iscsi-tools", "siderolabs/tailscale"],
+        extensions=[
+            "siderolabs/intel-ucode",
+            "siderolabs/iscsi-tools",
+            "siderolabs/tailscale",
+        ],
         fail=False,
     )
 
@@ -812,12 +893,20 @@ def factory_stub(monkeypatch):
             state.requests.append(("GET", self.path, b""))
             if state.fail:
                 return self._reply(500, {"error": "boom"})
-            self._reply(200, [{"name": name, "ref": f"ghcr.io/{name}:1"} for name in state.extensions])
+            self._reply(
+                200,
+                [
+                    {"name": name, "ref": f"ghcr.io/{name}:1"}
+                    for name in state.extensions
+                ],
+            )
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    monkeypatch.setenv("TALKUB_FACTORY_URL", f"http://127.0.0.1:{server.server_address[1]}")
+    monkeypatch.setenv(
+        "TALKUB_FACTORY_URL", f"http://127.0.0.1:{server.server_address[1]}"
+    )
     yield state
     server.shutdown()
     server.server_close()
@@ -839,14 +928,23 @@ from talkub.schematic import schematic_document
 
 def test_schematic_id_posts_the_document(factory_stub):
     body = schematic_document(["siderolabs/tailscale"], [])
-    assert FactoryClient().schematic_id(["siderolabs/tailscale"], []) == hashlib.sha256(body.encode()).hexdigest()
+    assert (
+        FactoryClient().schematic_id(["siderolabs/tailscale"], [])
+        == hashlib.sha256(body.encode()).hexdigest()
+    )
     assert factory_stub.requests == [("POST", "/schematics", body.encode())]
 
 
 def test_official_extensions_sorted(factory_stub):
     factory_stub.extensions = ["siderolabs/tailscale", "siderolabs/amdgpu"]
-    assert FactoryClient().official_extensions("v1.14.0") == ["siderolabs/amdgpu", "siderolabs/tailscale"]
-    assert factory_stub.requests[0][:2] == ("GET", "/version/v1.14.0/extensions/official")
+    assert FactoryClient().official_extensions("v1.14.0") == [
+        "siderolabs/amdgpu",
+        "siderolabs/tailscale",
+    ]
+    assert factory_stub.requests[0][:2] == (
+        "GET",
+        "/version/v1.14.0/extensions/official",
+    )
 
 
 def test_server_error_is_reported(factory_stub):
@@ -858,12 +956,20 @@ def test_server_error_is_reported(factory_stub):
 
 def test_unreachable_factory(monkeypatch):
     with pytest.raises(CommandFailed):
-        FactoryClient(base_url="http://127.0.0.1:9", timeout=2).official_extensions("v1.14.0")
+        FactoryClient(base_url="http://127.0.0.1:9", timeout=2).official_extensions(
+            "v1.14.0"
+        )
 
 
 def test_boot_media_urls():
-    assert boot_media_url("abc", "v1.14.0", "metal", "amd64") == "https://factory.talos.dev/image/abc/v1.14.0/metal-amd64.iso"
-    assert boot_media_url("abc", "v1.14.0", "hcloud", "arm64") == "https://factory.talos.dev/image/abc/v1.14.0/hcloud-arm64.raw.xz"
+    assert (
+        boot_media_url("abc", "v1.14.0", "metal", "amd64")
+        == "https://factory.talos.dev/image/abc/v1.14.0/metal-amd64.iso"
+    )
+    assert (
+        boot_media_url("abc", "v1.14.0", "hcloud", "arm64")
+        == "https://factory.talos.dev/image/abc/v1.14.0/hcloud-arm64.raw.xz"
+    )
 ```
 
 `tests/test_images.py`:
@@ -905,14 +1011,23 @@ def test_add_extensions_validates_names(factory_stub):
 def test_add_and_remove_extensions(factory_stub):
     settings = sample_settings()
     client = FactoryClient()
-    assert images.add_extensions(settings, "metal", ["siderolabs/tailscale", "siderolabs/intel-ucode"], client) == [
+    assert images.add_extensions(
+        settings, "metal", ["siderolabs/tailscale", "siderolabs/intel-ucode"], client
+    ) == [
         "siderolabs/intel-ucode",
         "siderolabs/tailscale",
     ]
-    assert images.add_extensions(settings, "metal", ["siderolabs/tailscale"], client) == []
-    assert settings.schematics["metal"].extensions == ["siderolabs/intel-ucode", "siderolabs/tailscale"]
+    assert (
+        images.add_extensions(settings, "metal", ["siderolabs/tailscale"], client) == []
+    )
+    assert settings.schematics["metal"].extensions == [
+        "siderolabs/intel-ucode",
+        "siderolabs/tailscale",
+    ]
     assert settings.schematics["metal"].is_current
-    assert images.remove_extensions(settings, "metal", ["siderolabs/tailscale"], client) == ["siderolabs/tailscale"]
+    assert images.remove_extensions(
+        settings, "metal", ["siderolabs/tailscale"], client
+    ) == ["siderolabs/tailscale"]
     assert settings.schematics["metal"].extensions == ["siderolabs/intel-ucode"]
     with pytest.raises(ValidationError):
         images.remove_extensions(settings, "metal", ["siderolabs/tailscale"], client)
@@ -953,12 +1068,16 @@ _BOOT_MEDIA = {"metal": "iso", "hcloud": "raw.xz"}
 
 class FactoryClient:
     def __init__(self, base_url: str | None = None, timeout: float = 30.0) -> None:
-        self.base_url = (base_url or os.environ.get("TALKUB_FACTORY_URL") or DEFAULT_URL).rstrip("/")
+        self.base_url = (
+            base_url or os.environ.get("TALKUB_FACTORY_URL") or DEFAULT_URL
+        ).rstrip("/")
         self.timeout = timeout
 
     def _request(self, method: str, path: str, body: bytes | None = None) -> object:
         headers = {"Content-Type": "application/yaml"} if body is not None else {}
-        request = urllib.request.Request(self.base_url + path, data=body, method=method, headers=headers)
+        request = urllib.request.Request(
+            self.base_url + path, data=body, method=method, headers=headers
+        )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read())
@@ -968,20 +1087,34 @@ class FactoryClient:
                 hint=f"{err}; cached schematic IDs in .talkub.yaml keep working offline",
             ) from err
 
-    def schematic_id(self, extensions: Sequence[str], kernel_args: Sequence[str]) -> str:
-        data = self._request("POST", "/schematics", schematic_document(extensions, kernel_args).encode())
+    def schematic_id(
+        self, extensions: Sequence[str], kernel_args: Sequence[str]
+    ) -> str:
+        data = self._request(
+            "POST", "/schematics", schematic_document(extensions, kernel_args).encode()
+        )
         if not isinstance(data, dict) or not isinstance(data.get("id"), str):
-            raise CommandFailed("unexpected answer from the Talos Image Factory", hint=str(data))
+            raise CommandFailed(
+                "unexpected answer from the Talos Image Factory", hint=str(data)
+            )
         return data["id"]
 
     def official_extensions(self, talos_version: str) -> list[str]:
         data = self._request("GET", f"/version/{talos_version}/extensions/official")
         if not isinstance(data, list):
-            raise CommandFailed("unexpected answer from the Talos Image Factory", hint=str(data)[:200])
-        return sorted(str(item["name"]) for item in data if isinstance(item, dict) and "name" in item)
+            raise CommandFailed(
+                "unexpected answer from the Talos Image Factory", hint=str(data)[:200]
+            )
+        return sorted(
+            str(item["name"])
+            for item in data
+            if isinstance(item, dict) and "name" in item
+        )
 
 
-def boot_media_url(schematic_id: str, talos_version: str, platform: str, arch: str) -> str:
+def boot_media_url(
+    schematic_id: str, talos_version: str, platform: str, arch: str
+) -> str:
     """Download URL for the boot medium: ISO for bare metal, raw.xz disk image for Hetzner."""
     return f"{DEFAULT_URL}/image/{schematic_id}/{talos_version}/{platform}-{arch}.{_BOOT_MEDIA[platform]}"
 ```
@@ -1002,10 +1135,14 @@ from talkub.schematic import customization_hash
 
 
 def used_platforms(settings: Settings) -> list[str]:
-    return sorted({settings.platform} | {settings.node_platform(name) for name in settings.nodes})
+    return sorted(
+        {settings.platform} | {settings.node_platform(name) for name in settings.nodes}
+    )
 
 
-def refresh(settings: Settings, client: FactoryClient, platforms: Iterable[str]) -> bool:
+def refresh(
+    settings: Settings, client: FactoryClient, platforms: Iterable[str]
+) -> bool:
     """Resolve schematic IDs whose cache is missing or outdated. Returns True if anything changed."""
     changed = False
     for platform in platforms:
@@ -1099,7 +1236,10 @@ def test_extensions_marks_active(empty_repo, factory_stub, capfd):
 
 
 def test_add_writes_settings_and_hints_upgrade(empty_repo, factory_stub, capfd):
-    assert _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/intel-ucode"]) == 0
+    assert (
+        _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/intel-ucode"])
+        == 0
+    )
     settings = empty_repo.load_settings()
     assert settings.schematics["metal"].extensions == ["siderolabs/intel-ucode"]
     assert settings.schematics["metal"].is_current
@@ -1108,19 +1248,61 @@ def test_add_writes_settings_and_hints_upgrade(empty_repo, factory_stub, capfd):
 
 
 def test_add_unknown_extension_fails(empty_repo, factory_stub, capfd):
-    assert _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/nope"]) == 1
+    assert (
+        _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/nope"]) == 1
+    )
     assert "siderolabs/nope" in capfd.readouterr().err
 
 
 def test_remove_for_other_platform(empty_repo, factory_stub):
     repo = str(empty_repo.root)
-    assert _run(["--repo", repo, "image", "add", "--platform", "hcloud", "siderolabs/tailscale"]) == 0
-    assert _run(["--repo", repo, "image", "remove", "--platform", "hcloud", "siderolabs/tailscale"]) == 0
+    assert (
+        _run(
+            [
+                "--repo",
+                repo,
+                "image",
+                "add",
+                "--platform",
+                "hcloud",
+                "siderolabs/tailscale",
+            ]
+        )
+        == 0
+    )
+    assert (
+        _run(
+            [
+                "--repo",
+                repo,
+                "image",
+                "remove",
+                "--platform",
+                "hcloud",
+                "siderolabs/tailscale",
+            ]
+        )
+        == 0
+    )
     assert empty_repo.load_settings().schematics["hcloud"].extensions == []
 
 
 def test_show_prints_installer_and_boot_media(empty_repo, factory_stub, capfd):
-    assert _run(["--repo", str(empty_repo.root), "image", "show", "--platform", "hcloud", "--arch", "arm64"]) == 0
+    assert (
+        _run(
+            [
+                "--repo",
+                str(empty_repo.root),
+                "image",
+                "show",
+                "--platform",
+                "hcloud",
+                "--arch",
+                "arm64",
+            ]
+        )
+        == 0
+    )
     out = capfd.readouterr().out
     assert "factory.talos.dev/hcloud-installer/" in out
     assert "hcloud-arm64.raw.xz" in out
@@ -1134,7 +1316,9 @@ def test_show_offline_with_current_cache(empty_repo, monkeypatch, capfd):
 
 
 def test_show_rejects_unknown_arch(empty_repo, capfd):
-    assert _run(["--repo", str(empty_repo.root), "image", "show", "--arch", "riscv"]) == 1
+    assert (
+        _run(["--repo", str(empty_repo.root), "image", "show", "--arch", "riscv"]) == 1
+    )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1158,9 +1342,13 @@ from talkub.errors import ValidationError
 from talkub.factory import FactoryClient, boot_media_url
 from talkub.repo import ARCHES
 
-app = typer.Typer(help="Manage Image Factory schematics (system extensions).", no_args_is_help=True)
+app = typer.Typer(
+    help="Manage Image Factory schematics (system extensions).", no_args_is_help=True
+)
 
-PLATFORM = typer.Option(None, "--platform", help="metal or hcloud (default: the cluster platform).")
+PLATFORM = typer.Option(
+    None, "--platform", help="metal or hcloud (default: the cluster platform)."
+)
 
 
 @app.command("extensions")
@@ -1175,7 +1363,9 @@ def extensions(ctx: typer.Context, platform: str = PLATFORM) -> None:
 @app.command("add")
 def add(
     ctx: typer.Context,
-    names: list[str] = typer.Argument(..., help="Extensions, e.g. siderolabs/tailscale."),
+    names: list[str] = typer.Argument(
+        ..., help="Extensions, e.g. siderolabs/tailscale."
+    ),
     platform: str = PLATFORM,
 ) -> None:
     """Add extensions to a platform's schematic."""
@@ -1184,7 +1374,9 @@ def add(
     target = platform or settings.platform
     added = images.add_extensions(settings, target, names, FactoryClient())
     repo.write_settings(settings)
-    print(f"{target}: added {', '.join(added) or 'nothing'}; schematic {settings.schematics[target].id}")
+    print(
+        f"{target}: added {', '.join(added) or 'nothing'}; schematic {settings.schematics[target].id}"
+    )
     print("roll the new image out to running nodes with `talkub upgrade talos`")
 
 
@@ -1200,7 +1392,9 @@ def remove(
     target = platform or settings.platform
     removed = images.remove_extensions(settings, target, names, FactoryClient())
     repo.write_settings(settings)
-    print(f"{target}: removed {', '.join(removed)}; schematic {settings.schematics[target].id}")
+    print(
+        f"{target}: removed {', '.join(removed)}; schematic {settings.schematics[target].id}"
+    )
     print("roll the new image out to running nodes with `talkub upgrade talos`")
 
 
@@ -1208,18 +1402,24 @@ def remove(
 def show(
     ctx: typer.Context,
     platform: str = PLATFORM,
-    arch: str = typer.Option("amd64", "--arch", help="amd64 or arm64 (for the boot medium URL)."),
+    arch: str = typer.Option(
+        "amd64", "--arch", help="amd64 or arm64 (for the boot medium URL)."
+    ),
 ) -> None:
     """Show the installer image and the boot medium download URL."""
     if arch not in ARCHES:
-        raise ValidationError(f"unknown arch {arch!r}", hint=f"use one of: {', '.join(ARCHES)}")
+        raise ValidationError(
+            f"unknown arch {arch!r}", hint=f"use one of: {', '.join(ARCHES)}"
+        )
     repo = ctx.obj.repo()
     settings = repo.load_settings()
     target = platform or settings.platform
     if images.refresh(settings, FactoryClient(), [target]):
         repo.write_settings(settings)
     print(f"installer:  {settings.installer_image(target)}")
-    print(f"boot media: {boot_media_url(settings.schematics[target].id, settings.talos_version, target, arch)}")
+    print(
+        f"boot media: {boot_media_url(settings.schematics[target].id, settings.talos_version, target, arch)}"
+    )
 ```
 
 In `src/talkub/cli/main.py` change the import line to:
@@ -1279,7 +1479,13 @@ import pytest
 from helpers import need
 from talkub import yamlio
 from talkub.errors import ValidationError
-from talkub.nodes import FIRST_ETHERNET, NodeOptions, add_node, node_patch_path, render_node_patch
+from talkub.nodes import (
+    FIRST_ETHERNET,
+    NodeOptions,
+    add_node,
+    node_patch_path,
+    render_node_patch,
+)
 from talkub.repo import NodeSpec
 
 
@@ -1289,7 +1495,14 @@ def _docs(text):
 
 def test_default_patch_is_hostname_only():
     docs = _docs(render_node_patch("cp-01"))
-    assert docs == [{"apiVersion": "v1alpha1", "kind": "HostnameConfig", "auto": "off", "hostname": "cp-01"}]
+    assert docs == [
+        {
+            "apiVersion": "v1alpha1",
+            "kind": "HostnameConfig",
+            "auto": "off",
+            "hostname": "cp-01",
+        }
+    ]
 
 
 def test_static_without_mac_uses_first_ethernet_and_warns():
@@ -1303,17 +1516,28 @@ def test_static_without_mac_uses_first_ethernet_and_warns():
 
 
 def test_static_with_mac_and_dns():
-    options = NodeOptions(static="10.0.0.10/24", gateway="10.0.0.1", mac="AA:BB:CC:DD:EE:FF", dns=("1.1.1.1",))
+    options = NodeOptions(
+        static="10.0.0.10/24",
+        gateway="10.0.0.1",
+        mac="AA:BB:CC:DD:EE:FF",
+        dns=("1.1.1.1",),
+    )
     assert options.check() == []
     kinds = {d["kind"]: d for d in _docs(render_node_patch("cp-01", options))}
-    assert kinds["LinkAliasConfig"]["selector"]["match"] == 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"'
+    assert (
+        kinds["LinkAliasConfig"]["selector"]["match"]
+        == 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"'
+    )
     assert kinds["ResolverConfig"]["nameservers"] == [{"address": "1.1.1.1"}]
 
 
 def test_disk_and_public_ingress_documents():
     options = NodeOptions(disk_selector='disk.transport == "nvme"', public_ingress=True)
     kinds = {d["kind"]: d for d in _docs(render_node_patch("cp-01", options))}
-    assert kinds["UnattendedInstallConfig"]["provisioning"]["diskSelector"]["match"] == 'disk.transport == "nvme"'
+    assert (
+        kinds["UnattendedInstallConfig"]["provisioning"]["diskSelector"]["match"]
+        == 'disk.transport == "nvme"'
+    )
     rule = kinds["NetworkRuleConfig"]
     assert rule["portSelector"] == {"ports": [80, 443], "protocol": "tcp"}
     assert rule["ingress"] == [{"subnet": "0.0.0.0/0"}, {"subnet": "::/0"}]
@@ -1343,7 +1567,9 @@ def talos_secrets(tmp_path_factory):
     if shutil.which("talosctl") is None:
         pytest.skip("missing tools: talosctl")
     path = tmp_path_factory.mktemp("talos") / "secrets.yaml"
-    subprocess.run(["talosctl", "gen", "secrets", "-o", str(path)], check=True, capture_output=True)
+    subprocess.run(
+        ["talosctl", "gen", "secrets", "-o", str(path)], check=True, capture_output=True
+    )
     return path
 
 
@@ -1353,7 +1579,12 @@ def talos_secrets(tmp_path_factory):
     [
         NodeOptions(),
         NodeOptions(static="10.0.0.10/24", gateway="10.0.0.1"),
-        NodeOptions(static="10.0.0.10/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff", dns=("1.1.1.1", "9.9.9.9")),
+        NodeOptions(
+            static="10.0.0.10/24",
+            gateway="10.0.0.1",
+            mac="aa:bb:cc:dd:ee:ff",
+            dns=("1.1.1.1", "9.9.9.9"),
+        ),
         NodeOptions(disk_selector='disk.transport == "nvme"', public_ingress=True),
     ],
 )
@@ -1363,25 +1594,49 @@ def test_patches_validate_with_talosctl(tmp_path, talos_secrets, options):
     out = tmp_path / "cp.yaml"
     subprocess.run(
         [
-            "talosctl", "gen", "config", "demo", "https://10.0.0.10:6443",
-            "--with-secrets", str(talos_secrets), "-t", "controlplane", "-o", str(out),
-            "--with-docs=false", "--with-examples=false",
-            "--install-image", "factory.talos.dev/metal-installer/abc:v1.14.0",
-            "--config-patch", f"@{patch}",
+            "talosctl",
+            "gen",
+            "config",
+            "demo",
+            "https://10.0.0.10:6443",
+            "--with-secrets",
+            str(talos_secrets),
+            "-t",
+            "controlplane",
+            "-o",
+            str(out),
+            "--with-docs=false",
+            "--with-examples=false",
+            "--install-image",
+            "factory.talos.dev/metal-installer/abc:v1.14.0",
+            "--config-patch",
+            f"@{patch}",
         ],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
-    result = subprocess.run(["talosctl", "validate", "--config", str(out), "--mode", "metal"], capture_output=True, text=True)
+    result = subprocess.run(
+        ["talosctl", "validate", "--config", str(out), "--mode", "metal"],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "hostname: cp-01" in out.read_text()
     assert "metal-installer/abc:v1.14.0" in out.read_text()
 
 
 def test_add_node_writes_patch_and_settings(empty_repo):
-    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud"), NodeOptions())
+    warnings = add_node(
+        empty_repo,
+        "w-01",
+        NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud"),
+        NodeOptions(),
+    )
     assert warnings == []
     settings = empty_repo.load_settings()
-    assert settings.nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud")
+    assert settings.nodes["w-01"] == NodeSpec(
+        ip="10.0.0.11", role="worker", platform="hcloud"
+    )
     assert "hcloud" in settings.schematics
     assert "hostname: w-01" in node_patch_path(empty_repo, "w-01").read_text()
 
@@ -1392,15 +1647,27 @@ def test_add_node_rejects_duplicates_and_bad_input(empty_repo):
     with pytest.raises(ValidationError):
         add_node(empty_repo, "Bad_Name", NodeSpec(ip="10.0.0.12"), NodeOptions())
     with pytest.raises(ValidationError):
-        add_node(empty_repo, "n-02", NodeSpec(ip="10.0.0.12", role="master"), NodeOptions())
+        add_node(
+            empty_repo, "n-02", NodeSpec(ip="10.0.0.12", role="master"), NodeOptions()
+        )
     with pytest.raises(ValidationError):
-        add_node(empty_repo, "n-03", NodeSpec(ip="10.0.0.13"), NodeOptions(static="10.0.0.13/24", gateway="10.9.9.9"))
+        add_node(
+            empty_repo,
+            "n-03",
+            NodeSpec(ip="10.0.0.13"),
+            NodeOptions(static="10.0.0.13/24", gateway="10.9.9.9"),
+        )
     assert set(empty_repo.load_settings().nodes) == {"cp-01"}
     assert not (empty_repo.talos_dir / "nodes").exists()
 
 
 def test_public_ingress_without_firewall_warns(empty_repo):
-    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions(public_ingress=True))
+    warnings = add_node(
+        empty_repo,
+        "w-01",
+        NodeSpec(ip="10.0.0.11", role="worker"),
+        NodeOptions(public_ingress=True),
+    )
     assert any("firewall" in w for w in warnings)
 ```
 
@@ -1453,7 +1720,8 @@ class NodeOptions:
         if self.static is not None:
             if "/" not in self.static:
                 raise ValidationError(
-                    f"--static needs a prefix length: {self.static!r}", hint="e.g. 10.0.0.10/24"
+                    f"--static needs a prefix length: {self.static!r}",
+                    hint="e.g. 10.0.0.10/24",
                 )
             try:
                 interface = ipaddress.ip_interface(self.static)
@@ -1461,30 +1729,50 @@ class NodeOptions:
             except ValueError as err:
                 raise ValidationError(f"invalid address: {err}") from None
             if gateway not in interface.network:
-                raise ValidationError(f"gateway {gateway} is not in {interface.network}")
+                raise ValidationError(
+                    f"gateway {gateway} is not in {interface.network}"
+                )
             if self.mac is None:
                 warnings.append(
                     "no --mac given: the first physical Ethernet interface is configured; "
                     "nodes with several NICs need --mac"
                 )
         if self.mac is not None and not _MAC.fullmatch(self.mac.lower()):
-            raise ValidationError(f"invalid MAC address {self.mac!r}", hint="e.g. aa:bb:cc:dd:ee:ff")
+            raise ValidationError(
+                f"invalid MAC address {self.mac!r}", hint="e.g. aa:bb:cc:dd:ee:ff"
+            )
         for server in self.dns:
             try:
                 ipaddress.ip_address(server)
             except ValueError:
-                raise ValidationError(f"invalid DNS server {server!r}", hint="use an IP address") from None
+                raise ValidationError(
+                    f"invalid DNS server {server!r}", hint="use an IP address"
+                ) from None
         return warnings
 
 
 def render_node_patch(node: str, options: NodeOptions = NodeOptions()) -> str:
-    docs: list[dict] = [{"apiVersion": "v1alpha1", "kind": "HostnameConfig", "auto": "off", "hostname": node}]
+    docs: list[dict] = [
+        {
+            "apiVersion": "v1alpha1",
+            "kind": "HostnameConfig",
+            "auto": "off",
+            "hostname": node,
+        }
+    ]
     if options.static is not None:
         selector = (
-            f'mac(link.permanent_addr) == "{options.mac.lower()}"' if options.mac else FIRST_ETHERNET
+            f'mac(link.permanent_addr) == "{options.mac.lower()}"'
+            if options.mac
+            else FIRST_ETHERNET
         )
         docs.append(
-            {"apiVersion": "v1alpha1", "kind": "LinkAliasConfig", "name": LINK, "selector": {"match": selector}}
+            {
+                "apiVersion": "v1alpha1",
+                "kind": "LinkAliasConfig",
+                "name": LINK,
+                "selector": {"match": selector},
+            }
         )
         docs.append(
             {
@@ -1536,7 +1824,8 @@ def node_patch_path(repo: Repo, node: str) -> Path:
 def validate_node_name(name: str) -> None:
     if not _NAME.fullmatch(name):
         raise ValidationError(
-            f"invalid node name {name!r}", hint="lowercase letters, digits and '-' (it becomes the hostname)"
+            f"invalid node name {name!r}",
+            hint="lowercase letters, digits and '-' (it becomes the hostname)",
         )
 
 
@@ -1549,13 +1838,22 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         raise ValidationError(f"node '{name}' already exists")
     path = node_patch_path(repo, name)
     if path.exists():
-        raise ValidationError(f"{repo.rel(path)} already exists", hint="remove it or choose another name")
+        raise ValidationError(
+            f"{repo.rel(path)} already exists", hint="remove it or choose another name"
+        )
     settings.nodes[name] = spec
-    settings = Settings.from_dict(settings.to_dict())  # validates role, platform and arch
+    settings = Settings.from_dict(
+        settings.to_dict()
+    )  # validates role, platform and arch
     if spec.platform is not None:
         settings.ensure_schematic(spec.platform)
-    if options.public_ingress and not (repo.talos_dir / "patches" / "firewall.yaml").exists():
-        warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale enable`)")
+    if (
+        options.public_ingress
+        and not (repo.talos_dir / "patches" / "firewall.yaml").exists()
+    ):
+        warnings.append(
+            "--public-ingress has no effect without the Talos firewall (see `talkub tailscale enable`)"
+        )
     atomic_write(path, render_node_patch(name, options).encode())
     repo.write_settings(settings)
     return warnings
@@ -1584,9 +1882,12 @@ In `src/talkub/scaffold.py`:
 - in `_populate`, replace the node patch loop with:
 
 ```python
-    for node in request.nodes:
-        options = request.node_options.get(node, NodeOptions())
-        atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node, options).encode())
+for node in request.nodes:
+    options = request.node_options.get(node, NodeOptions())
+    atomic_write(
+        repo.talos_dir / "nodes" / f"{node}.yaml",
+        render_node_patch(node, options).encode(),
+    )
 ```
 
 Delete `src/talkub/templates/node.yaml.tmpl`:
@@ -1642,48 +1943,110 @@ def _run(argv):
 
 
 def test_node_add_static(empty_repo, capfd):
-    code = _run([
-        "--repo", str(empty_repo.root), "node", "add", "w-01",
-        "--ip", "10.0.0.11", "--role", "worker", "--mgmt", "w-01.tail.ts.net",
-        "--static", "10.0.0.11/24", "--gateway", "10.0.0.1", "--dns", "1.1.1.1",
-    ])
+    code = _run(
+        [
+            "--repo",
+            str(empty_repo.root),
+            "node",
+            "add",
+            "w-01",
+            "--ip",
+            "10.0.0.11",
+            "--role",
+            "worker",
+            "--mgmt",
+            "w-01.tail.ts.net",
+            "--static",
+            "10.0.0.11/24",
+            "--gateway",
+            "10.0.0.1",
+            "--dns",
+            "1.1.1.1",
+        ]
+    )
     assert code == 0
     captured = capfd.readouterr()
     assert "warning: no --mac given" in captured.err
     assert "talos/nodes/w-01.yaml" in captured.out
     assert "apply --insecure w-01" in captured.out
-    assert empty_repo.load_settings().nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net")
-    assert "kind: LinkConfig" in (empty_repo.talos_dir / "nodes" / "w-01.yaml").read_text()
+    assert empty_repo.load_settings().nodes["w-01"] == NodeSpec(
+        ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net"
+    )
+    assert (
+        "kind: LinkConfig" in (empty_repo.talos_dir / "nodes" / "w-01.yaml").read_text()
+    )
 
 
 def test_node_add_rejects_bad_gateway(empty_repo, capfd):
-    code = _run([
-        "--repo", str(empty_repo.root), "node", "add", "w-01", "--ip", "10.0.0.11",
-        "--static", "10.0.0.11/24", "--gateway", "192.168.1.1",
-    ])
+    code = _run(
+        [
+            "--repo",
+            str(empty_repo.root),
+            "node",
+            "add",
+            "w-01",
+            "--ip",
+            "10.0.0.11",
+            "--static",
+            "10.0.0.11/24",
+            "--gateway",
+            "192.168.1.1",
+        ]
+    )
     assert code == 1
     assert "not in 10.0.0.0/24" in capfd.readouterr().err
 
 
 def test_init_node_options_need_single_node(tmp_path, capfd, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    code = _run([
-        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
-        "--node", "cp-01=10.0.0.10", "--node", "cp-02=10.0.0.11", "--static", "10.0.0.10/24", "--gateway", "10.0.0.1",
-    ])
+    code = _run(
+        [
+            "init",
+            "demo",
+            "--endpoint",
+            "https://10.0.0.10:6443",
+            "--git-url",
+            "https://g",
+            "--node",
+            "cp-01=10.0.0.10",
+            "--node",
+            "cp-02=10.0.0.11",
+            "--static",
+            "10.0.0.10/24",
+            "--gateway",
+            "10.0.0.1",
+        ]
+    )
     assert code == 1
     assert "exactly one --node" in capfd.readouterr().err
 
 
 @need("age", "age-keygen", "sops", "talosctl")
-def test_init_with_platform_and_static_node(tmp_path, software_identity, fake_bin, monkeypatch):
+def test_init_with_platform_and_static_node(
+    tmp_path, software_identity, fake_bin, monkeypatch
+):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
-    code = _run([
-        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
-        "--node", "cp-01=10.0.0.10", "--platform", "hcloud",
-        "--static", "10.0.0.10/24", "--gateway", "10.0.0.1", "--mac", "aa:bb:cc:dd:ee:ff",
-    ])
+    code = _run(
+        [
+            "init",
+            "demo",
+            "--endpoint",
+            "https://10.0.0.10:6443",
+            "--git-url",
+            "https://g",
+            "--node",
+            "cp-01=10.0.0.10",
+            "--platform",
+            "hcloud",
+            "--static",
+            "10.0.0.10/24",
+            "--gateway",
+            "10.0.0.1",
+            "--mac",
+            "aa:bb:cc:dd:ee:ff",
+        ]
+    )
     assert code == 0
     patch = (tmp_path / "demo" / "talos" / "nodes" / "cp-01.yaml").read_text()
     assert 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"' in patch
@@ -1730,12 +2093,26 @@ def node_options(
     )
 
 
-STATIC = typer.Option(None, "--static", help="Static address with prefix, e.g. 10.0.0.10/24 (default: DHCP).")
+STATIC = typer.Option(
+    None,
+    "--static",
+    help="Static address with prefix, e.g. 10.0.0.10/24 (default: DHCP).",
+)
 GATEWAY = typer.Option(None, "--gateway", help="Default gateway (with --static).")
-MAC = typer.Option(None, "--mac", help="MAC address of the interface to configure (with --static).")
+MAC = typer.Option(
+    None, "--mac", help="MAC address of the interface to configure (with --static)."
+)
 DNS = typer.Option(None, "--dns", help="DNS server (repeatable).")
-DISK = typer.Option(None, "--disk-selector", help='CEL install disk selector, e.g. disk.transport == "nvme".')
-PUBLIC = typer.Option(False, "--public-ingress", help="Open 80/443 from anywhere (with the Talos firewall).")
+DISK = typer.Option(
+    None,
+    "--disk-selector",
+    help='CEL install disk selector, e.g. disk.transport == "nvme".',
+)
+PUBLIC = typer.Option(
+    False,
+    "--public-ingress",
+    help="Open 80/443 from anywhere (with the Talos firewall).",
+)
 
 
 def print_warnings(warnings: list[str]) -> None:
@@ -1747,11 +2124,19 @@ def print_warnings(warnings: list[str]) -> None:
 def add(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Node name; becomes the hostname."),
-    ip: str = typer.Option(..., "--ip", help="Address for the first install (LAN or public)."),
+    ip: str = typer.Option(
+        ..., "--ip", help="Address for the first install (LAN or public)."
+    ),
     role: str = typer.Option("controlplane", "--role", help="controlplane or worker."),
-    platform: str = typer.Option(None, "--platform", help="metal or hcloud (default: cluster platform)."),
-    arch: str = typer.Option(None, "--arch", help="amd64 or arm64 (for boot media URLs)."),
-    mgmt: str = typer.Option(None, "--mgmt", help="Address used after installation, e.g. a Tailscale name."),
+    platform: str = typer.Option(
+        None, "--platform", help="metal or hcloud (default: cluster platform)."
+    ),
+    arch: str = typer.Option(
+        None, "--arch", help="amd64 or arm64 (for boot media URLs)."
+    ),
+    mgmt: str = typer.Option(
+        None, "--mgmt", help="Address used after installation, e.g. a Tailscale name."
+    ),
     static: str = STATIC,
     gateway: str = GATEWAY,
     mac: str = MAC,
@@ -1773,7 +2158,16 @@ def add(
 Add imports:
 
 ```python
-from talkub.cli.nodes import DISK, DNS, GATEWAY, MAC, PUBLIC, STATIC, node_options, print_warnings
+from talkub.cli.nodes import (
+    DISK,
+    DNS,
+    GATEWAY,
+    MAC,
+    PUBLIC,
+    STATIC,
+    node_options,
+    print_warnings,
+)
 from talkub.nodes import NodeOptions
 ```
 
@@ -1782,11 +2176,21 @@ Replace the `init` function with:
 ```python
 def init(
     name: str = typer.Argument(..., help="Cluster name; also the directory name."),
-    endpoint: str = typer.Option(..., "--endpoint", help="Kubernetes API endpoint, e.g. https://10.0.0.10:6443"),
-    node: list[str] = typer.Option(..., "--node", help="Control plane node as name=ip (repeatable)."),
-    git_url: str = typer.Option(..., "--git-url", help="Git URL ArgoCD pulls this repo from."),
-    directory: Path = typer.Option(None, "--dir", help="Target directory (default: ./<name>)."),
-    platform: str = typer.Option("metal", "--platform", help="Cluster platform: metal or hcloud."),
+    endpoint: str = typer.Option(
+        ..., "--endpoint", help="Kubernetes API endpoint, e.g. https://10.0.0.10:6443"
+    ),
+    node: list[str] = typer.Option(
+        ..., "--node", help="Control plane node as name=ip (repeatable)."
+    ),
+    git_url: str = typer.Option(
+        ..., "--git-url", help="Git URL ArgoCD pulls this repo from."
+    ),
+    directory: Path = typer.Option(
+        None, "--dir", help="Target directory (default: ./<name>)."
+    ),
+    platform: str = typer.Option(
+        "metal", "--platform", help="Cluster platform: metal or hcloud."
+    ),
     static: str = STATIC,
     gateway: str = GATEWAY,
     mac: str = MAC,
@@ -1818,7 +2222,9 @@ def init(
     )
     repo = init_cluster(request, Runner())
     print(f"created {repo.root}")
-    print("next: add a second admin or backup key (talkub admin add), then git add/commit")
+    print(
+        "next: add a second admin or backup key (talkub admin add), then git add/commit"
+    )
 ```
 
 In `src/talkub/cli/main.py` change the import line to:
@@ -1884,9 +2290,13 @@ def talos_repo(repo_with_configs):
         secrets = gen.gen_secrets(Runner(), work)
         atomic_write(
             repo_with_configs.talos_secrets,
-            ctx.sops.encrypt(secrets.read_bytes(), filename="secrets.sops.yaml", public_key=public),
+            ctx.sops.encrypt(
+                secrets.read_bytes(), filename="secrets.sops.yaml", public_key=public
+            ),
         )
-    atomic_write(node_patch_path(repo_with_configs, "cp-01"), render_node_patch("cp-01").encode())
+    atomic_write(
+        node_patch_path(repo_with_configs, "cp-01"), render_node_patch("cp-01").encode()
+    )
     return repo_with_configs
 ```
 
@@ -1905,13 +2315,24 @@ from talkub.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
 from talkub.repo import NodeSpec, SchematicSpec
 from talkub.schematic import customization_hash
-from talkub.talos.render import PatchRef, install_summary, render_configs, select_patches
+from talkub.talos.render import (
+    PatchRef,
+    install_summary,
+    render_configs,
+    select_patches,
+)
 
 
 def test_select_patches_by_role(empty_repo):
     patches = empty_repo.talos_dir / "patches"
     patches.mkdir(parents=True)
-    for name in ("worker-extra.yaml", "common.yaml", "controlplane.yaml", "dns.sops.yaml", "notes.txt"):
+    for name in (
+        "worker-extra.yaml",
+        "common.yaml",
+        "controlplane.yaml",
+        "dns.sops.yaml",
+        "notes.txt",
+    ):
         (patches / name).write_text("{}\n")
     assert select_patches(empty_repo, "controlplane") == [
         PatchRef("--config-patch", patches / "common.yaml"),
@@ -1955,7 +2376,12 @@ def test_render_applies_encrypted_patch(talos_repo):
     ctx = Context.open(talos_repo)
     patch = talos_repo.talos_dir / "patches" / "dns.sops.yaml"
     plain = b"apiVersion: v1alpha1\nkind: ResolverConfig\nnameservers:\n  - address: 9.9.9.9\n"
-    atomic_write(patch, ctx.sops.encrypt(plain, filename=patch.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        patch,
+        ctx.sops.encrypt(
+            plain, filename=patch.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     configs = render_configs(ctx, talos_repo.load_settings(), ["cp-01"])
     assert "9.9.9.9" in configs["cp-01"].decode()
 
@@ -1965,8 +2391,12 @@ def test_render_hcloud_worker_and_sans(talos_repo):
     settings = talos_repo.load_settings()
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.tail.ts.net")
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud")
-    settings.schematics["hcloud"] = SchematicSpec(id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], []))
-    atomic_write(node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode())
+    settings.schematics["hcloud"] = SchematicSpec(
+        id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], [])
+    )
+    atomic_write(
+        node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode()
+    )
     configs = render_configs(Context.open(talos_repo), settings, ["cp-01", "w-01"])
     assert "cp-01.tail.ts.net" in configs["cp-01"].decode()
     worker = configs["w-01"].decode()
@@ -2056,7 +2486,9 @@ def _plain_key(path: Path) -> str:
     return f"patch-{path.name}"
 
 
-def render_configs(ctx: Context, settings: Settings, names: Sequence[str]) -> dict[str, bytes]:
+def render_configs(
+    ctx: Context, settings: Settings, names: Sequence[str]
+) -> dict[str, bytes]:
     """Render and validate the machine config of each node. Decrypts secrets and patches once."""
     refs: dict[str, list[PatchRef]] = {}
     images: dict[str, str] = {}
@@ -2066,9 +2498,13 @@ def render_configs(ctx: Context, settings: Settings, names: Sequence[str]) -> di
         node_patch = node_patch_path(ctx.repo, name)
         if not node_patch.is_file():
             raise ValidationError(
-                f"{ctx.repo.rel(node_patch)} does not exist", hint=f"create it with `talkub node add {name} …`"
+                f"{ctx.repo.rel(node_patch)} does not exist",
+                hint=f"create it with `talkub node add {name} …`",
             )
-        refs[name] = [*select_patches(ctx.repo, node.role), PatchRef("--config-patch", node_patch)]
+        refs[name] = [
+            *select_patches(ctx.repo, node.role),
+            PatchRef("--config-patch", node_patch),
+        ]
 
     encrypted = {_SECRETS: ctx.repo.talos_secrets}
     for ref in (r for node_refs in refs.values() for r in node_refs):
@@ -2076,7 +2512,10 @@ def render_configs(ctx: Context, settings: Settings, names: Sequence[str]) -> di
             encrypted[_plain_key(ref.path)] = ref.path
 
     with decrypted(ctx.sops, encrypted) as plain:
-        return {name: _render(ctx.runner, settings, name, images[name], refs[name], plain) for name in names}
+        return {
+            name: _render(ctx.runner, settings, name, images[name], refs[name], plain)
+            for name in names
+        }
 
 
 def _render(
@@ -2089,21 +2528,37 @@ def _render(
 ) -> bytes:
     node = settings.node(name)
     argv = [
-        "talosctl", "gen", "config", settings.name, settings.endpoint,
-        "--with-secrets", str(plain[_SECRETS]),
-        "--talos-version", settings.talos_version,
-        "--kubernetes-version", settings.kubernetes_version,
-        "--install-image", image,
-        "-t", node.role,
-        "-o", "-",
+        "talosctl",
+        "gen",
+        "config",
+        settings.name,
+        settings.endpoint,
+        "--with-secrets",
+        str(plain[_SECRETS]),
+        "--talos-version",
+        settings.talos_version,
+        "--kubernetes-version",
+        settings.kubernetes_version,
+        "--install-image",
+        image,
+        "-t",
+        node.role,
+        "-o",
+        "-",
         "--with-docs=false",
         "--with-examples=false",
     ]
-    sans = [n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt]
+    sans = [
+        n.mgmt for n in settings.nodes.values() if n.role == "controlplane" and n.mgmt
+    ]
     if sans:
         argv += ["--additional-sans", ",".join(sans)]
     for ref in refs:
-        source = plain[_plain_key(ref.path)] if ref.path.name.endswith(".sops.yaml") else ref.path
+        source = (
+            plain[_plain_key(ref.path)]
+            if ref.path.name.endswith(".sops.yaml")
+            else ref.path
+        )
         argv += [ref.flag, f"@{source}"]
     config = runner.run(argv).stdout
     _validate(runner, name, config, VALIDATE_MODE[settings.node_platform(name)])
@@ -2112,10 +2567,15 @@ def _render(
 
 def _validate(runner: Runner, name: str, config: bytes, mode: str) -> None:
     with private_file(f"{name}.yaml", config) as path:
-        proc = runner.run(["talosctl", "validate", "--config", str(path), "--mode", mode], check=False)
+        proc = runner.run(
+            ["talosctl", "validate", "--config", str(path), "--mode", mode], check=False
+        )
     if proc.returncode != 0:
         output = (proc.stdout or b"") + (proc.stderr or b"")
-        raise ValidationError(f"rendered config for node '{name}' is invalid", hint=output.decode().strip())
+        raise ValidationError(
+            f"rendered config for node '{name}' is invalid",
+            hint=output.decode().strip(),
+        )
 
 
 def install_summary(config: bytes) -> tuple[str, str]:
@@ -2126,7 +2586,9 @@ def install_summary(config: bytes) -> tuple[str, str]:
             continue
         if doc.get("kind") == "UnattendedInstallConfig":
             image = (doc.get("installer") or {}).get("image", image)
-            disk = ((doc.get("provisioning") or {}).get("diskSelector") or {}).get("match", disk)
+            disk = ((doc.get("provisioning") or {}).get("diskSelector") or {}).get(
+                "match", disk
+            )
         elif doc.get("version") == "v1alpha1":
             install = (doc.get("machine") or {}).get("install") or {}
             image = install.get("image", image)
@@ -2211,7 +2673,11 @@ pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
 
 def _calls(log):
-    return [line[5:] for line in log.read_text().splitlines() if line.startswith("call ")] if log.exists() else []
+    return (
+        [line[5:] for line in log.read_text().splitlines() if line.startswith("call ")]
+        if log.exists()
+        else []
+    )
 
 
 def _add_node(repo, name, ip, role="worker", mgmt=None):
@@ -2227,7 +2693,9 @@ def test_plan_runs_dry_run_with_ephemeral_talosconfig(talos_repo, talosctl_spy, 
     assert len(calls) == 1
     assert " -n 10.0.0.10 -e 10.0.0.10 apply-config --file " in calls[0]
     assert calls[0].endswith("--dry-run")
-    assert "file 1" in talosctl_spy.read_text()  # rendered config existed and had a hostname
+    assert (
+        "file 1" in talosctl_spy.read_text()
+    )  # rendered config existed and had a hostname
     assert "== cp-01 (10.0.0.10)" in capfd.readouterr().out
 
 
@@ -2243,10 +2711,17 @@ def test_plan_uses_mgmt_and_orders_controlplanes_first(talos_repo, talosctl_spy)
 
 
 def test_apply_confirmed_and_declined(talos_repo, talosctl_spy):
-    assert lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True) == ["cp-01"]
+    assert lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True) == [
+        "cp-01"
+    ]
     assert _calls(talosctl_spy)[-1].endswith("--mode auto")
     talosctl_spy.unlink()
-    assert lifecycle.apply(Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: False) == []
+    assert (
+        lifecycle.apply(
+            Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: False
+        )
+        == []
+    )
     calls = _calls(talosctl_spy)
     assert len(calls) == 1 and calls[0].endswith("--dry-run")
 
@@ -2262,14 +2737,21 @@ def test_apply_stops_at_failing_node(talos_repo, talosctl_spy):
 
 def test_apply_rejects_unknown_mode_and_node(talos_repo, talosctl_spy):
     with pytest.raises(ValidationError):
-        lifecycle.apply(Context.open(talos_repo), [], mode="reboot", confirm=lambda q: True)
+        lifecycle.apply(
+            Context.open(talos_repo), [], mode="reboot", confirm=lambda q: True
+        )
     with pytest.raises(ValidationError):
         lifecycle.plan(Context.open(talos_repo), ["nope"])
     assert _calls(talosctl_spy) == []
 
 
 def test_apply_insecure(talos_repo, talosctl_spy, capfd):
-    assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: True) is True
+    assert (
+        lifecycle.apply_insecure(
+            Context.open(talos_repo), "cp-01", confirm=lambda q: True
+        )
+        is True
+    )
     calls = _calls(talosctl_spy)
     assert calls == [calls[0]]
     assert calls[0].startswith("apply-config --insecure -n 10.0.0.10 --file ")
@@ -2280,11 +2762,18 @@ def test_apply_insecure(talos_repo, talosctl_spy, capfd):
 
 
 def test_apply_insecure_declined_sends_nothing(talos_repo, talosctl_spy):
-    assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: False) is False
+    assert (
+        lifecycle.apply_insecure(
+            Context.open(talos_repo), "cp-01", confirm=lambda q: False
+        )
+        is False
+    )
     assert _calls(talosctl_spy) == []
 
 
-def test_outdated_schematic_is_refreshed_before_render(talos_repo, talosctl_spy, factory_stub, capfd):
+def test_outdated_schematic_is_refreshed_before_render(
+    talos_repo, talosctl_spy, factory_stub, capfd
+):
     settings = talos_repo.load_settings()
     settings.schematics["metal"].extensions.append("siderolabs/tailscale")
     talos_repo.write_settings(settings)
@@ -2332,12 +2821,23 @@ class TalosSession:
     talosconfig: Path
 
     def argv(self, node: str, args: Sequence[str]) -> list[str]:
-        return ["talosctl", "--talosconfig", str(self.talosconfig), "-n", node, "-e", node, *args]
+        return [
+            "talosctl",
+            "--talosconfig",
+            str(self.talosconfig),
+            "-n",
+            node,
+            "-e",
+            node,
+            *args,
+        ]
 
     def call(self, node: str, args: Sequence[str]) -> int:
         return self.runner.call(self.argv(node, args))
 
-    def run(self, node: str, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+    def run(
+        self, node: str, args: Sequence[str], *, check: bool = True
+    ) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(self.argv(node, args), check=check)
 
 
@@ -2346,7 +2846,10 @@ def talos_session(ctx: Context) -> Iterator[TalosSession]:
     require_tool("talosctl")
     source = ctx.repo.talosconfig
     if not source.is_file():
-        raise ValidationError(f"{ctx.repo.rel(source)} does not exist", hint="it is created by `talkub init`")
+        raise ValidationError(
+            f"{ctx.repo.rel(source)} does not exist",
+            hint="it is created by `talkub init`",
+        )
     with decrypted(ctx.sops, {"talosconfig": source}) as paths:
         yield TalosSession(ctx.runner, paths["talosconfig"])
 ```
@@ -2385,7 +2888,9 @@ def ordered_nodes(settings: Settings, names: Sequence[str]) -> list[str]:
     return sorted(chosen, key=lambda n: (settings.nodes[n].role != "controlplane", n))
 
 
-def _prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], dict[str, bytes]]:
+def _prepare(
+    ctx: Context, names: Sequence[str]
+) -> tuple[Settings, list[str], dict[str, bytes]]:
     settings = ctx.repo.load_settings()
     order = ordered_nodes(settings, names)
     platforms = sorted({settings.node_platform(name) for name in order})
@@ -2402,7 +2907,8 @@ def _dry_run(talos: TalosSession, settings: Settings, name: str, config: bytes) 
         code = talos.call(address, ["apply-config", "--file", str(path), "--dry-run"])
     if code != 0:
         raise CommandFailed(
-            f"dry-run failed for node '{name}'", hint=f"talosctl exited with {code}; is {address} reachable?"
+            f"dry-run failed for node '{name}'",
+            hint=f"talosctl exited with {code}; is {address} reachable?",
         )
 
 
@@ -2413,9 +2919,13 @@ def plan(ctx: Context, names: Sequence[str]) -> None:
             _dry_run(talos, settings, name, configs[name])
 
 
-def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Confirm) -> list[str]:
+def apply(
+    ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Confirm
+) -> list[str]:
     if mode not in MODES:
-        raise ValidationError(f"unknown mode {mode!r}", hint=f"use one of: {', '.join(MODES)}")
+        raise ValidationError(
+            f"unknown mode {mode!r}", hint=f"use one of: {', '.join(MODES)}"
+        )
     settings, order, configs = _prepare(ctx, names)
     applied: list[str] = []
     with talos_session(ctx) as talos:
@@ -2426,7 +2936,9 @@ def apply(ctx: Context, names: Sequence[str], *, mode: str = "auto", confirm: Co
                 continue
             address = settings.mgmt_address(name)
             with private_file(f"{name}.yaml", configs[name]) as path:
-                code = talos.call(address, ["apply-config", "--file", str(path), "--mode", mode])
+                code = talos.call(
+                    address, ["apply-config", "--file", str(path), "--mode", mode]
+                )
             if code != 0:
                 raise CommandFailed(
                     f"apply failed for node '{name}'",
@@ -2449,7 +2961,17 @@ def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
         return False
     require_tool("talosctl")
     with private_file(f"{name}.yaml", configs[name]) as path:
-        code = ctx.runner.call(["talosctl", "apply-config", "--insecure", "-n", node.ip, "--file", str(path)])
+        code = ctx.runner.call(
+            [
+                "talosctl",
+                "apply-config",
+                "--insecure",
+                "-n",
+                node.ip,
+                "--file",
+                str(path),
+            ]
+        )
     if code != 0:
         raise CommandFailed(
             f"install failed for node '{name}'",
@@ -2506,7 +3028,11 @@ def _run(argv):
 
 
 def _calls(log):
-    return [l for l in log.read_text().splitlines() if l.startswith("call ")] if log.exists() else []
+    return (
+        [l for l in log.read_text().splitlines() if l.startswith("call ")]
+        if log.exists()
+        else []
+    )
 
 
 def test_plan_command(talos_repo, talosctl_spy):
@@ -2515,7 +3041,20 @@ def test_plan_command(talos_repo, talosctl_spy):
 
 
 def test_apply_yes(talos_repo, talosctl_spy):
-    assert _run(["--repo", str(talos_repo.root), "apply", "cp-01", "--yes", "--mode", "staged"]) == 0
+    assert (
+        _run(
+            [
+                "--repo",
+                str(talos_repo.root),
+                "apply",
+                "cp-01",
+                "--yes",
+                "--mode",
+                "staged",
+            ]
+        )
+        == 0
+    )
     assert _calls(talosctl_spy)[-1].endswith("--mode staged")
 
 
@@ -2538,7 +3077,10 @@ def test_insecure_declined_exits_nonzero(talos_repo, talosctl_spy, monkeypatch):
 
 
 def test_insecure_yes(talos_repo, talosctl_spy):
-    assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes"]) == 0
+    assert (
+        _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes"])
+        == 0
+    )
     assert "--insecure" in _calls(talosctl_spy)[0]
 ```
 
@@ -2572,7 +3114,9 @@ def apply(
     nodes: list[str] = NODES,
     mode: str = typer.Option("auto", "--mode", help="auto, no-reboot, staged or try."),
     yes: bool = typer.Option(False, "--yes", help="Do not ask before applying."),
-    insecure: bool = typer.Option(False, "--insecure", help="First install of ONE node in maintenance mode."),
+    insecure: bool = typer.Option(
+        False, "--insecure", help="First install of ONE node in maintenance mode."
+    ),
 ) -> None:
     """Apply rendered configs to nodes (asks per node unless --yes)."""
     context = ctx.obj.context()
@@ -2582,7 +3126,10 @@ def apply(
 
     if insecure:
         if len(nodes or []) != 1:
-            raise ValidationError("--insecure needs exactly one node", hint="e.g. talkub apply --insecure cp-01")
+            raise ValidationError(
+                "--insecure needs exactly one node",
+                hint="e.g. talkub apply --insecure cp-01",
+            )
         if not lifecycle.apply_insecure(context, nodes[0], confirm=confirm):
             raise typer.Exit(1)
         return

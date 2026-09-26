@@ -6,13 +6,19 @@ import typer
 
 from talkub import coredns
 
-app = typer.Typer(help="CoreDNS as a Helm release managed by Argo CD.", no_args_is_help=True)
+app = typer.Typer(
+    help="CoreDNS as a Helm release managed by Argo CD.", no_args_is_help=True
+)
 
 
 @app.command("takeover")
 def takeover(
     ctx: typer.Context,
-    resume: bool = typer.Option(False, "--resume", help="Continue an interrupted takeover (repo files already written)."),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help="Continue an interrupted takeover (repo files already written).",
+    ),
     yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation."),
 ) -> None:
     """Move CoreDNS on the running cluster from Talos to Argo CD (DNS keeps working)."""

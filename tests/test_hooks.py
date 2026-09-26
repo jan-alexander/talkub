@@ -8,8 +8,8 @@ import subprocess
 import sys
 
 import pytest
-
 from helpers import need
+
 from talkub import hooks
 from talkub.errors import ValidationError
 from talkub.lint import DEFAULT_YAMLLINT
@@ -90,7 +90,9 @@ def test_render_hook_quotes_unsafe_path():
 
 def test_hook_path_in_real_repo(tmp_path):
     repo = _git_repo(tmp_path)
-    assert hooks.hook_path(repo, Runner()) == repo.root / ".git" / "hooks" / "pre-commit"
+    assert (
+        hooks.hook_path(repo, Runner()) == repo.root / ".git" / "hooks" / "pre-commit"
+    )
 
 
 def test_hook_path_not_a_git_repo(tmp_path):
@@ -107,18 +109,37 @@ def test_hook_path_in_linked_worktree_uses_common_hooks_dir(tmp_path):
     main.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=main, check=True)
     subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--allow-empty", "-q", "-m", "x"],
-        cwd=main, check=True,
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            "x",
+        ],
+        cwd=main,
+        check=True,
     )
     worktree = tmp_path / "wt"
-    subprocess.run(["git", "worktree", "add", "-q", str(worktree)], cwd=main, check=True)
+    subprocess.run(
+        ["git", "worktree", "add", "-q", str(worktree)], cwd=main, check=True
+    )
 
-    assert hooks.hook_path(Repo(worktree), Runner()) == main / ".git" / "hooks" / "pre-commit"
+    assert (
+        hooks.hook_path(Repo(worktree), Runner())
+        == main / ".git" / "hooks" / "pre-commit"
+    )
 
 
 def test_hook_path_honors_relative_core_hooks_path(tmp_path):
     repo = _git_repo(tmp_path)
-    subprocess.run(["git", "config", "core.hooksPath", "custom-hooks"], cwd=repo.root, check=True)
+    subprocess.run(
+        ["git", "config", "core.hooksPath", "custom-hooks"], cwd=repo.root, check=True
+    )
     assert hooks.hook_path(repo, Runner()) == repo.root / "custom-hooks" / "pre-commit"
 
 
@@ -239,20 +260,42 @@ def test_real_commit_is_blocked_then_allowed_by_installed_hook(tmp_path, monkeyp
     (repo.root / "f.txt").write_text("x\n")
     subprocess.run(["git", "add", "."], cwd=repo.root, check=True)
     blocked = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-m", "x"],
-        cwd=repo.root, capture_output=True,
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-m",
+            "x",
+        ],
+        cwd=repo.root,
+        capture_output=True,
     )
     assert blocked.returncode != 0
 
     fake.write_text("#!/bin/sh\nexit 0\n")
     allowed = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-m", "x"],
-        cwd=repo.root, capture_output=True,
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-m",
+            "x",
+        ],
+        cwd=repo.root,
+        capture_output=True,
     )
     assert allowed.returncode == 0, allowed.stdout + allowed.stderr
 
 
-def test_real_commit_reports_missing_talkub_when_stored_path_and_path_both_lack_it(tmp_path, monkeypatch):
+def test_real_commit_reports_missing_talkub_when_stored_path_and_path_both_lack_it(
+    tmp_path, monkeypatch
+):
     repo = _git_repo(tmp_path)
     fake = _fake_talkub(tmp_path / "fake", 0)
     monkeypatch.setattr(sys, "argv", [str(fake)])
@@ -263,8 +306,19 @@ def test_real_commit_reports_missing_talkub_when_stored_path_and_path_both_lack_
     subprocess.run(["git", "add", "."], cwd=repo.root, check=True)
     env = {**os.environ, "PATH": "/usr/bin:/bin"}
     result = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-m", "x"],
-        cwd=repo.root, capture_output=True, env=env,
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-m",
+            "x",
+        ],
+        cwd=repo.root,
+        capture_output=True,
+        env=env,
     )
     assert result.returncode != 0
     assert (

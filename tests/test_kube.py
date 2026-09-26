@@ -1,6 +1,6 @@
 import pytest
-
 from helpers import need
+
 from talkub.context import Context
 from talkub.errors import ValidationError
 from talkub.kube import kube_session
@@ -8,7 +8,11 @@ from talkub.runner import Runner
 
 
 def test_spy_rules_first_match_and_logging(spy):
-    fake = spy("kubectl").on("get", "nodes", stdout="nodes!", rc=3).on("get", stdout="other")
+    fake = (
+        spy("kubectl")
+        .on("get", "nodes", stdout="nodes!", rc=3)
+        .on("get", stdout="other")
+    )
     proc = Runner().run(["kubectl", "get", "nodes"], check=False)
     assert (proc.returncode, proc.stdout) == (3, b"nodes!")
     assert Runner().run(["kubectl", "get", "pods"]).stdout == b"other"

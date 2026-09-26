@@ -43,7 +43,9 @@ def parse_defaults(text: str) -> Defaults:
             installer = (doc.get("installer") or {}).get("image")
         elif kind == "KubeletConfig":
             kubelet = doc.get("image")
-        elif doc.get("version") == "v1alpha1" and isinstance(doc.get("machine"), Mapping):
+        elif doc.get("version") == "v1alpha1" and isinstance(
+            doc.get("machine"), Mapping
+        ):
             machine = doc["machine"]
             installer = installer or (machine.get("install") or {}).get("image")
             kubelet = kubelet or (machine.get("kubelet") or {}).get("image")
@@ -54,15 +56,28 @@ def parse_defaults(text: str) -> Defaults:
         )
     image, talos_version = _image_tag(installer)
     _, kubelet_tag = _image_tag(kubelet)
-    return Defaults(talos_version=talos_version, kubernetes_version=kubelet_tag.lstrip("v"), install_image=image)
+    return Defaults(
+        talos_version=talos_version,
+        kubernetes_version=kubelet_tag.lstrip("v"),
+        install_image=image,
+    )
 
 
-def detect_defaults(runner: Runner, name: str, endpoint: str, secrets: Path) -> Defaults:
+def detect_defaults(
+    runner: Runner, name: str, endpoint: str, secrets: Path
+) -> Defaults:
     argv = [
-        "talosctl", "gen", "config", name, endpoint,
-        "--with-secrets", str(secrets),
-        "-t", "controlplane",
-        "-o", "-",
+        "talosctl",
+        "gen",
+        "config",
+        name,
+        endpoint,
+        "--with-secrets",
+        str(secrets),
+        "-t",
+        "controlplane",
+        "-o",
+        "-",
         "--with-docs=false",
         "--with-examples=false",
     ]
@@ -80,12 +95,23 @@ def gen_talosconfig(
     node: str,
 ) -> Path:
     path = workdir / "talosconfig"
-    runner.run([
-        "talosctl", "gen", "config", name, endpoint,
-        "--with-secrets", str(secrets),
-        "-t", "talosconfig",
-        "-o", str(path),
-    ])
-    runner.run(["talosctl", "--talosconfig", str(path), "config", "endpoint", *endpoints])
+    runner.run(
+        [
+            "talosctl",
+            "gen",
+            "config",
+            name,
+            endpoint,
+            "--with-secrets",
+            str(secrets),
+            "-t",
+            "talosconfig",
+            "-o",
+            str(path),
+        ]
+    )
+    runner.run(
+        ["talosctl", "--talosconfig", str(path), "config", "endpoint", *endpoints]
+    )
     runner.run(["talosctl", "--talosconfig", str(path), "config", "node", node])
     return path

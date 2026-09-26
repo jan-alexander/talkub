@@ -1,6 +1,6 @@
 import pytest
-
 from helpers import need
+
 from talkub.crypto import age
 from talkub.errors import DecryptFailed, NoIdentity, ValidationError
 from talkub.identity import create_identity
@@ -17,8 +17,12 @@ def _other_identity(tmp_path, name):
 
 
 def test_create_writes_key_files(empty_repo, software_identity):
-    secret = Keyring(empty_repo, Runner()).create([Recipient("me", software_identity[1])])
-    assert empty_repo.master_age.read_bytes().startswith(b"-----BEGIN AGE ENCRYPTED FILE-----")
+    secret = Keyring(empty_repo, Runner()).create(
+        [Recipient("me", software_identity[1])]
+    )
+    assert empty_repo.master_age.read_bytes().startswith(
+        b"-----BEGIN AGE ENCRYPTED FILE-----"
+    )
     assert empty_repo.master_pub.read_text().strip() == age.public_key(Runner(), secret)
     assert "# name: me" in empty_repo.recipients_file.read_text()
 
@@ -37,18 +41,25 @@ def test_create_twice_rejected(keyed_repo, software_identity):
 def test_env_master_key_wins_without_touching_master_age(keyed_repo):
     secret = Keyring(keyed_repo, Runner()).master_key()
     keyed_repo.master_age.unlink()
-    assert Keyring(keyed_repo, Runner(), env={"SOPS_AGE_KEY": secret}).master_key() == secret
+    assert (
+        Keyring(keyed_repo, Runner(), env={"SOPS_AGE_KEY": secret}).master_key()
+        == secret
+    )
 
 
 def test_talkub_identity_not_a_recipient(keyed_repo, tmp_path):
     stranger, _ = _other_identity(tmp_path, "stranger")
     with pytest.raises(DecryptFailed):
-        Keyring(keyed_repo, Runner(), env={"TALKUB_IDENTITY": str(stranger)}).master_key()
+        Keyring(
+            keyed_repo, Runner(), env={"TALKUB_IDENTITY": str(stranger)}
+        ).master_key()
 
 
 def test_no_identity(keyed_repo, tmp_path):
     with pytest.raises(NoIdentity):
-        Keyring(keyed_repo, Runner(), env={"XDG_CONFIG_HOME": str(tmp_path / "empty")}).master_key()
+        Keyring(
+            keyed_repo, Runner(), env={"XDG_CONFIG_HOME": str(tmp_path / "empty")}
+        ).master_key()
 
 
 def test_add_lets_new_admin_decrypt(keyed_repo, tmp_path):
@@ -62,7 +73,11 @@ def test_add_lets_new_admin_decrypt(keyed_repo, tmp_path):
 def test_add_duplicate_rejected(keyed_repo, software_identity):
     keyring = Keyring(keyed_repo, Runner())
     with pytest.raises(ValidationError):
-        keyring.add(Recipient("me", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"))
+        keyring.add(
+            Recipient(
+                "me", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"
+            )
+        )
     with pytest.raises(ValidationError):
         keyring.add(Recipient("other", software_identity[1]))
 
@@ -88,14 +103,21 @@ def test_remove_unknown(keyed_repo):
         Keyring(keyed_repo, Runner()).remove("nobody")
 
 
-def test_add_with_unrelated_env_key_refused_and_master_age_untouched(keyed_repo, tmp_path):
+def test_add_with_unrelated_env_key_refused_and_master_age_untouched(
+    keyed_repo, tmp_path
+):
     unrelated = age.generate(Runner())
     keyfile = tmp_path / "personal-sops-keys.txt"
     keyfile.write_text(unrelated.secret + "\n")
     before = keyed_repo.master_age.read_bytes()
     keyring = Keyring(keyed_repo, Runner(), env={"SOPS_AGE_KEY_FILE": str(keyfile)})
     with pytest.raises(NoIdentity) as exc:
-        keyring.add(Recipient("backup", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"))
+        keyring.add(
+            Recipient(
+                "backup",
+                "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq",
+            )
+        )
     assert "does not contain this cluster's master key" in str(exc.value)
     assert keyed_repo.master_age.read_bytes() == before
     assert [r.name for r in Keyring(keyed_repo, Runner()).recipients()] == ["me"]

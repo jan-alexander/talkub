@@ -20,8 +20,16 @@ class Context:
 
     @classmethod
     def open(
-        cls, repo: Repo, runner: Runner | None = None, env: Mapping[str, str] | None = None
+        cls,
+        repo: Repo,
+        runner: Runner | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> Context:
         runner = runner or Runner()
         keyring = Keyring(repo, runner, env)
-        return cls(repo=repo, runner=runner, keyring=keyring, sops=Sops(runner, keyring.master_key))
+        return cls(
+            repo=repo,
+            runner=runner,
+            keyring=keyring,
+            sops=Sops(runner, keyring.master_key),
+        )

@@ -77,7 +77,7 @@ tests/
 Add imports `import json`, `from pathlib import Path` at the top (keep existing imports), then append:
 
 ```python
-SPY_SCRIPT = r'''
+SPY_SCRIPT = r"""
 import json
 import os
 import sys
@@ -102,7 +102,7 @@ if rule is not None:
     sys.stdout.write(rule.get("stdout", ""))
     sys.stderr.write(rule.get("stderr", ""))
     sys.exit(rule.get("rc", 0))
-'''
+"""
 
 
 @dataclass
@@ -129,10 +129,23 @@ class Spy:
     def _save(self) -> None:
         self.rules_file.write_text(json.dumps(self.rules))
 
-    def on(self, *words: str, stdout: str = "", stderr: str = "", rc: int = 0, read_stdin: bool = False) -> Spy:
+    def on(
+        self,
+        *words: str,
+        stdout: str = "",
+        stderr: str = "",
+        rc: int = 0,
+        read_stdin: bool = False,
+    ) -> Spy:
         """Answer calls whose arguments contain all `words`."""
         self.rules.append(
-            {"match": list(words), "stdout": stdout, "stderr": stderr, "rc": rc, "read_stdin": read_stdin}
+            {
+                "match": list(words),
+                "stdout": stdout,
+                "stderr": stderr,
+                "rc": rc,
+                "read_stdin": read_stdin,
+            }
         )
         self._save()
         return self
@@ -173,7 +186,10 @@ def spy(fake_bin, tmp_path):
 
     def make(name: str) -> Spy:
         instance = Spy(name=name, directory=directory, real_path=shutil.which(name))
-        fake_bin(name, f'exec "{sys.executable}" "{script}" "{instance.log}" "{instance.rules_file}" "$@"\n')
+        fake_bin(
+            name,
+            f'exec "{sys.executable}" "{script}" "{instance.log}" "{instance.rules_file}" "$@"\n',
+        )
         return instance
 
     return make
@@ -194,7 +210,11 @@ from talkub.runner import Runner
 
 
 def test_spy_rules_first_match_and_logging(spy):
-    fake = spy("kubectl").on("get", "nodes", stdout="nodes!", rc=3).on("get", stdout="other")
+    fake = (
+        spy("kubectl")
+        .on("get", "nodes", stdout="nodes!", rc=3)
+        .on("get", stdout="other")
+    )
     proc = Runner().run(["kubectl", "get", "nodes"], check=False)
     assert (proc.returncode, proc.stdout) == (3, b"nodes!")
     assert Runner().run(["kubectl", "get", "pods"]).stdout == b"other"
@@ -230,10 +250,22 @@ Append to `tests/test_cli_nodes.py`:
 ```python
 def test_init_rejects_invalid_node_name(tmp_path, capfd, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    code = _run([
-        "init", "demo", "--endpoint", "https://10.0.0.10:6443", "--git-url", "https://g",
-        "--node", "a{x}=10.0.0.10", "--static", "10.0.0.10/24", "--gateway", "10.0.0.1",
-    ])
+    code = _run(
+        [
+            "init",
+            "demo",
+            "--endpoint",
+            "https://10.0.0.10:6443",
+            "--git-url",
+            "https://g",
+            "--node",
+            "a{x}=10.0.0.10",
+            "--static",
+            "10.0.0.10/24",
+            "--gateway",
+            "10.0.0.1",
+        ]
+    )
     assert code == 1
     assert "invalid node name" in capfd.readouterr().err
 ```
@@ -276,9 +308,13 @@ class KubeSession:
     def kubectl(
         self, args: Sequence[str], *, input: bytes | None = None, check: bool = True
     ) -> subprocess.CompletedProcess[bytes]:
-        return self.runner.run(["kubectl", *args], input=input, env=self.env, check=check)
+        return self.runner.run(
+            ["kubectl", *args], input=input, env=self.env, check=check
+        )
 
-    def helm(self, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+    def helm(
+        self, args: Sequence[str], *, check: bool = True
+    ) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(["helm", *args], env=self.env, check=check)
 
 
@@ -287,7 +323,10 @@ def kube_session(ctx: Context) -> Iterator[KubeSession]:
     require_tool("kubectl")
     source = ctx.repo.kubeconfig
     if not source.is_file():
-        raise ValidationError(f"{ctx.repo.rel(source)} does not exist", hint="it is created by `talkub bootstrap`")
+        raise ValidationError(
+            f"{ctx.repo.rel(source)} does not exist",
+            hint="it is created by `talkub bootstrap`",
+        )
     with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
         yield KubeSession(ctx.runner, paths["kubeconfig"])
 ```
@@ -298,7 +337,9 @@ In `src/talkub/cli/setup.py`, import `validate_node_name` from `talkub.nodes` (e
 def _parse_node(value: str) -> tuple[str, NodeSpec]:
     name, sep, ip = value.partition("=")
     if not sep or not name or not ip:
-        raise ValidationError(f"invalid --node {value!r}", hint="use name=ip, e.g. cp-01=10.0.0.10")
+        raise ValidationError(
+            f"invalid --node {value!r}", hint="use name=ip, e.g. cp-01=10.0.0.10"
+        )
     validate_node_name(name)
     validate_address(ip, "--node")
     return name, NodeSpec(ip=ip)
@@ -379,7 +420,10 @@ def test_json_documents_stream_and_garbage():
 
 
 def test_extensions_and_schematic():
-    assert inspect.extensions(EXTENSIONS) == {"siderolabs/intel-ucode": "20260812", "schematic": "188cef51"}
+    assert inspect.extensions(EXTENSIONS) == {
+        "siderolabs/intel-ucode": "20260812",
+        "schematic": "188cef51",
+    }
     assert inspect.schematic_id(EXTENSIONS) == "188cef51"
     assert inspect.schematic_id("[]") is None
     assert inspect.schematic_id("{not json") is None
@@ -387,7 +431,10 @@ def test_extensions_and_schematic():
 
 def test_config_drift():
     assert inspect.config_drift("Dry run summary:\nNo changes.\n") == "in sync"
-    assert inspect.config_drift("Dry run summary:\nConfig diff:\n\n--- a\n+++ b\n+x\n") == "changes"
+    assert (
+        inspect.config_drift("Dry run summary:\nConfig diff:\n\n--- a\n+++ b\n+x\n")
+        == "changes"
+    )
     assert inspect.config_drift("something else") == "unknown"
 
 
@@ -397,9 +444,15 @@ def test_kubelet_versions():
 
 
 def test_application_summary():
-    assert inspect.application_summary(APPS) == {"Synced/Healthy": 2, "OutOfSync/Unknown": 1}
+    assert inspect.application_summary(APPS) == {
+        "Synced/Healthy": 2,
+        "OutOfSync/Unknown": 1,
+    }
     assert inspect.application_summary('{"items": []}') == {}
-    assert inspect.application_summary("error: the server doesn't have a resource type") is None
+    assert (
+        inspect.application_summary("error: the server doesn't have a resource type")
+        is None
+    )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -478,7 +531,11 @@ def config_drift(text: str) -> str:
 
 def _items(text: str) -> list[dict]:
     docs = json_documents(text)
-    if len(docs) != 1 or not isinstance(docs[0], dict) or not isinstance(docs[0].get("items"), list):
+    if (
+        len(docs) != 1
+        or not isinstance(docs[0], dict)
+        or not isinstance(docs[0].get("items"), list)
+    ):
         return []
     return [item for item in docs[0]["items"] if isinstance(item, dict)]
 
@@ -488,7 +545,9 @@ def kubelet_versions(text: str) -> dict[str, str]:
     result: dict[str, str] = {}
     for item in _items(text):
         name = (item.get("metadata") or {}).get("name")
-        version = ((item.get("status") or {}).get("nodeInfo") or {}).get("kubeletVersion")
+        version = ((item.get("status") or {}).get("nodeInfo") or {}).get(
+            "kubeletVersion"
+        )
         if isinstance(name, str) and isinstance(version, str):
             result[name] = version.lstrip("v")
     return result
@@ -497,7 +556,11 @@ def kubelet_versions(text: str) -> dict[str, str]:
 def application_summary(text: str) -> dict[str, int] | None:
     """'<sync>/<health>' -> count from `kubectl get applications -o json`; None if not parseable."""
     docs = json_documents(text)
-    if len(docs) != 1 or not isinstance(docs[0], dict) or not isinstance(docs[0].get("items"), list):
+    if (
+        len(docs) != 1
+        or not isinstance(docs[0], dict)
+        or not isinstance(docs[0].get("items"), list)
+    ):
         return None
     counts: Counter[str] = Counter()
     for item in _items(text):
@@ -554,7 +617,9 @@ def test_apply_waits_for_health_between_nodes(talos_repo, talosctl_spy):
 
 def test_no_health_wait_without_reboot_mode_or_bootstrap(talos_repo, talosctl_spy):
     _add_node(talos_repo, "w-01", "10.0.0.11")
-    lifecycle.apply(Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: True)
+    lifecycle.apply(
+        Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: True
+    )
     assert not any(" health " in c for c in _calls(talosctl_spy))
     talos_repo.kubeconfig.unlink()
     lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
@@ -601,7 +666,9 @@ def ensure_images(ctx: Context, settings: Settings, order: Sequence[str]) -> Non
         print("talkub: updated schematic IDs in .talkub.yaml", file=sys.stderr)
 
 
-def prepare(ctx: Context, names: Sequence[str]) -> tuple[Settings, list[str], dict[str, bytes]]:
+def prepare(
+    ctx: Context, names: Sequence[str]
+) -> tuple[Settings, list[str], dict[str, bytes]]:
     settings = ctx.repo.load_settings()
     order = ordered_nodes(settings, names)
     ensure_images(ctx, settings, order)
@@ -616,27 +683,30 @@ def wait_healthy(talos: TalosSession, address: str) -> None:
     print(f"   waiting for {address} to become healthy", flush=True)
     code = talos.call(address, ["health", "--wait-timeout", HEALTH_TIMEOUT])
     if code != 0:
-        raise CommandFailed(f"{address} did not become healthy", hint=f"talosctl health exited with {code}")
+        raise CommandFailed(
+            f"{address} did not become healthy",
+            hint=f"talosctl health exited with {code}",
+        )
 ```
 
 Replace every `_prepare(` call with `prepare(` (in `plan`, `apply`, `apply_insecure`). In `apply`, replace the loop with:
 
 ```python
-    rolling = mode in ("auto", "try") and is_bootstrapped(ctx)
-    applied: list[str] = []
-    with talos_session(ctx) as talos:
-        for index, name in enumerate(order):
-            try:
-                _apply_one(talos, settings, name, configs[name], mode, confirm, applied)
-                if rolling and applied and applied[-1] == name and index < len(order) - 1:
-                    wait_healthy(talos, settings.mgmt_address(name))
-            except CommandFailed as err:
-                progress = (
-                    f"already applied: {', '.join(applied) or 'none'}; "
-                    f"not touched: {', '.join(order[index + 1:]) or 'none'}"
-                )
-                raise CommandFailed(str(err), hint=f"{err.hint}; {progress}") from None
-    return applied
+rolling = mode in ("auto", "try") and is_bootstrapped(ctx)
+applied: list[str] = []
+with talos_session(ctx) as talos:
+    for index, name in enumerate(order):
+        try:
+            _apply_one(talos, settings, name, configs[name], mode, confirm, applied)
+            if rolling and applied and applied[-1] == name and index < len(order) - 1:
+                wait_healthy(talos, settings.mgmt_address(name))
+        except CommandFailed as err:
+            progress = (
+                f"already applied: {', '.join(applied) or 'none'}; "
+                f"not touched: {', '.join(order[index + 1 :]) or 'none'}"
+            )
+            raise CommandFailed(str(err), hint=f"{err.hint}; {progress}") from None
+return applied
 ```
 
 - [ ] **Step 4: Update the README warning**
@@ -692,11 +762,23 @@ def sealing_cert(tmp_path_factory):
     directory = tmp_path_factory.mktemp("sealing")
     subprocess.run(
         [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", str(directory / "key.pem"), "-out", str(directory / "cert.pem"),
-            "-days", "1", "-subj", "/CN=sealed-secret",
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(directory / "key.pem"),
+            "-out",
+            str(directory / "cert.pem"),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=sealed-secret",
         ],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     return (directory / "cert.pem").read_bytes()
 ```
@@ -741,7 +823,11 @@ items:
 def test_secret_manifest_from_literals_and_files(tmp_path):
     token = tmp_path / "token.txt"
     token.write_bytes(b"s3cret\n")
-    doc = yamlio.load(sealing.secret_manifest("db", "app", ["user=admin"], [f"api={token}", str(token)]).decode())
+    doc = yamlio.load(
+        sealing.secret_manifest(
+            "db", "app", ["user=admin"], [f"api={token}", str(token)]
+        ).decode()
+    )
     assert doc["kind"] == "Secret"
     assert doc["metadata"] == {"name": "db", "namespace": "app"}
     assert base64.b64decode(doc["data"]["user"]) == b"admin"
@@ -768,9 +854,15 @@ def test_secret_manifest_errors(literals, files, message):
 @pytest.mark.parametrize(
     "text, message",
     [
-        ("apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x, namespace: a}\n", "kind: Secret"),
+        (
+            "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x, namespace: a}\n",
+            "kind: Secret",
+        ),
         ("apiVersion: v1\nkind: Secret\nmetadata: {name: x}\n", "namespace"),
-        ("kind: Secret\nmetadata: {name: x, namespace: a}\n---\nkind: Secret\nmetadata: {name: y, namespace: a}\n", "exactly one"),
+        (
+            "kind: Secret\nmetadata: {name: x, namespace: a}\n---\nkind: Secret\nmetadata: {name: y, namespace: a}\n",
+            "exactly one",
+        ),
         ("{not yaml", "YAML"),
     ],
 )
@@ -786,7 +878,10 @@ pytestmark_keys = need("age", "age-keygen", "sops", "kubeseal")
 @pytestmark_keys
 def test_seal_falls_back_to_stored_cert(keyed_repo, sealing_cert, capfd):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
-    sealed = sealing.seal(Context.open(keyed_repo), sealing.secret_manifest("db", "app", ["password=hunter2"], []))
+    sealed = sealing.seal(
+        Context.open(keyed_repo),
+        sealing.secret_manifest("db", "app", ["password=hunter2"], []),
+    )
     doc = [d for d in yamlio.load_all(sealed.decode()) if d][0]
     assert doc["kind"] == "SealedSecret"
     assert doc["metadata"]["namespace"] == "app"
@@ -797,8 +892,13 @@ def test_seal_falls_back_to_stored_cert(keyed_repo, sealing_cert, capfd):
 @pytestmark_keys
 def test_seal_prefers_live_cert(repo_with_configs, sealing_cert, spy):
     spy("kubectl")
-    kubeseal = spy("kubeseal").on("--fetch-cert", stdout=sealing_cert.decode()).real("--cert")
-    sealed = sealing.seal(Context.open(repo_with_configs), sealing.secret_manifest("db", "app", ["a=b"], []))
+    kubeseal = (
+        spy("kubeseal").on("--fetch-cert", stdout=sealing_cert.decode()).real("--cert")
+    )
+    sealed = sealing.seal(
+        Context.open(repo_with_configs),
+        sealing.secret_manifest("db", "app", ["a=b"], []),
+    )
     assert b"SealedSecret" in sealed
     fetch = kubeseal.calls[0]
     assert "--fetch-cert" in fetch["args"] and fetch["kubeconfig"] is True
@@ -808,7 +908,9 @@ def test_seal_prefers_live_cert(repo_with_configs, sealing_cert, spy):
 @pytestmark_keys
 def test_seal_without_any_cert(keyed_repo):
     with pytest.raises(ValidationError) as exc:
-        sealing.seal(Context.open(keyed_repo), sealing.secret_manifest("db", "app", ["a=b"], []))
+        sealing.seal(
+            Context.open(keyed_repo), sealing.secret_manifest("db", "app", ["a=b"], [])
+        )
     assert "backup-sealing-key" in exc.value.hint
 
 
@@ -834,7 +936,9 @@ def test_backup_sealing_key(repo_with_configs, sealing_cert, spy):
     assert item["data"]["tls.key"] == "a2V5"
     for field in ("resourceVersion", "uid", "creationTimestamp"):
         assert field not in item["metadata"]
-    assert "kubectl.kubernetes.io/last-applied-configuration" not in item["metadata"].get("annotations", {})
+    assert "kubectl.kubernetes.io/last-applied-configuration" not in item[
+        "metadata"
+    ].get("annotations", {})
     assert sealing.cert_path(repo_with_configs).read_bytes() == sealing_cert
 
 
@@ -869,8 +973,21 @@ def _run(argv):
 def test_seal_from_literal(keyed_repo, sealing_cert, tmp_path):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     out = keyed_repo.root / "gitops" / "manifests" / "app" / "db.sealed.yaml"
-    code = _run(["--repo", str(keyed_repo.root), "secret", "seal", "db", "-n", "app",
-                 "--from-literal", "password=hunter2", "-o", str(out)])
+    code = _run(
+        [
+            "--repo",
+            str(keyed_repo.root),
+            "secret",
+            "seal",
+            "db",
+            "-n",
+            "app",
+            "--from-literal",
+            "password=hunter2",
+            "-o",
+            str(out),
+        ]
+    )
     assert code == 0
     assert b"kind: SealedSecret" in out.read_bytes()
 
@@ -878,8 +995,20 @@ def test_seal_from_literal(keyed_repo, sealing_cert, tmp_path):
 def test_seal_refuses_manifest_inside_repo(keyed_repo, sealing_cert, capfd):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     manifest = keyed_repo.root / "secret.yaml"
-    manifest.write_text("apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n")
-    code = _run(["--repo", str(keyed_repo.root), "secret", "seal", str(manifest), "-o", str(keyed_repo.root / "db.sealed.yaml")])
+    manifest.write_text(
+        "apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n"
+    )
+    code = _run(
+        [
+            "--repo",
+            str(keyed_repo.root),
+            "secret",
+            "seal",
+            str(manifest),
+            "-o",
+            str(keyed_repo.root / "db.sealed.yaml"),
+        ]
+    )
     assert code == 1
     assert "inside the cluster repo" in capfd.readouterr().err
 
@@ -887,9 +1016,24 @@ def test_seal_refuses_manifest_inside_repo(keyed_repo, sealing_cert, capfd):
 def test_seal_manifest_from_outside(keyed_repo, sealing_cert, tmp_path):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     manifest = tmp_path / "secret.yaml"
-    manifest.write_text("apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n")
+    manifest.write_text(
+        "apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n"
+    )
     out = tmp_path / "db.sealed.yaml"
-    assert _run(["--repo", str(keyed_repo.root), "secret", "seal", str(manifest), "-o", str(out)]) == 0
+    assert (
+        _run(
+            [
+                "--repo",
+                str(keyed_repo.root),
+                "secret",
+                "seal",
+                str(manifest),
+                "-o",
+                str(out),
+            ]
+        )
+        == 0
+    )
     assert out.exists()
 
 
@@ -936,10 +1080,21 @@ from talkub.kube import kube_session
 from talkub.repo import Repo
 from talkub.runner import require_tool
 
-CONTROLLER = ["--controller-name", "sealed-secrets-controller", "--controller-namespace", "kube-system"]
+CONTROLLER = [
+    "--controller-name",
+    "sealed-secrets-controller",
+    "--controller-namespace",
+    "kube-system",
+]
 KEY_LABEL = "sealedsecrets.bitnami.com/sealed-secrets-key"
 RUNTIME_FIELDS = (
-    "resourceVersion", "uid", "creationTimestamp", "managedFields", "ownerReferences", "generation", "selfLink",
+    "resourceVersion",
+    "uid",
+    "creationTimestamp",
+    "managedFields",
+    "ownerReferences",
+    "generation",
+    "selfLink",
 )
 _KEY = re.compile(r"[-._a-zA-Z0-9]+")
 
@@ -954,13 +1109,17 @@ def key_backup_path(repo: Repo) -> Path:
 
 def _add(data: dict[str, str], key: str, value: bytes) -> None:
     if not _KEY.fullmatch(key):
-        raise ValidationError(f"invalid secret key {key!r}", hint="use letters, digits, '-', '_' and '.'")
+        raise ValidationError(
+            f"invalid secret key {key!r}", hint="use letters, digits, '-', '_' and '.'"
+        )
     if key in data:
         raise ValidationError(f"duplicate secret key {key!r}")
     data[key] = base64.b64encode(value).decode()
 
 
-def secret_manifest(name: str, namespace: str, literals: Sequence[str], files: Sequence[str]) -> bytes:
+def secret_manifest(
+    name: str, namespace: str, literals: Sequence[str], files: Sequence[str]
+) -> bytes:
     """A Secret manifest built in memory, so values never appear on a command line."""
     if not literals and not files:
         raise ValidationError("give at least one --from-literal or --from-file")
@@ -968,7 +1127,9 @@ def secret_manifest(name: str, namespace: str, literals: Sequence[str], files: S
     for item in literals:
         key, sep, value = item.partition("=")
         if not sep:
-            raise ValidationError(f"invalid --from-literal {item!r}", hint="use key=value")
+            raise ValidationError(
+                f"invalid --from-literal {item!r}", hint="use key=value"
+            )
         _add(data, key, value.encode())
     for item in files:
         key, sep, path = item.partition("=")
@@ -994,10 +1155,17 @@ def check_secret_manifest(manifest: bytes) -> None:
         docs = [doc for doc in yamlio.load_all(manifest.decode()) if doc]
     except (YAMLError, UnicodeDecodeError):
         raise ValidationError("input is not valid YAML") from None
-    if len(docs) != 1 or not isinstance(docs[0], Mapping) or docs[0].get("kind") != "Secret":
+    if (
+        len(docs) != 1
+        or not isinstance(docs[0], Mapping)
+        or docs[0].get("kind") != "Secret"
+    ):
         raise ValidationError("input must be exactly one `kind: Secret` manifest")
     if not (docs[0].get("metadata") or {}).get("namespace"):
-        raise ValidationError("the Secret needs metadata.namespace", hint="sealed secrets are bound to their namespace")
+        raise ValidationError(
+            "the Secret needs metadata.namespace",
+            hint="sealed secrets are bound to their namespace",
+        )
 
 
 def sealing_cert(ctx: Context) -> bytes:
@@ -1006,13 +1174,17 @@ def sealing_cert(ctx: Context) -> bytes:
     if ctx.repo.kubeconfig.is_file():
         try:
             with kube_session(ctx) as kube:
-                proc = ctx.runner.run(["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env, check=False)
+                proc = ctx.runner.run(
+                    ["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env, check=False
+                )
         except TalkubError as err:
             reason = str(err)
         else:
             if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
                 return proc.stdout
-            reason = (proc.stderr or b"").decode().strip() or f"kubeseal exited with {proc.returncode}"
+            reason = (
+                proc.stderr or b""
+            ).decode().strip() or f"kubeseal exited with {proc.returncode}"
     fallback = cert_path(ctx.repo)
     if fallback.is_file():
         print(f"talkub: using {ctx.repo.rel(fallback)} ({reason})", file=sys.stderr)
@@ -1031,12 +1203,17 @@ def seal(ctx: Context, manifest: bytes) -> bytes:
     with private_file("sealing-cert.pem", cert) as cert_file:
         # Offline sealing against the certificate: kubeseal must not talk to any cluster here.
         argv = ["kubeseal", "--format", "yaml", "--cert", str(cert_file)]
-        return ctx.runner.run(argv, input=manifest, env={"KUBECONFIG": os.devnull}).stdout
+        return ctx.runner.run(
+            argv, input=manifest, env={"KUBECONFIG": os.devnull}
+        ).stdout
 
 
 def write_sealed(sealed: bytes, output: Path) -> None:
     if not output.name.endswith(".sealed.yaml"):
-        raise ValidationError(f"{output} must end with .sealed.yaml", hint="`talkub check` relies on the name")
+        raise ValidationError(
+            f"{output} must end with .sealed.yaml",
+            hint="`talkub check` relies on the name",
+        )
     atomic_write(output, sealed)
 
 
@@ -1044,21 +1221,33 @@ def backup_sealing_key(ctx: Context) -> list[Path]:
     """Store the controller key(s) SOPS-encrypted and the public certificate in bootstrap/."""
     require_tool("kubeseal")
     with kube_session(ctx) as kube:
-        listing = kube.kubectl(["get", "secret", "-n", "kube-system", "-l", KEY_LABEL, "-o", "yaml"]).stdout
-        cert = ctx.runner.run(["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env).stdout
+        listing = kube.kubectl(
+            ["get", "secret", "-n", "kube-system", "-l", KEY_LABEL, "-o", "yaml"]
+        ).stdout
+        cert = ctx.runner.run(
+            ["kubeseal", "--fetch-cert", *CONTROLLER], env=kube.env
+        ).stdout
     items = (yamlio.load(listing.decode()) or {}).get("items") or []
     if not items:
         raise ValidationError(
-            "no sealed-secrets key found in kube-system", hint="is the sealed-secrets controller running?"
+            "no sealed-secrets key found in kube-system",
+            hint="is the sealed-secrets controller running?",
         )
     for item in items:
         metadata = item.get("metadata") or {}
         for key in RUNTIME_FIELDS:
             metadata.pop(key, None)
-        (metadata.get("annotations") or {}).pop("kubectl.kubernetes.io/last-applied-configuration", None)
+        (metadata.get("annotations") or {}).pop(
+            "kubectl.kubernetes.io/last-applied-configuration", None
+        )
     plain = yamlio.dump({"apiVersion": "v1", "kind": "List", "items": items}).encode()
     backup = key_backup_path(ctx.repo)
-    atomic_write(backup, ctx.sops.encrypt(plain, filename=backup.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        backup,
+        ctx.sops.encrypt(
+            plain, filename=backup.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     atomic_write(cert_path(ctx.repo), cert)
     return [backup, cert_path(ctx.repo)]
 ```
@@ -1079,7 +1268,9 @@ from talkub import sealing
 from talkub.errors import ValidationError
 from talkub.repo import Repo
 
-app = typer.Typer(help="Sealed Secrets for manifests under gitops/.", no_args_is_help=True)
+app = typer.Typer(
+    help="Sealed Secrets for manifests under gitops/.", no_args_is_help=True
+)
 
 
 def _read_manifest(repo: Repo, source: str) -> bytes:
@@ -1102,19 +1293,32 @@ def _read_manifest(repo: Repo, source: str) -> bytes:
 def seal(
     ctx: typer.Context,
     source: str = typer.Argument(
-        ..., help="Secret name (with --from-literal/--from-file), a Secret manifest file, or '-' for stdin."
+        ...,
+        help="Secret name (with --from-literal/--from-file), a Secret manifest file, or '-' for stdin.",
     ),
-    namespace: str = typer.Option(None, "-n", "--namespace", help="Namespace (with --from-literal/--from-file)."),
-    literal: list[str] = typer.Option(None, "--from-literal", help="key=value (repeatable)."),
-    from_file: list[str] = typer.Option(None, "--from-file", help="[key=]path (repeatable)."),
-    output: Path = typer.Option(..., "-o", "--output", help="Target file; must end with .sealed.yaml."),
+    namespace: str = typer.Option(
+        None, "-n", "--namespace", help="Namespace (with --from-literal/--from-file)."
+    ),
+    literal: list[str] = typer.Option(
+        None, "--from-literal", help="key=value (repeatable)."
+    ),
+    from_file: list[str] = typer.Option(
+        None, "--from-file", help="[key=]path (repeatable)."
+    ),
+    output: Path = typer.Option(
+        ..., "-o", "--output", help="Target file; must end with .sealed.yaml."
+    ),
 ) -> None:
     """Seal a Secret for gitops/; the plaintext never touches the repo."""
     context = ctx.obj.context()
     if literal or from_file:
         if not namespace:
-            raise ValidationError("--namespace is required with --from-literal/--from-file")
-        manifest = sealing.secret_manifest(source, namespace, literal or [], from_file or [])
+            raise ValidationError(
+                "--namespace is required with --from-literal/--from-file"
+            )
+        manifest = sealing.secret_manifest(
+            source, namespace, literal or [], from_file or []
+        )
     else:
         if namespace:
             raise ValidationError(
@@ -1123,7 +1327,10 @@ def seal(
             )
         manifest = _read_manifest(context.repo, source)
     if not output.name.endswith(".sealed.yaml"):
-        raise ValidationError(f"{output} must end with .sealed.yaml", hint="`talkub check` relies on the name")
+        raise ValidationError(
+            f"{output} must end with .sealed.yaml",
+            hint="`talkub check` relies on the name",
+        )
     sealing.write_sealed(sealing.seal(context, manifest), output)
     print(f"wrote {output}")
 
@@ -1134,7 +1341,9 @@ def backup_sealing_key(ctx: typer.Context) -> None:
     context = ctx.obj.context()
     for path in sealing.backup_sealing_key(context):
         print(f"wrote {context.repo.rel(path)}")
-    print("commit bootstrap/ so a rebuilt cluster can still decrypt existing SealedSecrets")
+    print(
+        "commit bootstrap/ so a rebuilt cluster can still decrypt existing SealedSecrets"
+    )
 ```
 
 In `src/talkub/cli/main.py` extend the import line with `secret` (`from talkub.cli import admin, check, image, keys, secret, session, setup`) and add after `app.add_typer(image.app, name="image")`:
@@ -1196,8 +1405,12 @@ def cluster(talos_repo, spy):
     """talos_repo prepared for bootstrap: charts, values, root app; no kubeconfig yet; spies."""
     settings = talos_repo.load_settings()
     settings.charts = {
-        "sealed-secrets": ChartSpec("https://bitnami.github.io/sealed-secrets", "sealed-secrets", "2.20.0"),
-        "argocd": ChartSpec("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2"),
+        "sealed-secrets": ChartSpec(
+            "https://bitnami.github.io/sealed-secrets", "sealed-secrets", "2.20.0"
+        ),
+        "argocd": ChartSpec(
+            "https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2"
+        ),
     }
     talos_repo.write_settings(settings)
     for name in ("sealed-secrets.yaml", "argocd.yaml"):
@@ -1205,7 +1418,10 @@ def cluster(talos_repo, spy):
     atomic_write(talos_repo.gitops_dir / "root.yaml", b"kind: Application\n")
     talos_repo.kubeconfig.unlink()
     spies = {
-        "talosctl": spy("talosctl").real("gen").real("validate").on("kubeconfig", stdout=KUBECONFIG),
+        "talosctl": spy("talosctl")
+        .real("gen")
+        .real("validate")
+        .on("kubeconfig", stdout=KUBECONFIG),
         "kubectl": spy("kubectl").on("get", "secret", stdout=KEY_LIST),
         "helm": spy("helm"),
         "kubeseal": spy("kubeseal").on("--fetch-cert", stdout=CERT),
@@ -1217,7 +1433,11 @@ def test_fresh_bootstrap(cluster):
     repo, spies = cluster
     bootstrap.run(Context.open(repo))
     talos = spies["talosctl"].argvs
-    assert [a[a.index("-e") + 2] for a in talos] == ["bootstrap", "health", "kubeconfig"]
+    assert [a[a.index("-e") + 2] for a in talos] == [
+        "bootstrap",
+        "health",
+        "kubeconfig",
+    ]
     assert "15m" in talos[1]
     ctx = Context.open(repo)
     assert ctx.sops.decrypt(repo.kubeconfig).decode() == KUBECONFIG
@@ -1226,7 +1446,9 @@ def test_fresh_bootstrap(cluster):
     assert "--create-namespace" not in helm[0]
     assert helm[1][:4] == ["upgrade", "--install", "argocd", "argo-cd"]
     assert "--create-namespace" in helm[1] and "argocd" in helm[1]
-    assert all(call["kubeconfig"] and call["files"]["--values"] for call in spies["helm"].calls)
+    assert all(
+        call["kubeconfig"] and call["files"]["--values"] for call in spies["helm"].calls
+    )
     kubectl = spies["kubectl"].argvs
     assert kubectl[0] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]
     assert kubectl[1][:2] == ["get", "secret"]
@@ -1238,23 +1460,38 @@ def test_rerun_is_idempotent_and_restores_key_first(cluster):
     repo, spies = cluster
     bootstrap.run(Context.open(repo))
     kubeconfig_bytes = repo.kubeconfig.read_bytes()
-    spies["talosctl"].rules.insert(0, {"match": ["bootstrap"], "stdout": "", "rc": 1,
-                                       "stderr": "error: rpc error: code = AlreadyExists desc = etcd data directory is not empty"})
+    spies["talosctl"].rules.insert(
+        0,
+        {
+            "match": ["bootstrap"],
+            "stdout": "",
+            "rc": 1,
+            "stderr": "error: rpc error: code = AlreadyExists desc = etcd data directory is not empty",
+        },
+    )
     spies["talosctl"]._save()
     for fake in spies.values():
         fake.log.unlink(missing_ok=True)
     bootstrap.run(Context.open(repo))
-    assert repo.kubeconfig.read_bytes() == kubeconfig_bytes  # unchanged content → not rewritten
+    assert (
+        repo.kubeconfig.read_bytes() == kubeconfig_bytes
+    )  # unchanged content → not rewritten
     kubectl = spies["kubectl"].calls
     assert kubectl[0]["args"][:2] == ["apply", "-f"] and kubectl[0]["files"]["-f"]
-    assert kubectl[0]["args"][2] != str(repo.gitops_dir / "root.yaml")  # the decrypted key comes first
-    assert not any(a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs)  # no new backup
+    assert kubectl[0]["args"][2] != str(
+        repo.gitops_dir / "root.yaml"
+    )  # the decrypted key comes first
+    assert not any(
+        a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs
+    )  # no new backup
     assert len(spies["helm"].argvs) == 2
 
 
 def test_health_failure_stops_before_kubeconfig(cluster):
     repo, spies = cluster
-    spies["talosctl"].rules.insert(0, {"match": ["health"], "stdout": "", "stderr": "", "rc": 1})
+    spies["talosctl"].rules.insert(
+        0, {"match": ["health"], "stdout": "", "stderr": "", "rc": 1}
+    )
     spies["talosctl"]._save()
     with pytest.raises(CommandFailed) as exc:
         bootstrap.run(Context.open(repo))
@@ -1265,7 +1502,10 @@ def test_health_failure_stops_before_kubeconfig(cluster):
 
 def test_bootstrap_error_is_reported(cluster):
     repo, spies = cluster
-    spies["talosctl"].rules.insert(0, {"match": ["bootstrap"], "stdout": "", "stderr": "connection refused", "rc": 1})
+    spies["talosctl"].rules.insert(
+        0,
+        {"match": ["bootstrap"], "stdout": "", "stderr": "connection refused", "rc": 1},
+    )
     spies["talosctl"]._save()
     with pytest.raises(CommandFailed) as exc:
         bootstrap.run(Context.open(repo))
@@ -1323,7 +1563,9 @@ def run(ctx: Context) -> None:
     settings = ctx.repo.load_settings()
     missing = [key for key in RELEASES if key not in settings.charts]
     if missing:
-        raise ValidationError(f"missing chart settings in .talkub.yaml: {', '.join(missing)}")
+        raise ValidationError(
+            f"missing chart settings in .talkub.yaml: {', '.join(missing)}"
+        )
     first = ordered_nodes(settings, [])[0]
     if settings.node(first).role != "controlplane":
         raise ValidationError("bootstrap needs a controlplane node")
@@ -1333,9 +1575,14 @@ def run(ctx: Context) -> None:
         _step(f"bootstrapping etcd on {first} ({address})")
         _bootstrap_etcd(talos, address)
         _step("waiting for the cluster to become healthy")
-        code = talos.call(address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT])
+        code = talos.call(
+            address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT]
+        )
         if code != 0:
-            raise CommandFailed("the cluster did not become healthy", hint=f"talosctl health exited with {code}")
+            raise CommandFailed(
+                "the cluster did not become healthy",
+                hint=f"talosctl health exited with {code}",
+            )
         kubeconfig = talos.run(address, ["kubeconfig", "-", "--merge=false"]).stdout
     _store_kubeconfig(ctx, kubeconfig)
 
@@ -1348,7 +1595,9 @@ def run(ctx: Context) -> None:
                 kube.kubectl(["apply", "-f", str(plain["sealing-key.yaml"])])
         for key, (release, namespace, create) in RELEASES.items():
             _step(f"installing {release}")
-            _helm_install(kube, ctx.repo, key, release, settings.charts[key], namespace, create)
+            _helm_install(
+                kube, ctx.repo, key, release, settings.charts[key], namespace, create
+            )
         _step("applying gitops/root.yaml")
         kube.kubectl(["apply", "-f", str(ctx.repo.gitops_dir / "root.yaml")])
 
@@ -1366,7 +1615,10 @@ def _bootstrap_etcd(talos: TalosSession, address: str) -> None:
     if "AlreadyExists" in stderr or "already bootstrapped" in stderr.lower():
         print("   etcd is already bootstrapped")
         return
-    raise CommandFailed("talosctl bootstrap failed", hint=stderr.strip() or f"exit code {proc.returncode}")
+    raise CommandFailed(
+        "talosctl bootstrap failed",
+        hint=stderr.strip() or f"exit code {proc.returncode}",
+    )
 
 
 def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
@@ -1374,12 +1626,23 @@ def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
     if target.is_file() and ctx.sops.decrypt(target) == kubeconfig:
         print("   kubeconfig unchanged")
         return
-    atomic_write(target, ctx.sops.encrypt(kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        target,
+        ctx.sops.encrypt(
+            kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     print(f"   wrote {ctx.repo.rel(target)}")
 
 
 def _helm_install(
-    kube: KubeSession, repo: Repo, key: str, release: str, chart: ChartSpec, namespace: str, create: bool
+    kube: KubeSession,
+    repo: Repo,
+    key: str,
+    release: str,
+    chart: ChartSpec,
+    namespace: str,
+    create: bool,
 ) -> None:
     values = repo.gitops_dir / "values" / f"{key}.yaml"
     if not values.is_file():
@@ -1389,11 +1652,19 @@ def _helm_install(
     else:
         ref = [chart.chart, "--repo", chart.repo]
     argv = [
-        "upgrade", "--install", release, *ref,
-        "--version", chart.version,
-        "--namespace", namespace,
-        "--values", str(values),
-        "--wait", "--timeout", "10m",
+        "upgrade",
+        "--install",
+        release,
+        *ref,
+        "--version",
+        chart.version,
+        "--namespace",
+        namespace,
+        "--values",
+        str(values),
+        "--wait",
+        "--timeout",
+        "10m",
     ]
     if create:
         argv.append("--create-namespace")
@@ -1508,9 +1779,14 @@ def _actions(fake):
 
 def test_upgrade_outdated_node(talos_repo, spy):
     talosctl = _talosctl(spy, tag="v1.13.0")
-    assert upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True) == ["cp-01"]
+    assert upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True) == [
+        "cp-01"
+    ]
     call = next(a for a in talosctl.argvs if "upgrade" in a)
-    assert call[call.index("--image") + 1] == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    assert (
+        call[call.index("--image") + 1]
+        == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
+    )
     assert "--wait" in call
 
 
@@ -1523,7 +1799,9 @@ def test_up_to_date_node_is_skipped(talos_repo, spy, capfd):
 
 def test_schematic_change_triggers_upgrade(talos_repo, spy):
     _talosctl(spy, tag="v1.14.0", schematic="0000")
-    assert upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True) == ["cp-01"]
+    assert upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True) == [
+        "cp-01"
+    ]
 
 
 def test_declined_upgrade(talos_repo, spy):
@@ -1554,7 +1832,7 @@ def test_health_wait_between_upgrades(talos_repo, spy):
 def test_k8s_dry_run_then_upgrade(talos_repo, spy):
     talosctl = spy("talosctl")
     assert upgrade.k8s(Context.open(talos_repo), confirm=lambda q: True) is True
-    assert [a[a.index("-e") + 2:] for a in talosctl.argvs] == [
+    assert [a[a.index("-e") + 2 :] for a in talosctl.argvs] == [
         ["upgrade-k8s", "--to", "1.37.0", "--dry-run"],
         ["upgrade-k8s", "--to", "1.37.0"],
     ]
@@ -1585,7 +1863,13 @@ from collections.abc import Sequence
 
 from talkub.context import Context
 from talkub.errors import CommandFailed
-from talkub.lifecycle import Confirm, ensure_images, is_bootstrapped, ordered_nodes, wait_healthy
+from talkub.lifecycle import (
+    Confirm,
+    ensure_images,
+    is_bootstrapped,
+    ordered_nodes,
+    wait_healthy,
+)
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
 
@@ -1612,11 +1896,14 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                 if version.returncode != 0:
                     raise CommandFailed(
                         f"cannot reach node '{name}' at {address}",
-                        hint=(version.stderr or b"").decode().strip() or f"exit code {version.returncode}",
+                        hint=(version.stderr or b"").decode().strip()
+                        or f"exit code {version.returncode}",
                     )
                 current = inspect.server_version(version.stdout.decode())
                 schematic = inspect.schematic_id(
-                    session.run(address, ["get", "extensions", "-o", "json"], check=False).stdout.decode()
+                    session.run(
+                        address, ["get", "extensions", "-o", "json"], check=False
+                    ).stdout.decode()
                 )
                 print(
                     f"== {name} ({address}): talos {current or 'unknown'} -> {settings.talos_version}, "
@@ -1631,14 +1918,17 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                     continue
                 code = session.call(address, ["upgrade", "--image", image, "--wait"])
                 if code != 0:
-                    raise CommandFailed(f"upgrade failed for node '{name}'", hint=f"talosctl exited with {code}")
+                    raise CommandFailed(
+                        f"upgrade failed for node '{name}'",
+                        hint=f"talosctl exited with {code}",
+                    )
                 upgraded.append(name)
                 if rolling and index < len(order) - 1:
                     wait_healthy(session, address)
             except CommandFailed as err:
                 progress = (
                     f"already upgraded: {', '.join(upgraded) or 'none'}; "
-                    f"not touched: {', '.join(order[index + 1:]) or 'none'}"
+                    f"not touched: {', '.join(order[index + 1 :]) or 'none'}"
                 )
                 raise CommandFailed(str(err), hint=f"{err.hint}; {progress}") from None
     return upgraded
@@ -1653,13 +1943,17 @@ def k8s(ctx: Context, *, confirm: Confirm) -> bool:
     with talos_session(ctx) as session:
         code = session.call(address, [*target, "--dry-run"])
         if code != 0:
-            raise CommandFailed("upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}")
+            raise CommandFailed(
+                "upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}"
+            )
         if not confirm(f"upgrade Kubernetes to {settings.kubernetes_version}?"):
             print("aborted")
             return False
         code = session.call(address, target)
         if code != 0:
-            raise CommandFailed("upgrade-k8s failed", hint=f"talosctl exited with {code}")
+            raise CommandFailed(
+                "upgrade-k8s failed", hint=f"talosctl exited with {code}"
+            )
     return True
 ```
 
@@ -1676,7 +1970,10 @@ import typer
 
 from talkub import upgrade as upgrade_flow
 
-app = typer.Typer(help="Upgrade Talos or Kubernetes to the versions in .talkub.yaml.", no_args_is_help=True)
+app = typer.Typer(
+    help="Upgrade Talos or Kubernetes to the versions in .talkub.yaml.",
+    no_args_is_help=True,
+)
 YES = typer.Option(False, "--yes", help="Do not ask before upgrading.")
 
 
@@ -1690,7 +1987,9 @@ def _confirm(yes: bool):
 @app.command("talos")
 def talos(
     ctx: typer.Context,
-    nodes: list[str] = typer.Argument(None, help="Nodes (default: all, control planes first)."),
+    nodes: list[str] = typer.Argument(
+        None, help="Nodes (default: all, control planes first)."
+    ),
     yes: bool = YES,
 ) -> None:
     """Upgrade nodes whose Talos version or schematic differs (one at a time)."""
@@ -1746,20 +2045,29 @@ from talkub.repo import NodeSpec
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
 VERSION = "Client:\n\tTag: v1.14.0\nServer:\n\tNODE: x\n\tTag: v1.14.0\n"
-EXT = '{"spec": {"metadata": {"name": "schematic", "version": "%s"}}}' % DEFAULT_SCHEMATIC_ID
+EXT = (
+    '{"spec": {"metadata": {"name": "schematic", "version": "%s"}}}'
+    % DEFAULT_SCHEMATIC_ID
+)
 NODES = '{"items": [{"metadata": {"name": "cp-01"}, "status": {"nodeInfo": {"kubeletVersion": "v1.37.0"}}}]}'
 APPS = '{"items": [{"status": {"sync": {"status": "Synced"}, "health": {"status": "Healthy"}}}]}'
 
 
 def _spies(spy, drift="Dry run summary:\nNo changes.\n"):
     talosctl = (
-        spy("talosctl").real("gen").real("validate")
+        spy("talosctl")
+        .real("gen")
+        .real("validate")
         .on("-n", "10.0.0.99", rc=1, stderr="connection refused")
         .on("version", stdout=VERSION)
         .on("get", "extensions", stdout=EXT)
         .on("--dry-run", stdout=drift)
     )
-    kubectl = spy("kubectl").on("get", "nodes", stdout=NODES).on("get", "applications.argoproj.io", stdout=APPS)
+    kubectl = (
+        spy("kubectl")
+        .on("get", "nodes", stdout=NODES)
+        .on("get", "applications.argoproj.io", stdout=APPS)
+    )
     return talosctl, kubectl
 
 
@@ -1768,7 +2076,11 @@ def test_healthy_cluster(talos_repo, spy):
     report = status.collect(Context.open(talos_repo))
     [node] = report.nodes
     assert (node.reachable, node.talos, node.schematic, node.config, node.kubelet) == (
-        True, "v1.14.0", DEFAULT_SCHEMATIC_ID, "in sync", "1.37.0",
+        True,
+        "v1.14.0",
+        DEFAULT_SCHEMATIC_ID,
+        "in sync",
+        "1.37.0",
     )
     assert report.applications == {"Synced/Healthy": 1}
     text = status.render(report)
@@ -1789,10 +2101,14 @@ def test_unreachable_node_and_unparseable_output(talos_repo, spy):
     settings = talos_repo.load_settings()
     settings.nodes["w-99"] = NodeSpec(ip="10.0.0.99", role="worker")
     talos_repo.write_settings(settings)
-    atomic_write(node_patch_path(talos_repo, "w-99"), render_node_patch("w-99").encode())
+    atomic_write(
+        node_patch_path(talos_repo, "w-99"), render_node_patch("w-99").encode()
+    )
     talosctl, _ = _spies(spy)
     # after the 10.0.0.99 rule (index 2), before the regular version rule
-    talosctl.rules.insert(3, {"match": ["version"], "stdout": "garbage", "stderr": "", "rc": 0})
+    talosctl.rules.insert(
+        3, {"match": ["version"], "stdout": "garbage", "stderr": "", "rc": 0}
+    )
     talosctl._save()
     report = status.collect(Context.open(talos_repo))
     by_name = {n.name: n for n in report.nodes}
@@ -1872,26 +2188,50 @@ def collect(ctx: Context) -> StatusReport:
             if version.returncode != 0:
                 nodes.append(NodeStatus(name, address, reachable=False))
                 continue
-            node = NodeStatus(name, address, reachable=True, talos=inspect.server_version(version.stdout.decode()))
-            extensions = session.run(address, ["get", "extensions", "-o", "json"], check=False)
-            node.schematic = inspect.schematic_id(extensions.stdout.decode()) if extensions.returncode == 0 else None
+            node = NodeStatus(
+                name,
+                address,
+                reachable=True,
+                talos=inspect.server_version(version.stdout.decode()),
+            )
+            extensions = session.run(
+                address, ["get", "extensions", "-o", "json"], check=False
+            )
+            node.schematic = (
+                inspect.schematic_id(extensions.stdout.decode())
+                if extensions.returncode == 0
+                else None
+            )
             with private_file(f"{name}.yaml", configs[name]) as path:
-                dry_run = session.run(address, ["apply-config", "--file", str(path), "--dry-run"], check=False)
+                dry_run = session.run(
+                    address,
+                    ["apply-config", "--file", str(path), "--dry-run"],
+                    check=False,
+                )
             if dry_run.returncode == 0:
-                node.config = inspect.config_drift((dry_run.stdout + (dry_run.stderr or b"")).decode())
+                node.config = inspect.config_drift(
+                    (dry_run.stdout + (dry_run.stderr or b"")).decode()
+                )
             nodes.append(node)
 
     if not is_bootstrapped(ctx):
         return StatusReport(settings, nodes, kube="not bootstrapped")
     with kube_session(ctx) as kube:
         kubelets = kube.kubectl(["get", "nodes", "-o", "json"], check=False)
-        apps = kube.kubectl(["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"], check=False)
+        apps = kube.kubectl(
+            ["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            check=False,
+        )
     if kubelets.returncode != 0:
         return StatusReport(settings, nodes, kube="unavailable")
     versions = inspect.kubelet_versions(kubelets.stdout.decode())
     for node in nodes:
         node.kubelet = versions.get(node.name)
-    applications = inspect.application_summary(apps.stdout.decode()) if apps.returncode == 0 else None
+    applications = (
+        inspect.application_summary(apps.stdout.decode())
+        if apps.returncode == 0
+        else None
+    )
     return StatusReport(settings, nodes, kube="ok", applications=applications)
 
 
@@ -1921,14 +2261,19 @@ def render(report: StatusReport) -> str:
                 _compare(node.talos, settings.talos_version),
                 _compare(node.schematic, wanted.id if wanted else None, width=12),
                 node.config,
-                _compare(node.kubelet, settings.kubernetes_version) if node.kubelet else "-",
+                _compare(node.kubelet, settings.kubernetes_version)
+                if node.kubelet
+                else "-",
             )
         )
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     lines = [
         f"cluster {settings.name}: talos {settings.talos_version}, kubernetes {settings.kubernetes_version}",
         "",
-        *("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip() for row in rows),
+        *(
+            "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip()
+            for row in rows
+        ),
         "",
     ]
     if report.kube != "ok":
@@ -1938,7 +2283,9 @@ def render(report: StatusReport) -> str:
     elif not report.applications:
         lines.append("argocd: no applications")
     else:
-        summary = ", ".join(f"{count} {state}" for state, count in sorted(report.applications.items()))
+        summary = ", ".join(
+            f"{count} {state}" for state, count in sorted(report.applications.items())
+        )
         lines.append(f"argocd: {summary}")
     return "\n".join(lines)
 ```

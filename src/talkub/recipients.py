@@ -29,14 +29,17 @@ class Recipient:
 def validate_key(key: str) -> str:
     key = key.strip()
     if not _KEY.fullmatch(key):
-        raise ValidationError(f"not an age recipient: {key!r}", hint="age public keys start with 'age1'")
+        raise ValidationError(
+            f"not an age recipient: {key!r}", hint="age public keys start with 'age1'"
+        )
     return key
 
 
 def validate_name(name: str) -> str:
     if not _NAME.fullmatch(name):
         raise ValidationError(
-            f"invalid recipient name {name!r}", hint="use letters, digits, '.', '_' or '-'"
+            f"invalid recipient name {name!r}",
+            hint="use letters, digits, '.', '_' or '-'",
         )
     return name
 

@@ -11,8 +11,8 @@ import sys
 from datetime import UTC, datetime
 
 import pytest
-
 from helpers import need
+
 from talkub import shortcuts
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
@@ -23,12 +23,35 @@ pytestmark = need("age", "age-keygen", "sops")
 
 VALUE = b"s3cr3t-Pa55w0rd!"
 SHORTCUTS = {
-    "creds": Shortcut(name="creds", kind="secret", description="db password", namespace="prod", secret="db-creds", key="password"),
-    "backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="backup-job"),
-    "backup-follow": Shortcut(name="backup-follow", kind="job", namespace="prod", cronjob="backup-job", follow=True),
+    "creds": Shortcut(
+        name="creds",
+        kind="secret",
+        description="db password",
+        namespace="prod",
+        secret="db-creds",
+        key="password",
+    ),
+    "backup": Shortcut(
+        name="backup", kind="job", namespace="prod", cronjob="backup-job"
+    ),
+    "backup-follow": Shortcut(
+        name="backup-follow",
+        kind="job",
+        namespace="prod",
+        cronjob="backup-job",
+        follow=True,
+    ),
     "pods": Shortcut(name="pods", kind="run", argv=("k", "get", "pods")),
-    "members": Shortcut(name="members", kind="run", argv=("talosctl", "get", "members")),
-    "grafana": Shortcut(name="grafana", kind="portForward", namespace="monitoring", service="grafana", ports=("3000:3000", "8080")),
+    "members": Shortcut(
+        name="members", kind="run", argv=("talosctl", "get", "members")
+    ),
+    "grafana": Shortcut(
+        name="grafana",
+        kind="portForward",
+        namespace="monitoring",
+        service="grafana",
+        ports=("3000:3000", "8080"),
+    ),
 }
 
 
@@ -44,7 +67,11 @@ def ctx(repo_with_configs):
 def detached(monkeypatch):
     """Capture Runner.spawn_detached instead of starting the real clearer."""
     calls = []
-    monkeypatch.setattr(Runner, "spawn_detached", lambda self, argv, *, input: calls.append((list(argv), input)))
+    monkeypatch.setattr(
+        Runner,
+        "spawn_detached",
+        lambda self, argv, *, input: calls.append((list(argv), input)),
+    )
     return calls
 
 
@@ -53,9 +80,13 @@ def _secret_json(**data):
     return json.dumps({"kind": "Secret", "data": encoded})
 
 
-def test_secret_goes_to_the_clipboard_on_stdin_only(ctx, spy, detached, capfd, monkeypatch):
+def test_secret_goes_to_the_clipboard_on_stdin_only(
+    ctx, spy, detached, capfd, monkeypatch
+):
     monkeypatch.setenv("TALKUB_CLIPBOARD_CLEAR_SECONDS", "30")
-    kubectl = spy("kubectl").on("get", "secret", stdout=_secret_json(password=VALUE, user=b"admin"))
+    kubectl = spy("kubectl").on(
+        "get", "secret", stdout=_secret_json(password=VALUE, user=b"admin")
+    )
     pbcopy = spy("pbcopy").on(read_stdin=True)
 
     assert shortcuts.run(ctx, "creds", []) == 0
@@ -71,7 +102,10 @@ def test_secret_goes_to_the_clipboard_on_stdin_only(ctx, spy, detached, capfd, m
     assert VALUE.decode() not in " ".join(argv)
     out, err = capfd.readouterr()
     assert VALUE.decode() not in out + err
-    assert out.strip() == f"copied creds ({len(VALUE)} chars); the clipboard is cleared in 30 s"
+    assert (
+        out.strip()
+        == f"copied creds ({len(VALUE)} chars); the clipboard is cleared in 30 s"
+    )
     for path in ctx.repo.root.rglob("*"):
         if path.is_file():
             assert VALUE not in path.read_bytes()
@@ -100,7 +134,9 @@ def test_secret_print_writes_only_the_value(ctx, spy, detached, monkeypatch):
 
 
 def test_secret_missing_key_lists_keys_without_values(ctx, spy, detached):
-    spy("kubectl").on("get", "secret", stdout=_secret_json(user=b"admin-value", token=VALUE))
+    spy("kubectl").on(
+        "get", "secret", stdout=_secret_json(user=b"admin-value", token=VALUE)
+    )
     with pytest.raises(ValidationError) as exc:
         shortcuts.run(ctx, "creds", [])
     text = f"{exc.value} {exc.value.hint}"
@@ -117,7 +153,10 @@ def test_job_name_format_and_length():
     assert long_name == "a" * 41 + "-manual-20260926130405"
     assert len(long_name) == 63
     # a shortened cronjob part ending in '-' loses it
-    assert shortcuts.job_name("b" * 40 + "-cccc", now) == "b" * 40 + "-manual-20260926130405"
+    assert (
+        shortcuts.job_name("b" * 40 + "-cccc", now)
+        == "b" * 40 + "-manual-20260926130405"
+    )
     assert shortcuts.job_name("c" * 41, now) == "c" * 41 + "-manual-20260926130405"
 
 
@@ -126,7 +165,10 @@ def test_job_creates_from_cronjob(ctx, spy, capfd):
     assert shortcuts.run(ctx, "backup", []) == 0
     [create] = kubectl.argvs
     assert create[:4] == ["-n", "prod", "create", "job"]
-    assert create[4].startswith("backup-job-manual-") and len(create[4]) == len("backup-job-manual-") + 14
+    assert (
+        create[4].startswith("backup-job-manual-")
+        and len(create[4]) == len("backup-job-manual-") + 14
+    )
     assert create[5:] == ["--from=cronjob/backup-job"]
     assert f"created job prod/{create[4]}" in capfd.readouterr().out
 
@@ -158,7 +200,9 @@ class ScriptedKubectl(Runner):
         return self.logs()
 
     def verbs(self):
-        return [" ".join(call[2:4]) if call[2] == "get" else call[2] for call in self.calls]
+        return [
+            " ".join(call[2:4]) if call[2] == "get" else call[2] for call in self.calls
+        ]
 
 
 def _pods(*phases):
@@ -170,7 +214,10 @@ def _job(*, succeeded=None, condition=None):
     if succeeded is not None:
         status["succeeded"] = succeeded
     if condition is not None:
-        status["conditions"] = [{"type": "Suspended", "status": "False"}, {"type": condition, "status": "True"}]
+        status["conditions"] = [
+            {"type": "Suspended", "status": "False"},
+            {"type": condition, "status": "True"},
+        ]
     return json.dumps({"status": status})
 
 
@@ -186,15 +233,38 @@ def _scripted_ctx(repo, script, **kwargs):
     return Context.open(repo, runner=runner), runner
 
 
-def test_job_follow_waits_for_the_pod_streams_logs_and_succeeds(ctx, spy, fast_polls, capfd):
+def test_job_follow_waits_for_the_pod_streams_logs_and_succeeds(
+    ctx, spy, fast_polls, capfd
+):
     spy("kubectl")  # only needs to be on PATH
     fctx, runner = _scripted_ctx(
-        ctx.repo, {"pods": [_pods(), _pods("Pending"), _pods("Running")], "job": [_job(), _job(condition="Complete")]}
+        ctx.repo,
+        {
+            "pods": [_pods(), _pods("Pending"), _pods("Running")],
+            "job": [_job(), _job(condition="Complete")],
+        },
     )
     assert shortcuts.run(fctx, "backup", [], follow=True) == 0
-    assert runner.verbs() == ["create", "get pods", "get pods", "get pods", "logs", "get job", "get job"]
+    assert runner.verbs() == [
+        "create",
+        "get pods",
+        "get pods",
+        "get pods",
+        "logs",
+        "get job",
+        "get job",
+    ]
     job = runner.calls[0][4]
-    assert runner.calls[1] == ["-n", "prod", "get", "pods", "-l", f"job-name={job}", "-o", "json"]
+    assert runner.calls[1] == [
+        "-n",
+        "prod",
+        "get",
+        "pods",
+        "-l",
+        f"job-name={job}",
+        "-o",
+        "json",
+    ]
     assert runner.calls[4] == ["-n", "prod", "logs", "-f", f"job/{job}"]
     assert runner.calls[5] == ["-n", "prod", "get", "job", job, "-o", "json"]
     assert "describe job" not in capfd.readouterr().err
@@ -202,14 +272,18 @@ def test_job_follow_waits_for_the_pod_streams_logs_and_succeeds(ctx, spy, fast_p
 
 def test_job_follow_pod_already_finished_goes_straight_to_logs(ctx, spy, fast_polls):
     spy("kubectl")
-    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Succeeded")], "job": [_job(succeeded=1)]})
+    fctx, runner = _scripted_ctx(
+        ctx.repo, {"pods": [_pods("Succeeded")], "job": [_job(succeeded=1)]}
+    )
     assert shortcuts.run(fctx, "backup", [], follow=True) == 0
     assert runner.verbs() == ["create", "get pods", "logs", "get job"]
 
 
 def test_job_follow_failed_job_returns_1_with_hint(ctx, spy, fast_polls, capfd):
     spy("kubectl")
-    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Failed")], "job": [_job(condition="Failed")]})
+    fctx, runner = _scripted_ctx(
+        ctx.repo, {"pods": [_pods("Failed")], "job": [_job(condition="Failed")]}
+    )
     assert shortcuts.run(fctx, "backup", [], follow=True) == 1
     job = runner.calls[0][4]
     err = capfd.readouterr().err
@@ -219,7 +293,9 @@ def test_job_follow_failed_job_returns_1_with_hint(ctx, spy, fast_polls, capfd):
 
 def test_job_follow_undecided_job_is_still_running(ctx, spy, fast_polls, capfd):
     spy("kubectl")
-    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Running")], "job": [_job()]})
+    fctx, runner = _scripted_ctx(
+        ctx.repo, {"pods": [_pods("Running")], "job": [_job()]}
+    )
     assert shortcuts.run(fctx, "backup", [], follow=True) == 1
     job = runner.calls[0][4]
     err = capfd.readouterr().err
@@ -228,10 +304,16 @@ def test_job_follow_undecided_job_is_still_running(ctx, spy, fast_polls, capfd):
     assert runner.verbs().count("get job") > 1  # polled until the timeout
 
 
-def test_job_follow_interrupted_logs_check_status_once(ctx, spy, fast_polls, monkeypatch, capfd):
+def test_job_follow_interrupted_logs_check_status_once(
+    ctx, spy, fast_polls, monkeypatch, capfd
+):
     spy("kubectl")
-    monkeypatch.setattr(shortcuts, "JOB_SETTLE_TIMEOUT", 60)  # must not be waited for after Ctrl-C
-    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Running")], "job": [_job()]}, logs=lambda: 130)
+    monkeypatch.setattr(
+        shortcuts, "JOB_SETTLE_TIMEOUT", 60
+    )  # must not be waited for after Ctrl-C
+    fctx, runner = _scripted_ctx(
+        ctx.repo, {"pods": [_pods("Running")], "job": [_job()]}, logs=lambda: 130
+    )
     assert shortcuts.run(fctx, "backup", [], follow=True) == 1
     assert runner.verbs().count("get job") == 1
     assert "is still running" in capfd.readouterr().err
@@ -250,7 +332,9 @@ def test_job_follow_pod_never_appears(ctx, spy, fast_polls):
 
 def test_job_follow_pod_still_pending_streams_logs_anyway(ctx, spy, fast_polls, capfd):
     spy("kubectl")
-    fctx, runner = _scripted_ctx(ctx.repo, {"pods": [_pods("Pending")], "job": [_job(succeeded=1)]})
+    fctx, runner = _scripted_ctx(
+        ctx.repo, {"pods": [_pods("Pending")], "job": [_job(succeeded=1)]}
+    )
     assert shortcuts.run(fctx, "backup", [], follow=True) == 0
     assert "logs" in runner.verbs()
     assert "still pending" in capfd.readouterr().err
@@ -266,7 +350,10 @@ def test_job_follow_end_to_end_with_real_kubeconfig(ctx, spy, fast_polls):
 
 
 def test_pod_phases_and_job_outcome_parsing():
-    assert shortcuts.pod_phases(_pods("Pending", "Running").encode()) == ["Pending", "Running"]
+    assert shortcuts.pod_phases(_pods("Pending", "Running").encode()) == [
+        "Pending",
+        "Running",
+    ]
     assert shortcuts.pod_phases(b"not json") == []
     assert shortcuts.job_outcome(_job(succeeded=1).encode()) == "Complete"
     assert shortcuts.job_outcome(_job(condition="Complete").encode()) == "Complete"
@@ -280,7 +367,9 @@ def test_extra_arguments_rejected_for_non_run_kinds(ctx, spy, name):
     kubectl = spy("kubectl")
     with pytest.raises(ValidationError) as exc:
         shortcuts.run(ctx, name, ["-f"])
-    assert f"shortcut {name} (" in str(exc.value) and "takes no extra arguments" in str(exc.value)
+    assert f"shortcut {name} (" in str(exc.value) and "takes no extra arguments" in str(
+        exc.value
+    )
     assert kubectl.calls == []
 
 
@@ -323,7 +412,14 @@ def test_port_forward_argv(ctx, spy):
     kubectl = spy("kubectl").on("port-forward", rc=130)
     assert shortcuts.run(ctx, "grafana", []) == 130
     [call] = kubectl.calls
-    assert call["args"] == ["-n", "monitoring", "port-forward", "svc/grafana", "3000:3000", "8080"]
+    assert call["args"] == [
+        "-n",
+        "monitoring",
+        "port-forward",
+        "svc/grafana",
+        "3000:3000",
+        "8080",
+    ]
     assert call["kubeconfig"]
 
 

@@ -49,7 +49,9 @@ def test_tool_pins_pbcopy_argv(tmp_path, monkeypatch):
     from talkub import clipboard
 
     monkeypatch.setenv("PATH", str(_bin_dir_with(tmp_path, "pbcopy", "pbpaste")))
-    assert clipboard.tool() == clipboard.ClipboardTool(copy=["pbcopy"], paste=["pbpaste"], clear=["pbcopy"])
+    assert clipboard.tool() == clipboard.ClipboardTool(
+        copy=["pbcopy"], paste=["pbpaste"], clear=["pbcopy"]
+    )
 
 
 def test_tool_pins_wlcopy_argv(tmp_path, monkeypatch):
@@ -132,20 +134,29 @@ def test_schedule_clear_spawns_the_clearer_with_only_the_digest_on_stdin(monkeyp
 
     clipboard.schedule_clear(RecordingRunner(), SECRET)
     [(argv, sent)] = calls
-    assert argv == [sys.executable, "-I", "-m", "talkub.clipboard_clear"]  # -I: cwd not on sys.path
+    assert argv == [
+        sys.executable,
+        "-I",
+        "-m",
+        "talkub.clipboard_clear",
+    ]  # -I: cwd not on sys.path
     assert sent == hashlib.sha256(SECRET).hexdigest().encode()
     assert SECRET not in sent
     assert SECRET.decode() not in argv
 
 
-def test_spawn_detached_feeds_stdin_to_a_real_child_and_it_runs_in_its_own_session(tmp_path):
+def test_spawn_detached_feeds_stdin_to_a_real_child_and_it_runs_in_its_own_session(
+    tmp_path,
+):
     out = tmp_path / "out"
     code = (
         "import os, sys\n"
         "open(sys.argv[1] + '.sid', 'w').write(str(os.getsid(0)))\n"
         "open(sys.argv[1], 'wb').write(sys.stdin.buffer.read())\n"
     )
-    Runner().spawn_detached([sys.executable, "-c", code, str(out)], input=b"hello-detached")
+    Runner().spawn_detached(
+        [sys.executable, "-c", code, str(out)], input=b"hello-detached"
+    )
 
     deadline = time.monotonic() + 5
     while not out.exists() and time.monotonic() < deadline:
@@ -188,7 +199,9 @@ def test_clipboard_clear_leaves_the_clipboard_alone_when_it_changed(monkeypatch,
 def test_clipboard_clear_clears_wayland_with_the_dash_dash_clear_flag(monkeypatch, spy):
     from talkub import clipboard, clipboard_clear
 
-    wl_tool = clipboard.ClipboardTool(copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"])
+    wl_tool = clipboard.ClipboardTool(
+        copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"]
+    )
     monkeypatch.setattr(clipboard, "tool", lambda: wl_tool)
     spy("wl-paste").on(stdout=SECRET.decode())
     wlcopy = spy("wl-copy").on(read_stdin=True)
@@ -230,7 +243,8 @@ def test_clipboard_clear_does_nothing_when_no_tool_is_found(monkeypatch, tmp_pat
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"), [(None, 45.0), ("0", 0.0), ("2.5", 2.5), ("abc", 45.0), ("-1", 45.0), ("", 45.0)]
+    ("raw", "expected"),
+    [(None, 45.0), ("0", 0.0), ("2.5", 2.5), ("abc", 45.0), ("-1", 45.0), ("", 45.0)],
 )
 def test_clear_seconds(monkeypatch, raw, expected):
     from talkub import clipboard

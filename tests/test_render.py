@@ -1,6 +1,6 @@
 import pytest
-
 from helpers import DEFAULT_SCHEMATIC_ID, need
+
 from talkub import yamlio
 from talkub.context import Context
 from talkub.errors import ValidationError
@@ -8,13 +8,24 @@ from talkub.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
 from talkub.repo import NodeSpec, SchematicSpec
 from talkub.schematic import customization_hash
-from talkub.talos.render import PatchRef, install_summary, render_configs, select_patches
+from talkub.talos.render import (
+    PatchRef,
+    install_summary,
+    render_configs,
+    select_patches,
+)
 
 
 def test_select_patches_by_role(empty_repo):
     patches = empty_repo.talos_dir / "patches"
     patches.mkdir(parents=True)
-    for name in ("worker-extra.yaml", "common.yaml", "controlplane.yaml", "dns.sops.yaml", "notes.txt"):
+    for name in (
+        "worker-extra.yaml",
+        "common.yaml",
+        "controlplane.yaml",
+        "dns.sops.yaml",
+        "notes.txt",
+    ):
         (patches / name).write_text("{}\n")
     assert select_patches(empty_repo, "controlplane") == [
         PatchRef("--config-patch", patches / "common.yaml"),
@@ -58,7 +69,12 @@ def test_render_applies_encrypted_patch(talos_repo):
     ctx = Context.open(talos_repo)
     patch = talos_repo.talos_dir / "patches" / "dns.sops.yaml"
     plain = b"apiVersion: v1alpha1\nkind: ResolverConfig\nnameservers:\n  - address: 9.9.9.9\n"
-    atomic_write(patch, ctx.sops.encrypt(plain, filename=patch.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        patch,
+        ctx.sops.encrypt(
+            plain, filename=patch.name, public_key=ctx.keyring.public_key()
+        ),
+    )
     configs = render_configs(ctx, talos_repo.load_settings(), ["cp-01"])
     assert "9.9.9.9" in configs["cp-01"].decode()
 
@@ -68,8 +84,12 @@ def test_render_hcloud_worker_and_sans(talos_repo):
     settings = talos_repo.load_settings()
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.tail.ts.net")
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", platform="hcloud")
-    settings.schematics["hcloud"] = SchematicSpec(id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], []))
-    atomic_write(node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode())
+    settings.schematics["hcloud"] = SchematicSpec(
+        id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], [])
+    )
+    atomic_write(
+        node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode()
+    )
     configs = render_configs(Context.open(talos_repo), settings, ["cp-01", "w-01"])
     assert "cp-01.tail.ts.net" in configs["cp-01"].decode()
     worker = configs["w-01"].decode()
@@ -120,14 +140,20 @@ def test_render_worker_gets_its_own_tailnet_and_mgmt_names(talos_repo):
     settings.nodes["w-02"] = NodeSpec(ip="10.0.0.21", role="worker", mgmt="w-02.lan")
     settings.nodes["w-03"] = NodeSpec(ip="10.0.0.22", role="worker", mgmt="10.0.0.99")
     for name in ("w-01", "w-02", "w-03"):
-        atomic_write(node_patch_path(talos_repo, name), render_node_patch(name).encode())
-    configs = render_configs(Context.open(talos_repo), settings, ["cp-01", "w-01", "w-02", "w-03"])
+        atomic_write(
+            node_patch_path(talos_repo, name), render_node_patch(name).encode()
+        )
+    configs = render_configs(
+        Context.open(talos_repo), settings, ["cp-01", "w-01", "w-02", "w-03"]
+    )
     assert "w-01.t.ts.net" in _cert_sans(configs["w-01"])
     assert "cp-01.t.ts.net" in _cert_sans(configs["w-01"])
     w02 = _cert_sans(configs["w-02"])
     assert "w-02.lan" in w02 and "w-02.t.ts.net" in w02
     assert len(w02) == len(set(w02))
-    assert "10.0.0.99" not in _cert_sans(configs["w-03"])  # an IP mgmt is not added as a name
+    assert "10.0.0.99" not in _cert_sans(
+        configs["w-03"]
+    )  # an IP mgmt is not added as a name
     assert "w-01.t.ts.net" not in _cert_sans(configs["cp-01"])
 
 
@@ -135,7 +161,9 @@ def test_render_worker_gets_its_own_tailnet_and_mgmt_names(talos_repo):
 def test_render_worker_without_tailscale_gets_its_mgmt_name(talos_repo):
     settings = talos_repo.load_settings()
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.20", role="worker", mgmt="w-01.lan")
-    atomic_write(node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode())
+    atomic_write(
+        node_patch_path(talos_repo, "w-01"), render_node_patch("w-01").encode()
+    )
     configs = render_configs(Context.open(talos_repo), settings, ["w-01"])
     assert "w-01.lan" in _cert_sans(configs["w-01"])
 

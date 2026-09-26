@@ -13,9 +13,13 @@ from talkub.errors import ValidationError
 def rotate_ca(
     ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", help="Do not ask before rotating."),
-    finish: bool = typer.Option(False, "--finish", help="Finish an interrupted rotation."),
+    finish: bool = typer.Option(
+        False, "--finish", help="Finish an interrupted rotation."
+    ),
     talosconfig: Path = typer.Option(
-        None, "--talosconfig", help="With --finish: plaintext talosconfig left by an interrupted rotation."
+        None,
+        "--talosconfig",
+        help="With --finish: plaintext talosconfig left by an interrupted rotation.",
     ),
 ) -> None:
     """Rotate the Talos API CA and update the talosconfig and secrets bundle in the repo."""
@@ -23,7 +27,9 @@ def rotate_ca(
     if talosconfig is not None and not finish:
         raise ValidationError("--talosconfig needs --finish")
     if yes and finish:
-        raise ValidationError("--yes cannot be combined with --finish", hint="--finish does not ask")
+        raise ValidationError(
+            "--yes cannot be combined with --finish", hint="--finish does not ask"
+        )
     if talosconfig is not None:
         talosconfig = talosconfig.expanduser()
         if not talosconfig.is_file():
@@ -31,6 +37,9 @@ def rotate_ca(
     if finish:
         notes = rotation.finish(context, talosconfig)
     else:
-        notes = rotation.rotate(context, confirm=lambda question: yes or typer.confirm(question, default=False))
+        notes = rotation.rotate(
+            context,
+            confirm=lambda question: yes or typer.confirm(question, default=False),
+        )
     for note in notes:
         print(f"note: {note}")

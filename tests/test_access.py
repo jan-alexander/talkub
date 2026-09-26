@@ -1,8 +1,8 @@
 import os
 
 import pytest
-
 from helpers import need
+
 from talkub import access
 from talkub.context import Context
 from talkub.errors import ToolMissing, ValidationError
@@ -26,7 +26,9 @@ def test_talosctl_gets_decrypted_config_and_verbatim_args(
     fake_bin("talosctl", REPORT)
     # Used by talkub to decrypt, but must not be visible to talosctl.
     monkeypatch.setenv("TALKUB_IDENTITY", str(software_identity[0]))
-    code = access.talosctl(Context.open(repo_with_configs), ["get", "members", "--", "-x"])
+    code = access.talosctl(
+        Context.open(repo_with_configs), ["get", "members", "--", "-x"]
+    )
     out = capfd.readouterr().out
     assert code == 5
     assert "args:get members -- -x" in out
@@ -50,7 +52,9 @@ def test_kubectl_without_kubeconfig_explains(keyed_repo):
 
 
 @pytest.mark.parametrize("command", ["talosctl", "kubectl"])
-def test_missing_tool_reported_before_decrypting(repo_with_configs, monkeypatch, tmp_path, command):
+def test_missing_tool_reported_before_decrypting(
+    repo_with_configs, monkeypatch, tmp_path, command
+):
     # No identity available: decrypting first would raise NoIdentity instead.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
     ctx = Context.open(repo_with_configs)
@@ -60,7 +64,9 @@ def test_missing_tool_reported_before_decrypting(repo_with_configs, monkeypatch,
     assert command in str(exc.value)
 
 
-def test_shell_missing_program_reported_before_decrypting(repo_with_configs, monkeypatch, tmp_path):
+def test_shell_missing_program_reported_before_decrypting(
+    repo_with_configs, monkeypatch, tmp_path
+):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
     with pytest.raises(ToolMissing):
         access.shell(Context.open(repo_with_configs), str(tmp_path / "no-such-shell"))
@@ -75,7 +81,9 @@ def test_shell_sets_session_and_both_configs(repo_with_configs, fake_bin, capfd)
     assert "credentials removed" in captured.err
 
 
-def test_shell_without_kubeconfig_does_not_leak_parent_kubeconfig(repo_with_configs, fake_bin, capfd, monkeypatch, tmp_path):
+def test_shell_without_kubeconfig_does_not_leak_parent_kubeconfig(
+    repo_with_configs, fake_bin, capfd, monkeypatch, tmp_path
+):
     repo_with_configs.kubeconfig.unlink()
     other = tmp_path / "other-cluster.yaml"
     other.write_text("other: cluster\n")

@@ -1,6 +1,6 @@
 import pytest
-
 from helpers import need, sample_settings
+
 from talkub import lifecycle
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
@@ -14,7 +14,11 @@ pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
 
 def _calls(log):
-    return [line[5:] for line in log.read_text().splitlines() if line.startswith("call ")] if log.exists() else []
+    return (
+        [line[5:] for line in log.read_text().splitlines() if line.startswith("call ")]
+        if log.exists()
+        else []
+    )
 
 
 def _add_node(repo, name, ip, role="worker", mgmt=None):
@@ -30,13 +34,16 @@ def test_plan_runs_dry_run_with_ephemeral_talosconfig(talos_repo, talosctl_spy, 
     assert len(calls) == 1
     assert " -n 10.0.0.10 -e 10.0.0.10 apply-config --file " in calls[0]
     assert calls[0].endswith("--dry-run")
-    assert "file 1" in talosctl_spy.read_text()  # rendered config existed and had a hostname
+    assert (
+        "file 1" in talosctl_spy.read_text()
+    )  # rendered config existed and had a hostname
     assert "== cp-01 (10.0.0.10)" in capfd.readouterr().out
 
 
 def test_plan_redacts_secrets_in_the_dry_run_diff(talos_repo, spy, capfd):
     spy("talosctl").real("gen").real("validate").on(
-        "apply-config", "--dry-run",
+        "apply-config",
+        "--dry-run",
         stdout="         key: LS0tLS1CRUdJTiBFRDI1NTE5IFBSSVZBVEUgS0VZLS0tLS0K\n+    - TS_AUTHKEY=tskey-auth-x\n",
     )
     lifecycle.plan(Context.open(talos_repo), [])
@@ -53,7 +60,9 @@ def test_dry_run_failure_redacts_secrets_in_stderr(talos_repo, spy, capfd):
     )
     with pytest.raises(CommandFailed) as exc:
         lifecycle.plan(Context.open(talos_repo), [])
-    assert "dry-run failed for node 'cp-01'" in str(exc.value)  # exit-code handling unchanged
+    assert "dry-run failed for node 'cp-01'" in str(
+        exc.value
+    )  # exit-code handling unchanged
     err = capfd.readouterr().err
     assert "<redacted>" in err
     assert "TS_AUTHKEY=tskey-auth-x" not in err
@@ -71,10 +80,17 @@ def test_plan_uses_mgmt_and_orders_controlplanes_first(talos_repo, talosctl_spy)
 
 
 def test_apply_confirmed_and_declined(talos_repo, talosctl_spy):
-    assert lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True) == ["cp-01"]
+    assert lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True) == [
+        "cp-01"
+    ]
     assert _calls(talosctl_spy)[-1].endswith("--mode auto")
     talosctl_spy.unlink()
-    assert lifecycle.apply(Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: False) == []
+    assert (
+        lifecycle.apply(
+            Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: False
+        )
+        == []
+    )
     calls = _calls(talosctl_spy)
     assert len(calls) == 1 and calls[0].endswith("--dry-run --mode no-reboot")
 
@@ -101,8 +117,14 @@ def test_real_apply_failure_names_node_and_lists_applied(talos_repo, talosctl_sp
     assert str(exc.value) == "apply failed for node 'w-98'"
     assert "already applied: cp-01; not touched: w-ok" in exc.value.hint
     calls = _calls(talosctl_spy)
-    dry, real = [c for c in calls if "10.0.0.98" in c]  # dry-run passed, the real apply failed
-    assert dry.endswith("--dry-run --mode auto") and real.endswith("--mode auto") and "--dry-run" not in real
+    dry, real = [
+        c for c in calls if "10.0.0.98" in c
+    ]  # dry-run passed, the real apply failed
+    assert (
+        dry.endswith("--dry-run --mode auto")
+        and real.endswith("--mode auto")
+        and "--dry-run" not in real
+    )
     assert not any("10.0.0.12" in call for call in calls)
 
 
@@ -117,13 +139,25 @@ def test_failure_on_first_node_says_none_applied(talos_repo, talosctl_spy):
     assert "already applied: none; not touched: none" in exc.value.hint
 
 
-def test_apply_insecure_refuses_unknown_image_or_disk(talos_repo, talosctl_spy, monkeypatch):
+def test_apply_insecure_refuses_unknown_image_or_disk(
+    talos_repo, talosctl_spy, monkeypatch
+):
     asked = []
-    for summary in (("unknown", "/dev/sda"), ("factory.talos.dev/metal-installer/x:v1.14.0", "unknown")):
+    for summary in (
+        ("unknown", "/dev/sda"),
+        ("factory.talos.dev/metal-installer/x:v1.14.0", "unknown"),
+    ):
         monkeypatch.setattr(lifecycle, "install_summary", lambda config, s=summary: s)
         with pytest.raises(ValidationError) as exc:
-            lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: asked.append(q) or True)
-        assert str(exc.value) == "cannot determine installer image/install disk from the rendered config for 'cp-01'"
+            lifecycle.apply_insecure(
+                Context.open(talos_repo),
+                "cp-01",
+                confirm=lambda q: asked.append(q) or True,
+            )
+        assert (
+            str(exc.value)
+            == "cannot determine installer image/install disk from the rendered config for 'cp-01'"
+        )
         assert "refusing to install" in exc.value.hint
     assert asked == []
     assert _calls(talosctl_spy) == []
@@ -140,14 +174,21 @@ def test_apply_stops_at_failing_node(talos_repo, talosctl_spy):
 
 def test_apply_rejects_unknown_mode_and_node(talos_repo, talosctl_spy):
     with pytest.raises(ValidationError):
-        lifecycle.apply(Context.open(talos_repo), [], mode="reboot", confirm=lambda q: True)
+        lifecycle.apply(
+            Context.open(talos_repo), [], mode="reboot", confirm=lambda q: True
+        )
     with pytest.raises(ValidationError):
         lifecycle.plan(Context.open(talos_repo), ["nope"])
     assert _calls(talosctl_spy) == []
 
 
 def test_apply_insecure(talos_repo, talosctl_spy, capfd):
-    assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: True) is True
+    assert (
+        lifecycle.apply_insecure(
+            Context.open(talos_repo), "cp-01", confirm=lambda q: True
+        )
+        is True
+    )
     calls = _calls(talosctl_spy)
     assert calls == [calls[0]]
     assert calls[0].startswith("apply-config --insecure -n 10.0.0.10 --file ")
@@ -158,11 +199,18 @@ def test_apply_insecure(talos_repo, talosctl_spy, capfd):
 
 
 def test_apply_insecure_declined_sends_nothing(talos_repo, talosctl_spy):
-    assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: False) is False
+    assert (
+        lifecycle.apply_insecure(
+            Context.open(talos_repo), "cp-01", confirm=lambda q: False
+        )
+        is False
+    )
     assert _calls(talosctl_spy) == []
 
 
-def test_outdated_schematic_is_refreshed_before_render(talos_repo, talosctl_spy, factory_stub, capfd):
+def test_outdated_schematic_is_refreshed_before_render(
+    talos_repo, talosctl_spy, factory_stub, capfd
+):
     settings = talos_repo.load_settings()
     settings.schematics["metal"].extensions.append("siderolabs/tailscale")
     talos_repo.write_settings(settings)
@@ -178,11 +226,15 @@ def test_current_schematic_needs_no_factory(talos_repo, talosctl_spy, monkeypatc
     assert len(_calls(talosctl_spy)) == 1
 
 
-def test_used_platform_without_schematic_fails_before_network(talos_repo, talosctl_spy, factory_stub):
+def test_used_platform_without_schematic_fails_before_network(
+    talos_repo, talosctl_spy, factory_stub
+):
     settings = talos_repo.load_settings()
     settings.nodes["h-01"] = NodeSpec(ip="10.0.0.20", role="worker", platform="hcloud")
     talos_repo.write_settings(settings)
-    atomic_write(node_patch_path(talos_repo, "h-01"), render_node_patch("h-01").encode())
+    atomic_write(
+        node_patch_path(talos_repo, "h-01"), render_node_patch("h-01").encode()
+    )
     with pytest.raises(ValidationError) as exc:
         lifecycle.plan(Context.open(talos_repo), [])
     assert str(exc.value) == "no schematic for platform 'hcloud' (used by node 'h-01')"
@@ -204,7 +256,9 @@ def test_apply_waits_for_health_between_nodes(talos_repo, talosctl_spy):
 
 def test_no_health_wait_without_reboot_mode_or_bootstrap(talos_repo, talosctl_spy):
     _add_node(talos_repo, "w-01", "10.0.0.11")
-    lifecycle.apply(Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: True)
+    lifecycle.apply(
+        Context.open(talos_repo), [], mode="no-reboot", confirm=lambda q: True
+    )
     assert not any(" health " in c for c in _calls(talosctl_spy))
     talos_repo.kubeconfig.unlink()
     lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
@@ -215,7 +269,12 @@ def test_health_failure_stops_and_reports_progress(talos_repo, spy):
     _add_node(talos_repo, "cp-02", "10.0.0.13", role="controlplane")
     _add_node(talos_repo, "w-01", "10.0.0.11")
     # the pre-check (via cp-01) passes; the wait after cp-01 goes through cp-02 and fails
-    talosctl = spy("talosctl").real("gen").real("validate").on("-n", "10.0.0.13", "health", rc=1)
+    talosctl = (
+        spy("talosctl")
+        .real("gen")
+        .real("validate")
+        .on("-n", "10.0.0.13", "health", rc=1)
+    )
     with pytest.raises(CommandFailed) as exc:
         lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
     assert "10.0.0.13" in str(exc.value)
@@ -237,15 +296,21 @@ def _health(argvs):
 
 
 def _real_applies(argvs):
-    return [i for i, a in enumerate(argvs) if "apply-config" in a and "--dry-run" not in a]
+    return [
+        i for i, a in enumerate(argvs) if "apply-config" in a and "--dry-run" not in a
+    ]
 
 
 def test_health_target_prefers_another_controlplane(talos_repo):
     _add_node(talos_repo, "w-01", "10.0.0.11")
     settings = talos_repo.load_settings()
-    assert lifecycle.health_target(settings, "cp-01") == "10.0.0.10"  # single CP: itself
+    assert (
+        lifecycle.health_target(settings, "cp-01") == "10.0.0.10"
+    )  # single CP: itself
     assert lifecycle.health_target(settings, "w-01") == "10.0.0.10"
-    _add_node(talos_repo, "cp-02", "10.0.0.13", role="controlplane", mgmt="cp-02.ts.net")
+    _add_node(
+        talos_repo, "cp-02", "10.0.0.13", role="controlplane", mgmt="cp-02.ts.net"
+    )
     settings = talos_repo.load_settings()
     assert lifecycle.health_target(settings, "cp-01") == "cp-02.ts.net"
     assert lifecycle.health_target(settings, "cp-02") == "10.0.0.10"
@@ -256,9 +321,15 @@ def test_apply_health_always_targets_a_controlplane(talos_repo, spy):
     _add_node(talos_repo, "w-01", "10.0.0.11")
     _add_node(talos_repo, "w-02", "10.0.0.12")
     talosctl = spy("talosctl").real("gen").real("validate")
-    assert lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True) == ["cp-01", "w-01", "w-02"]
+    assert lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True) == [
+        "cp-01",
+        "w-01",
+        "w-02",
+    ]
     health = _health(talosctl.argvs)
-    assert [node for _, node in health] == ["10.0.0.10"] * 3  # pre-check, after cp-01, after w-01
+    assert [node for _, node in health] == [
+        "10.0.0.10"
+    ] * 3  # pre-check, after cp-01, after w-01
 
 
 def test_apply_health_uses_the_other_controlplane(talos_repo, spy):
@@ -270,7 +341,10 @@ def test_apply_health_uses_the_other_controlplane(talos_repo, spy):
     applied = [_node_of(argvs[i]) for i in _real_applies(argvs)]
     assert applied == ["10.0.0.10", "10.0.0.13", "10.0.0.11"]
     after = [node for _, node in _health(argvs)][1:]  # [0] is the pre-check
-    assert after == ["10.0.0.13", "10.0.0.10"]  # after cp-01 → cp-02, after cp-02 → cp-01
+    assert after == [
+        "10.0.0.13",
+        "10.0.0.10",
+    ]  # after cp-01 → cp-02, after cp-02 → cp-01
 
 
 def test_apply_settles_before_health(talos_repo, spy, monkeypatch):
@@ -313,17 +387,23 @@ def test_apply_force_unhealthy_skips_only_the_precheck(talos_repo, spy):
     with pytest.raises(CommandFailed):
         lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True)
     before = len(talosctl.argvs)
-    applied = lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True)
+    applied = lifecycle.apply(
+        Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True
+    )
     assert applied == ["cp-01"]
     assert not any("health" in argv for argv in talosctl.argvs[before:])
 
 
-def test_apply_force_unhealthy_skips_precheck_but_keeps_the_rolling_health_wait(talos_repo, spy):
+def test_apply_force_unhealthy_skips_precheck_but_keeps_the_rolling_health_wait(
+    talos_repo, spy
+):
     """Two nodes: --force-unhealthy must skip only the pre-check, not the health wait between
     applying cp-01 and w-01."""
     _add_node(talos_repo, "w-01", "10.0.0.11")
     talosctl = spy("talosctl").real("gen").real("validate")
-    applied = lifecycle.apply(Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True)
+    applied = lifecycle.apply(
+        Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True
+    )
     assert applied == ["cp-01", "w-01"]
     assert len(_health(talosctl.argvs)) == 1  # only the wait between the two applies
 
@@ -374,9 +454,16 @@ def test_node_drift_failure_raises(tmp_path, spy):
 
 
 def test_drifting_nodes(talos_repo, spy):
-    talosctl = spy("talosctl").real("gen").real("validate").on("--dry-run", stdout="Config diff:\n+ foo\n")
+    talosctl = (
+        spy("talosctl")
+        .real("gen")
+        .real("validate")
+        .on("--dry-run", stdout="Config diff:\n+ foo\n")
+    )
     assert lifecycle.drifting_nodes(Context.open(talos_repo)) == ["cp-01"]
-    talosctl.rules.insert(0, {"match": ["--dry-run"], "stdout": "No changes.\n", "rc": 0})
+    talosctl.rules.insert(
+        0, {"match": ["--dry-run"], "stdout": "No changes.\n", "rc": 0}
+    )
     talosctl._save()
     assert lifecycle.drifting_nodes(Context.open(talos_repo)) == []
     assert not any("--dry-run" not in a and "apply-config" in a for a in talosctl.argvs)

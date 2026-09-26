@@ -17,7 +17,9 @@ from talkub.runner import Runner
 def need(*tools: str) -> pytest.MarkDecorator:
     """Skip a test when one of the external binaries is not installed."""
     missing = [tool for tool in tools if shutil.which(tool) is None]
-    return pytest.mark.skipif(bool(missing), reason=f"missing tools: {', '.join(missing)}")
+    return pytest.mark.skipif(
+        bool(missing), reason=f"missing tools: {', '.join(missing)}"
+    )
 
 
 @dataclass
@@ -38,19 +40,31 @@ class FakeRunner(Runner):
     calls: list[Call] = field(default_factory=list)
 
     def run(
-        self, argv, *, input=None, env=None, cwd=None, check=True, passthrough_stderr=False, timeout=None,
+        self,
+        argv,
+        *,
+        input=None,
+        env=None,
+        cwd=None,
+        check=True,
+        passthrough_stderr=False,
+        timeout=None,
     ):
         self.calls.append(Call(list(argv), dict(env or {}), input, passthrough_stderr))
         if self.on_run is not None:
             self.on_run(list(argv))
-        return subprocess.CompletedProcess(list(argv), 0, self.outputs.get(argv[0], b""), b"")
+        return subprocess.CompletedProcess(
+            list(argv), 0, self.outputs.get(argv[0], b""), b""
+        )
 
     def call(self, argv, *, env=None, cwd=None):
         self.calls.append(Call(list(argv), dict(env or {})))
         return self.exit_code
 
 
-DEFAULT_SCHEMATIC_ID = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+DEFAULT_SCHEMATIC_ID = (
+    "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+)
 
 
 def sample_settings():
@@ -63,12 +77,16 @@ def sample_settings():
         talos_version="v1.14.0",
         kubernetes_version="1.37.0",
         platform="metal",
-        schematics={"metal": SchematicSpec(id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], []))},
+        schematics={
+            "metal": SchematicSpec(
+                id=DEFAULT_SCHEMATIC_ID, hash=customization_hash([], [])
+            )
+        },
         nodes={"cp-01": NodeSpec(ip="10.0.0.10")},
     )
 
 
-SPY_SCRIPT = r'''
+SPY_SCRIPT = r"""
 import json
 import os
 import sys
@@ -96,7 +114,7 @@ if rule is not None:
     sys.stdout.write(rule.get("stdout", ""))
     sys.stderr.write(rule.get("stderr", ""))
     sys.exit(rule.get("rc", 0))
-'''
+"""
 
 
 @dataclass
@@ -123,10 +141,23 @@ class Spy:
     def _save(self) -> None:
         self.rules_file.write_text(json.dumps(self.rules))
 
-    def on(self, *words: str, stdout: str = "", stderr: str = "", rc: int = 0, read_stdin: bool = False) -> Spy:
+    def on(
+        self,
+        *words: str,
+        stdout: str = "",
+        stderr: str = "",
+        rc: int = 0,
+        read_stdin: bool = False,
+    ) -> Spy:
         """Answer calls whose arguments contain all `words`."""
         self.rules.append(
-            {"match": list(words), "stdout": stdout, "stderr": stderr, "rc": rc, "read_stdin": read_stdin}
+            {
+                "match": list(words),
+                "stdout": stdout,
+                "stderr": stderr,
+                "rc": rc,
+                "read_stdin": read_stdin,
+            }
         )
         self._save()
         return self
@@ -157,7 +188,9 @@ class Spy:
         return [call["args"] for call in self.calls]
 
 
-def write_chart_app(repo, key: str, repo_url: str, chart: str, version: str, namespace: str) -> None:
+def write_chart_app(
+    repo, key: str, repo_url: str, chart: str, version: str, namespace: str
+) -> None:
     """`gitops/apps/<key>.yaml` (as talkub renders it) plus an empty `gitops/values/<key>.yaml`."""
     from talkub import apps
     from talkub.fsutil import atomic_write
@@ -165,5 +198,11 @@ def write_chart_app(repo, key: str, repo_url: str, chart: str, version: str, nam
 
     values_file = f"gitops/values/{key}.yaml"
     atomic_write(repo.root / values_file, b"{}\n")
-    text = apps.helm_app(key, ChartSpec(repo_url, chart, version), "https://git.example.com/x.git", values_file, namespace)
+    text = apps.helm_app(
+        key,
+        ChartSpec(repo_url, chart, version),
+        "https://git.example.com/x.git",
+        values_file,
+        namespace,
+    )
     atomic_write(repo.gitops_dir / "apps" / f"{key}.yaml", text.encode())

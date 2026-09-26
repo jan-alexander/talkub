@@ -1,6 +1,6 @@
 import pytest
-
 from helpers import FakeRunner, need
+
 from talkub.crypto import age
 from talkub.errors import DecryptFailed, ValidationError
 from talkub.runner import Runner
@@ -43,7 +43,13 @@ def test_decrypt_lets_plugin_prompts_reach_terminal(tmp_path):
     runner = FakeRunner()
     age.decrypt(runner, tmp_path / "m.age", [tmp_path / "yubikey.txt"])
     assert runner.calls[0].passthrough_stderr is True
-    assert runner.calls[0].argv == ["age", "--decrypt", "-i", str(tmp_path / "yubikey.txt"), str(tmp_path / "m.age")]
+    assert runner.calls[0].argv == [
+        "age",
+        "--decrypt",
+        "-i",
+        str(tmp_path / "yubikey.txt"),
+        str(tmp_path / "m.age"),
+    ]
 
 
 def test_encrypt_requires_recipients():

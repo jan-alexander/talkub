@@ -6,7 +6,9 @@ import typer
 
 from talkub.recipients import Recipient, validate_key, validate_name
 
-app = typer.Typer(help="Manage who can decrypt the cluster master key.", no_args_is_help=True)
+app = typer.Typer(
+    help="Manage who can decrypt the cluster master key.", no_args_is_help=True
+)
 
 
 @app.command("add")
@@ -22,10 +24,14 @@ def add(
 
 
 @app.command("remove")
-def remove(ctx: typer.Context, name: str = typer.Argument(..., help="Admin name.")) -> None:
+def remove(
+    ctx: typer.Context, name: str = typer.Argument(..., help="Admin name.")
+) -> None:
     """Remove a recipient and re-encrypt keys/master.age."""
     ctx.obj.context().keyring.remove(name)
-    print(f"removed {name}. They may still know the old master key: run `talkub keys rotate`.")
+    print(
+        f"removed {name}. They may still know the old master key: run `talkub keys rotate`."
+    )
 
 
 @app.command("list")

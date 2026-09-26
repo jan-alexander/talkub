@@ -18,7 +18,12 @@ from talkub.talos import inspect
 
 def _print_redacted(text: str, *, file=None) -> None:
     if text:
-        print(inspect.redact_diff(text), end="" if text.endswith("\n") else "\n", file=file, flush=True)
+        print(
+            inspect.redact_diff(text),
+            end="" if text.endswith("\n") else "\n",
+            file=file,
+            flush=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -27,16 +32,37 @@ class TalosSession:
     talosconfig: Path
 
     def argv(self, node: str, args: Sequence[str]) -> list[str]:
-        return ["talosctl", "--talosconfig", str(self.talosconfig), "-n", node, "-e", node, *args]
+        return [
+            "talosctl",
+            "--talosconfig",
+            str(self.talosconfig),
+            "-n",
+            node,
+            "-e",
+            node,
+            *args,
+        ]
 
     def argv_global(self, args: Sequence[str], endpoints: Sequence[str]) -> list[str]:
-        return ["talosctl", "--talosconfig", str(self.talosconfig), "-e", ",".join(endpoints), *args]
+        return [
+            "talosctl",
+            "--talosconfig",
+            str(self.talosconfig),
+            "-e",
+            ",".join(endpoints),
+            *args,
+        ]
 
     def call(self, node: str, args: Sequence[str]) -> int:
         return self.runner.call(self.argv(node, args))
 
     def run(
-        self, node: str, args: Sequence[str], *, check: bool = True, timeout: float | None = None
+        self,
+        node: str,
+        args: Sequence[str],
+        *,
+        check: bool = True,
+        timeout: float | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(self.argv(node, args), check=check, timeout=timeout)
 
@@ -56,17 +82,23 @@ class TalosSession:
         _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
         return result.returncode
 
-    def call_global_redacted(self, args: Sequence[str], endpoints: Sequence[str]) -> int:
+    def call_global_redacted(
+        self, args: Sequence[str], endpoints: Sequence[str]
+    ) -> int:
         """Like `call_redacted`, but via `run_global` (endpoints only, no `-n`)."""
         result = self.run_global(args, endpoints, check=False)
         _print_redacted(result.stdout.decode(errors="replace"))
         _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
         return result.returncode
 
-    def call_global_uninterruptible(self, args: Sequence[str], endpoints: Sequence[str], *, raw_to: Path) -> int:
+    def call_global_uninterruptible(
+        self, args: Sequence[str], endpoints: Sequence[str], *, raw_to: Path
+    ) -> int:
         """Like `call_global_redacted`, via `Runner.run_uninterruptible`: the unredacted output
         is kept in `raw_to` (0600, must not exist); only its redacted form is printed."""
-        code = self.runner.run_uninterruptible(self.argv_global(args, endpoints), output=raw_to)
+        code = self.runner.run_uninterruptible(
+            self.argv_global(args, endpoints), output=raw_to
+        )
         _print_redacted(raw_to.read_bytes().decode(errors="replace"))
         return code
 
@@ -76,7 +108,10 @@ def talos_session(ctx: Context) -> Iterator[TalosSession]:
     require_tool("talosctl")
     source = ctx.repo.talosconfig
     if not source.is_file():
-        raise ValidationError(f"{ctx.repo.rel(source)} does not exist", hint="it is created by `talkub init`")
+        raise ValidationError(
+            f"{ctx.repo.rel(source)} does not exist",
+            hint="it is created by `talkub init`",
+        )
     with decrypted(ctx.sops, {"talosconfig": source}) as paths:
         yield TalosSession(ctx.runner, paths["talosconfig"])
 

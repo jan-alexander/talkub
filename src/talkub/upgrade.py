@@ -42,14 +42,18 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                 if version.returncode != 0:
                     raise CommandFailed(
                         f"cannot reach node '{name}' at {address}",
-                        hint=(version.stderr or b"").decode().strip() or f"exit code {version.returncode}",
+                        hint=(version.stderr or b"").decode().strip()
+                        or f"exit code {version.returncode}",
                     )
                 current = inspect.server_version(version.stdout.decode())
-                extensions = session.run(address, ["get", "extensions", "-o", "json"], check=False)
+                extensions = session.run(
+                    address, ["get", "extensions", "-o", "json"], check=False
+                )
                 if extensions.returncode != 0:
                     raise CommandFailed(
                         f"cannot read extensions of node '{name}'",
-                        hint=(extensions.stderr or b"").decode().strip() or f"exit code {extensions.returncode}",
+                        hint=(extensions.stderr or b"").decode().strip()
+                        or f"exit code {extensions.returncode}",
                     )
                 schematic = inspect.schematic_id(extensions.stdout.decode())
                 print(
@@ -66,7 +70,10 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                 precheck()
                 code = session.call(address, ["upgrade", "--image", image, "--wait"])
                 if code != 0:
-                    raise CommandFailed(f"upgrade failed for node '{name}'", hint=f"talosctl exited with {code}")
+                    raise CommandFailed(
+                        f"upgrade failed for node '{name}'",
+                        hint=f"talosctl exited with {code}",
+                    )
                 upgraded.append(name)
                 if rolling and index < len(order) - 1:
                     # no settle: `upgrade --wait` already waited for the reboot
@@ -74,7 +81,7 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
             except CommandFailed as err:
                 progress = (
                     f"already upgraded: {', '.join(upgraded) or 'none'}; "
-                    f"not touched: {', '.join(order[index + 1:]) or 'none'}"
+                    f"not touched: {', '.join(order[index + 1 :]) or 'none'}"
                 )
                 raise CommandFailed(str(err), hint=f"{err.hint}; {progress}") from None
     return upgraded
@@ -87,14 +94,21 @@ def k8s(ctx: Context, *, confirm: Confirm) -> bool:
     address = settings.mgmt_address(first)
     target = ["upgrade-k8s", "--to", settings.kubernetes_version]
     with talos_session(ctx) as session:
-        print("   running the Kubernetes upgrade dry-run (output follows when it finishes)", flush=True)
+        print(
+            "   running the Kubernetes upgrade dry-run (output follows when it finishes)",
+            flush=True,
+        )
         code = session.call_redacted(address, [*target, "--dry-run"])
         if code != 0:
-            raise CommandFailed("upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}")
+            raise CommandFailed(
+                "upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}"
+            )
         if not confirm(f"upgrade Kubernetes to {settings.kubernetes_version}?"):
             print("aborted")
             return False
         code = session.call(address, target)
         if code != 0:
-            raise CommandFailed("upgrade-k8s failed", hint=f"talosctl exited with {code}")
+            raise CommandFailed(
+                "upgrade-k8s failed", hint=f"talosctl exited with {code}"
+            )
     return True

@@ -18,12 +18,18 @@ class KeyPair:
 
 def generate(runner: Runner) -> KeyPair:
     output = runner.run(["age-keygen"]).stdout.decode()
-    secret = next(line for line in output.splitlines() if line.startswith("AGE-SECRET-KEY-"))
+    secret = next(
+        line for line in output.splitlines() if line.startswith("AGE-SECRET-KEY-")
+    )
     return KeyPair(secret=secret, public=public_key(runner, secret))
 
 
 def public_key(runner: Runner, secret: str) -> str:
-    return runner.run(["age-keygen", "-y"], input=(secret + "\n").encode()).stdout.decode().strip()
+    return (
+        runner.run(["age-keygen", "-y"], input=(secret + "\n").encode())
+        .stdout.decode()
+        .strip()
+    )
 
 
 def encrypt(runner: Runner, plaintext: bytes, recipients: Sequence[str]) -> bytes:

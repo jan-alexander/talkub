@@ -1,8 +1,8 @@
 import base64
 
 import pytest
-
 from helpers import need
+
 from talkub import coredns, tailscale_operator, yamlio
 from talkub.checks import run_checks
 from talkub.cli.main import main
@@ -71,7 +71,10 @@ def test_values_renderer():
     doc = yamlio.load(tailscale_operator.values("mycluster"))
     assert doc == {
         "installCRDs": True,
-        "operatorConfig": {"hostname": "mycluster-operator", "defaultTags": ["tag:k8s-operator"]},
+        "operatorConfig": {
+            "hostname": "mycluster-operator",
+            "defaultTags": ["tag:k8s-operator"],
+        },
         "proxyConfig": {"defaultTags": "tag:k8s"},
         "apiServerProxyConfig": {"mode": "false"},
     }
@@ -134,21 +137,36 @@ def test_check_can_enable_requires_git_url(repo_with_configs):
 
 def test_enable_writes_repo_files_and_notes(repo, kubeseal_spy):
     ctx = Context.open(repo)
-    notes = tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
-    assert notes == [tailscale_operator.ACL_NOTE, tailscale_operator.SCOPES_NOTE, tailscale_operator.COMMIT_NOTE]
+    notes = tailscale_operator.enable(
+        ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET
+    )
+    assert notes == [
+        tailscale_operator.ACL_NOTE,
+        tailscale_operator.SCOPES_NOTE,
+        tailscale_operator.COMMIT_NOTE,
+    ]
 
     values_doc = yamlio.load(tailscale_operator.values_path(repo).read_text())
     assert values_doc == {
         "installCRDs": True,
-        "operatorConfig": {"hostname": "test-operator", "defaultTags": ["tag:k8s-operator"]},
+        "operatorConfig": {
+            "hostname": "test-operator",
+            "defaultTags": ["tag:k8s-operator"],
+        },
         "proxyConfig": {"defaultTags": "tag:k8s"},
         "apiServerProxyConfig": {"mode": "false"},
     }
 
     app_doc = yamlio.load(tailscale_operator.app_path(repo).read_text())
     assert app_doc["spec"]["destination"]["namespace"] == "tailscale"
-    assert app_doc["spec"]["syncPolicy"]["syncOptions"] == ["CreateNamespace=true", "ServerSideApply=true"]
-    assert app_doc["spec"]["sources"][0]["repoURL"] == "https://pkgs.tailscale.com/helmcharts"
+    assert app_doc["spec"]["syncPolicy"]["syncOptions"] == [
+        "CreateNamespace=true",
+        "ServerSideApply=true",
+    ]
+    assert (
+        app_doc["spec"]["sources"][0]["repoURL"]
+        == "https://pkgs.tailscale.com/helmcharts"
+    )
     assert app_doc["spec"]["sources"][0]["chart"] == "tailscale-operator"
     assert app_doc["spec"]["sources"][0]["targetRevision"] == "1.2.3"
     assert app_doc["spec"]["sources"][1]["repoURL"] == GIT_URL
@@ -159,7 +177,9 @@ def test_enable_writes_repo_files_and_notes(repo, kubeseal_spy):
     assert config_doc["spec"]["source"]["repoURL"] == GIT_URL
     assert config_doc["spec"]["destination"]["namespace"] == "tailscale"
     assert config_doc["spec"]["syncPolicy"]["syncOptions"] == [
-        "CreateNamespace=true", "ServerSideApply=true", "SkipDryRunOnMissingResource=true",
+        "CreateNamespace=true",
+        "ServerSideApply=true",
+        "SkipDryRunOnMissingResource=true",
         "RespectIgnoreDifferences=true",
     ]
     # the operator rewrites spec.externalName of egress Services (tailscale/tailscale#15098)
@@ -167,7 +187,9 @@ def test_enable_writes_repo_files_and_notes(repo, kubeseal_spy):
         {"group": "", "kind": "Service", "jsonPointers": ["/spec/externalName"]}
     ]
     assert app_doc["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "0"}
-    assert config_doc["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "1"}
+    assert config_doc["metadata"]["annotations"] == {
+        "argocd.argoproj.io/sync-wave": "1"
+    }
 
     dns_doc = yamlio.load(tailscale_operator.dnsconfig_path(repo).read_text())
     assert dns_doc == {
@@ -186,7 +208,9 @@ def test_enable_writes_namespace_file(repo, kubeseal_spy):
     tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
     doc = yamlio.load(tailscale_operator.namespace_path(repo).read_text())
     assert doc["metadata"]["name"] == "tailscale"
-    assert doc["metadata"]["labels"] == {"pod-security.kubernetes.io/enforce": "privileged"}
+    assert doc["metadata"]["labels"] == {
+        "pod-security.kubernetes.io/enforce": "privileged"
+    }
 
 
 def test_check_stays_clean_after_enable(repo, kubeseal_spy):
@@ -202,7 +226,12 @@ def test_coredns_stub_added_exactly_once(repo, kubeseal_spy):
     assert len(doc["servers"]) == 2
     assert doc["servers"][1]["zones"] == [{"zone": TAILNET, "use_tcp": True}]
 
-    tailscale_operator.enable(ctx, client_id=CLIENT_ID, client_secret="tskey-client-rotated", rotate_credentials=True)
+    tailscale_operator.enable(
+        ctx,
+        client_id=CLIENT_ID,
+        client_secret="tskey-client-rotated",
+        rotate_credentials=True,
+    )
     doc2 = yamlio.load(coredns.values_path(repo).read_text())
     assert len(doc2["servers"]) == 2  # rotate does not touch CoreDNS
 
@@ -227,9 +256,15 @@ def test_rotate_credentials_only_reseals(repo, kubeseal_spy):
     dns_before = tailscale_operator.dnsconfig_path(repo).read_text()
 
     notes = tailscale_operator.enable(
-        ctx, client_id=CLIENT_ID, client_secret="tskey-client-rotated", rotate_credentials=True
+        ctx,
+        client_id=CLIENT_ID,
+        client_secret="tskey-client-rotated",
+        rotate_credentials=True,
     )
-    assert notes == ["re-sealed the OAuth client secret", tailscale_operator.COMMIT_NOTE]
+    assert notes == [
+        "re-sealed the OAuth client secret",
+        tailscale_operator.COMMIT_NOTE,
+    ]
     assert tailscale_operator.values_path(repo).read_text() == values_before
     assert tailscale_operator.app_path(repo).read_text() == app_before
     assert tailscale_operator.dnsconfig_path(repo).read_text() == dns_before
@@ -246,11 +281,16 @@ def test_rotate_credentials_adds_missing_namespace_file(repo, kubeseal_spy):
     dns_before = tailscale_operator.dnsconfig_path(repo).read_text()
 
     tailscale_operator.enable(
-        ctx, client_id=CLIENT_ID, client_secret="tskey-client-rotated", rotate_credentials=True
+        ctx,
+        client_id=CLIENT_ID,
+        client_secret="tskey-client-rotated",
+        rotate_credentials=True,
     )
 
     doc = yamlio.load(tailscale_operator.namespace_path(repo).read_text())
-    assert doc["metadata"]["labels"] == {"pod-security.kubernetes.io/enforce": "privileged"}
+    assert doc["metadata"]["labels"] == {
+        "pod-security.kubernetes.io/enforce": "privileged"
+    }
     assert tailscale_operator.values_path(repo).read_text() == values_before
     assert tailscale_operator.app_path(repo).read_text() == app_before
     assert tailscale_operator.dnsconfig_path(repo).read_text() == dns_before
@@ -288,23 +328,36 @@ def test_secret_appears_only_in_kubeseal_stdin(repo, kubeseal_spy, capfd):
 # --- CLI ----------------------------------------------------------------------------------------
 
 
-def test_cli_operator_enable_with_secret_file_outside_repo(repo, tmp_path, kubeseal_spy, capfd):
+def test_cli_operator_enable_with_secret_file_outside_repo(
+    repo, tmp_path, kubeseal_spy, capfd
+):
     secret_file = tmp_path / "secret.txt"
     secret_file.write_text(CLIENT_SECRET + "\n")
     code = _run(
         [
-            "--repo", str(repo.root), "tailscale", "operator", "enable",
-            "--client-id", CLIENT_ID, "--client-secret-file", str(secret_file),
+            "--repo",
+            str(repo.root),
+            "tailscale",
+            "operator",
+            "enable",
+            "--client-id",
+            CLIENT_ID,
+            "--client-secret-file",
+            str(secret_file),
         ]
     )
     assert code == 0
     err = capfd.readouterr().err
     assert "must not be committed" not in err
     assert tailscale_operator.app_path(repo).exists()
-    assert CLIENT_SECRET.encode() not in tailscale_operator.secret_path(repo).read_bytes()
+    assert (
+        CLIENT_SECRET.encode() not in tailscale_operator.secret_path(repo).read_bytes()
+    )
 
 
-def test_cli_operator_enable_prompts_for_client_id(repo, tmp_path, kubeseal_spy, monkeypatch):
+def test_cli_operator_enable_prompts_for_client_id(
+    repo, tmp_path, kubeseal_spy, monkeypatch
+):
     import typer
 
     secret_file = tmp_path / "secret.txt"
@@ -312,7 +365,15 @@ def test_cli_operator_enable_prompts_for_client_id(repo, tmp_path, kubeseal_spy,
     asked = []
     monkeypatch.setattr(typer, "prompt", lambda text: asked.append(text) or CLIENT_ID)
     code = _run(
-        ["--repo", str(repo.root), "tailscale", "operator", "enable", "--client-secret-file", str(secret_file)]
+        [
+            "--repo",
+            str(repo.root),
+            "tailscale",
+            "operator",
+            "enable",
+            "--client-secret-file",
+            str(secret_file),
+        ]
     )
     assert code == 0
     assert asked == ["OAuth client ID"]
@@ -382,7 +443,9 @@ def test_egress_add_writes_fqdn_service(operator_repo):
     ctx = Context.open(operator_repo)
     fqdn = "db." + TAILNET
     path = tailscale_operator.egress_add(ctx, "db", fqdn=fqdn)
-    assert path == tailscale_operator.manifests_dir(operator_repo) / "egress" / "db.yaml"
+    assert (
+        path == tailscale_operator.manifests_dir(operator_repo) / "egress" / "db.yaml"
+    )
     doc = yamlio.load(path.read_text())
     assert doc == {
         "apiVersion": "v1",
@@ -398,7 +461,9 @@ def test_egress_add_writes_fqdn_service(operator_repo):
 
 def test_egress_add_custom_namespace(operator_repo, capfd):
     ctx = Context.open(operator_repo)
-    path = tailscale_operator.egress_add(ctx, "db", fqdn="db." + TAILNET, namespace="app")
+    path = tailscale_operator.egress_add(
+        ctx, "db", fqdn="db." + TAILNET, namespace="app"
+    )
     doc = yamlio.load(path.read_text())
     assert doc["metadata"]["namespace"] == "app"
     out = capfd.readouterr().out
@@ -430,8 +495,14 @@ def test_egress_remove_deletes_file(operator_repo):
 def test_cli_egress_add_and_remove(operator_repo, capfd):
     code = _run(
         [
-            "--repo", str(operator_repo.root), "tailscale", "egress", "add", "db",
-            "--fqdn", "db." + TAILNET,
+            "--repo",
+            str(operator_repo.root),
+            "tailscale",
+            "egress",
+            "add",
+            "db",
+            "--fqdn",
+            "db." + TAILNET,
         ]
     )
     assert code == 0
@@ -440,7 +511,9 @@ def test_cli_egress_add_and_remove(operator_repo, capfd):
     out = capfd.readouterr().out
     assert "commit and push gitops/" in out
 
-    code = _run(["--repo", str(operator_repo.root), "tailscale", "egress", "remove", "db"])
+    code = _run(
+        ["--repo", str(operator_repo.root), "tailscale", "egress", "remove", "db"]
+    )
     assert code == 0
     assert not path.exists()
     out = capfd.readouterr().out
@@ -498,14 +571,18 @@ def test_expose_requires_operator_enabled(repo):
     assert "operator enable" in exc.value.hint
 
 
-@pytest.mark.parametrize("name", ["WEB", "-web", "web-", "has_underscore", "a b", "", "a" * 64])
+@pytest.mark.parametrize(
+    "name", ["WEB", "-web", "web-", "has_underscore", "a b", "", "a" * 64]
+)
 def test_expose_rejects_invalid_name(operator_repo, name):
     ctx = Context.open(operator_repo)
     with pytest.raises(ValidationError):
         tailscale_operator.expose(ctx, name, service="app/web", port="80")
 
 
-@pytest.mark.parametrize("service", ["web", "app/web/extra", "APP/web", "app/WEB", "app/", "/web"])
+@pytest.mark.parametrize(
+    "service", ["web", "app/web/extra", "APP/web", "app/WEB", "app/", "/web"]
+)
 def test_expose_rejects_invalid_service(operator_repo, service):
     ctx = Context.open(operator_repo)
     with pytest.raises(ValidationError):
@@ -543,7 +620,9 @@ def test_expose_existing_file_errors_with_unexpose_hint(operator_repo):
 def test_expose_writes_ingress_and_prints_url(operator_repo, capfd):
     ctx = Context.open(operator_repo)
     path = tailscale_operator.expose(ctx, "web", service="app/web", port="80")
-    assert path == tailscale_operator.manifests_dir(operator_repo) / "ingress" / "web.yaml"
+    assert (
+        path == tailscale_operator.manifests_dir(operator_repo) / "ingress" / "web.yaml"
+    )
     doc = yamlio.load(path.read_text())
     assert doc["metadata"] == {"name": "tailscale-web", "namespace": "app"}
     out = capfd.readouterr().out
@@ -553,7 +632,9 @@ def test_expose_writes_ingress_and_prints_url(operator_repo, capfd):
 
 def test_expose_with_path_writes_rules_variant(operator_repo):
     ctx = Context.open(operator_repo)
-    path = tailscale_operator.expose(ctx, "web", service="app/web", port="80", path="/api")
+    path = tailscale_operator.expose(
+        ctx, "web", service="app/web", port="80", path="/api"
+    )
     doc = yamlio.load(path.read_text())
     assert "defaultBackend" not in doc["spec"]
     assert doc["spec"]["rules"][0]["http"]["paths"][0]["path"] == "/api"
@@ -583,8 +664,15 @@ def test_check_stays_clean_after_expose(operator_repo):
 def test_cli_expose_and_unexpose(operator_repo, capfd):
     code = _run(
         [
-            "--repo", str(operator_repo.root), "tailscale", "expose", "web",
-            "--service", "app/web", "--port", "80",
+            "--repo",
+            str(operator_repo.root),
+            "tailscale",
+            "expose",
+            "web",
+            "--service",
+            "app/web",
+            "--port",
+            "80",
         ]
     )
     assert code == 0
@@ -603,9 +691,13 @@ def test_cli_expose_and_unexpose(operator_repo, capfd):
     assert "commit and push gitops/" in out
 
 
-@pytest.mark.parametrize("remove", [tailscale_operator.unexpose, tailscale_operator.egress_remove])
+@pytest.mark.parametrize(
+    "remove", [tailscale_operator.unexpose, tailscale_operator.egress_remove]
+)
 @pytest.mark.parametrize("name", ["../victim", "..", "a/b", "WEB"])
-def test_remove_rejects_invalid_names_without_touching_files(operator_repo, remove, name):
+def test_remove_rejects_invalid_names_without_touching_files(
+    operator_repo, remove, name
+):
     victim = tailscale_operator.manifests_dir(operator_repo) / "victim.yaml"
     atomic_write(victim, b"keep me\n")
     with pytest.raises(ValidationError) as exc:
@@ -623,7 +715,9 @@ def _disable_tailscale(repo):
 def test_expose_without_tailscale_enabled(operator_repo):
     _disable_tailscale(operator_repo)
     with pytest.raises(ValidationError) as exc:
-        tailscale_operator.expose(Context.open(operator_repo), "web", service="app/web", port="80")
+        tailscale_operator.expose(
+            Context.open(operator_repo), "web", service="app/web", port="80"
+        )
     assert str(exc.value) == "tailscale is not enabled"
     assert exc.value.hint == "talkub tailscale enable"
 
@@ -631,7 +725,9 @@ def test_expose_without_tailscale_enabled(operator_repo):
 def test_egress_add_fqdn_without_tailscale_enabled(operator_repo):
     _disable_tailscale(operator_repo)
     with pytest.raises(ValidationError) as exc:
-        tailscale_operator.egress_add(Context.open(operator_repo), "db", fqdn="db.tail1234.ts.net")
+        tailscale_operator.egress_add(
+            Context.open(operator_repo), "db", fqdn="db.tail1234.ts.net"
+        )
     assert str(exc.value) == "tailscale is not enabled"
 
 

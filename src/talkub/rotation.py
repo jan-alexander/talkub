@@ -34,7 +34,11 @@ def _bundle_yaml() -> YAML:
 def _os_ca(bundle: bytes) -> tuple[object, object]:
     doc = _bundle_yaml().load(bundle.decode())
     os_certs = doc.get("certs", {}).get("os") if isinstance(doc, dict) else None
-    return (os_certs.get("crt"), os_certs.get("key")) if isinstance(os_certs, dict) else (None, None)
+    return (
+        (os_certs.get("crt"), os_certs.get("key"))
+        if isinstance(os_certs, dict)
+        else (None, None)
+    )
 
 
 def replace_os_ca(bundle: bytes, crt: str, key: str) -> bytes:
@@ -63,7 +67,10 @@ def previous_path(repo: Repo) -> Path:
 
 
 def _encrypt_to(ctx: Context, path: Path, data: bytes) -> None:
-    atomic_write(path, ctx.sops.encrypt(data, filename=path.name, public_key=ctx.keyring.public_key()))
+    atomic_write(
+        path,
+        ctx.sops.encrypt(data, filename=path.name, public_key=ctx.keyring.public_key()),
+    )
 
 
 def _cp_addresses(settings: Settings) -> list[str]:
@@ -89,9 +96,13 @@ def _require_working_talosconfig(ctx: Context, settings: Settings, data: bytes) 
     with private_tempdir() as work:
         candidate = work / "talosconfig"
         candidate.write_bytes(_pointed_at_controlplanes(settings, data))
-        result = talos_session_from(ctx.runner, candidate).run(address, ["version"], check=False)
+        result = talos_session_from(ctx.runner, candidate).run(
+            address, ["version"], check=False
+        )
     if result.returncode != 0:
-        raise ValidationError(f"the given talosconfig does not work against {address}; nothing was changed")
+        raise ValidationError(
+            f"the given talosconfig does not work against {address}; nothing was changed"
+        )
 
 
 def _decodes_to(value: str, prefix: bytes) -> bool:
@@ -106,7 +117,8 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
     repo = ctx.repo
     if previous_path(repo).exists():
         raise ValidationError(
-            "a CA rotation is in progress", hint=f"talkub rotate-ca --finish; {KEPT_TALOSCONFIG_HINT}"
+            "a CA rotation is in progress",
+            hint=f"talkub rotate-ca --finish; {KEPT_TALOSCONFIG_HINT}",
         )
     settings, order, configs = prepare(ctx, [], refresh=False)
     cps = [name for name in order if settings.nodes[name].role == "controlplane"]
@@ -115,14 +127,26 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
     workers = [name for name in order if name not in cps]
     cp_addrs = [settings.mgmt_address(name) for name in cps]
     rotate_args = [
-        "rotate-ca", "--talos=true", "--kubernetes=false", "--with-docs=false", "--with-examples=false",
-        "--control-plane-nodes", ",".join(cp_addrs),
+        "rotate-ca",
+        "--talos=true",
+        "--kubernetes=false",
+        "--with-docs=false",
+        "--with-examples=false",
+        "--control-plane-nodes",
+        ",".join(cp_addrs),
     ]
     if workers:
-        rotate_args += ["--worker-nodes", ",".join(settings.mgmt_address(name) for name in workers)]
+        rotate_args += [
+            "--worker-nodes",
+            ",".join(settings.mgmt_address(name) for name in workers),
+        ]
     with talos_session(ctx) as talos:
         wait_healthy(talos, cp_addrs[0])
-        drifting = [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
+        drifting = [
+            name
+            for name in order
+            if node_drift(talos, settings, name, configs[name]) != "in sync"
+        ]
         if drifting:
             raise ValidationError(
                 f"the repo is not in sync with: {', '.join(drifting)}",
@@ -137,9 +161,14 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
         # The only plaintext kept on disk on failure: losing the new talosconfig can lock the user out.
         work = Path(tempfile.mkdtemp(prefix="talkub-rotate-"))  # mode 0700
         new = work / "talosconfig"
-        raw = work / "rotate-ca.out"  # unredacted output: the only copy of the new keys if `-o` is missing
+        raw = (
+            work / "rotate-ca.out"
+        )  # unredacted output: the only copy of the new keys if `-o` is missing
         try:
-            print("== rotate-ca (this can take several minutes; do not interrupt it)", flush=True)
+            print(
+                "== rotate-ca (this can take several minutes; do not interrupt it)",
+                flush=True,
+            )
             print(
                 f"   if this is interrupted, the new talosconfig will be in {new}; "
                 f"finish with `talkub rotate-ca --finish --talosconfig {new}`",
@@ -158,7 +187,8 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
                 f"only it works: `talkub rotate-ca --finish --talosconfig {new}`; the raw talosctl output in "
                 f"{raw} (if any) contains the new CA and client key, needed if the rotation got past removing "
                 f"the old CA but wrote no talosconfig; delete {work} afterwards",
-                file=sys.stderr, flush=True,
+                file=sys.stderr,
+                flush=True,
             )
             raise
         shutil.rmtree(work, ignore_errors=True)
@@ -168,7 +198,8 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
         print(
             "warning: the CA was rotated and the repo already has the new talosconfig; "
             "resume with `talkub rotate-ca --finish`",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
         raise
 
@@ -184,7 +215,9 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
         data = talosconfig.read_bytes()
         _require_working_talosconfig(ctx, settings, data)
         _store_talosconfig(ctx, settings, data)
-        notes.append(f"the new talosconfig is stored in the repo; delete {talosconfig} now")
+        notes.append(
+            f"the new talosconfig is stored in the repo; delete {talosconfig} now"
+        )
     address = _cp_addresses(settings)[0]
     with talos_session(ctx) as talos:
         result = talos.run(address, ["get", "machineconfig", "-o", "yaml"], check=False)
@@ -195,10 +228,17 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
         )
     out = result.stdout.decode(errors="replace")
     crt, key = inspect.machine_ca(out)
-    if not _decodes_to(crt, b"-----BEGIN CERTIFICATE-----") or not _decodes_to(key, b"-----BEGIN"):
-        raise ValidationError("the machine CA in the running machine config does not look like a PEM certificate/key")
+    if not _decodes_to(crt, b"-----BEGIN CERTIFICATE-----") or not _decodes_to(
+        key, b"-----BEGIN"
+    ):
+        raise ValidationError(
+            "the machine CA in the running machine config does not look like a PEM certificate/key"
+        )
     plain = ctx.sops.decrypt(repo.talos_secrets)
-    if _os_ca(plain) != (crt, key):  # a no-op resume leaves the encrypted bundle untouched
+    if _os_ca(plain) != (
+        crt,
+        key,
+    ):  # a no-op resume leaves the encrypted bundle untouched
         _encrypt_to(ctx, repo.talos_secrets, replace_os_ca(plain, crt, key))
 
     settings, order, configs = prepare(ctx, [], refresh=False)
@@ -211,7 +251,11 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
                     f"node '{name}' ({address}) did not answer `talosctl version` (exit {code})",
                     hint="the Talos CA in the secrets bundle is updated; retry with `talkub rotate-ca --finish`",
                 )
-        drifting = [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
+        drifting = [
+            name
+            for name in order
+            if node_drift(talos, settings, name, configs[name]) != "in sync"
+        ]
     if drifting:
         raise ValidationError(
             f"still not in sync: {', '.join(drifting)}",

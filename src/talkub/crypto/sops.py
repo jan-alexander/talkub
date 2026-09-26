@@ -39,23 +39,36 @@ class Sops:
 
     def decrypt(self, path: Path) -> bytes:
         try:
-            return self.runner.run(["sops", "decrypt", str(path)], env=self._key_env()).stdout
+            return self.runner.run(
+                ["sops", "decrypt", str(path)], env=self._key_env()
+            ).stdout
         except CommandFailed as err:
-            raise DecryptFailed(f"sops could not decrypt {path}", hint=err.hint) from err
+            raise DecryptFailed(
+                f"sops could not decrypt {path}", hint=err.hint
+            ) from err
 
     def encrypt(self, plaintext: bytes, *, filename: str, public_key: str) -> bytes:
         argv = [
-            "sops", "encrypt",
-            "--age", public_key,
-            "--input-type", "yaml",
-            "--output-type", "yaml",
-            "--filename-override", filename,
+            "sops",
+            "encrypt",
+            "--age",
+            public_key,
+            "--input-type",
+            "yaml",
+            "--output-type",
+            "yaml",
+            "--filename-override",
+            filename,
             "/dev/stdin",
         ]
         return self.runner.run(argv, input=plaintext).stdout
 
     def edit(
-        self, path: Path, public_key: str, *, retry: Callable[[str], bool] = lambda message: False
+        self,
+        path: Path,
+        public_key: str,
+        *,
+        retry: Callable[[str], bool] = lambda message: False,
     ) -> int:
         """Edit `path` in $SOPS_EDITOR/$EDITOR; a missing file starts out empty.
 
@@ -63,9 +76,14 @@ class Sops:
         The editor is checked before anything is decrypted. Invalid YAML re-opens the
         editor while `retry` says so; otherwise nothing is written and 1 is returned.
         """
-        editor = shlex.split(os.environ.get("SOPS_EDITOR") or os.environ.get("EDITOR") or "vi")
+        editor = shlex.split(
+            os.environ.get("SOPS_EDITOR") or os.environ.get("EDITOR") or "vi"
+        )
         if not editor:
-            raise ValidationError("$SOPS_EDITOR/$EDITOR is empty", hint="set it to an editor command, e.g. vi")
+            raise ValidationError(
+                "$SOPS_EDITOR/$EDITOR is empty",
+                hint="set it to an editor command, e.g. vi",
+            )
         require_tool(editor[0])
         original = self.decrypt(path) if path.exists() else b""
         with private_file(path.name, original) as plaintext:
@@ -79,8 +97,13 @@ class Sops:
                 problem = _yaml_problem(edited)
                 if problem is None:
                     break
-                if not retry(f"the edited file is not valid YAML ({problem}); re-open the editor?"):
-                    print("talkub: changes discarded, nothing was written", file=sys.stderr)
+                if not retry(
+                    f"the edited file is not valid YAML ({problem}); re-open the editor?"
+                ):
+                    print(
+                        "talkub: changes discarded, nothing was written",
+                        file=sys.stderr,
+                    )
                     return 1
             ciphertext = self.encrypt(edited, filename=path.name, public_key=public_key)
         atomic_write(path, ciphertext)
@@ -91,5 +114,7 @@ def _yaml_problem(data: bytes) -> str | None:
     try:
         yamlio.load_all(data.decode())
     except (YAMLError, UnicodeDecodeError) as err:
-        return str(err).strip().splitlines()[0] if str(err).strip() else type(err).__name__
+        return (
+            str(err).strip().splitlines()[0] if str(err).strip() else type(err).__name__
+        )
     return None

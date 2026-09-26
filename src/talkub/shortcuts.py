@@ -27,7 +27,9 @@ _OUTCOMES = ("Complete", "Failed")
 # Job --follow polling (module constants so tests can shorten them).
 POLL_INTERVAL = 2.0
 POD_START_TIMEOUT = 300.0  # until the job's pod exists and is no longer Pending
-JOB_SETTLE_TIMEOUT = 60.0  # after the logs end, until the job reports Complete or Failed
+JOB_SETTLE_TIMEOUT = (
+    60.0  # after the logs end, until the job reports Complete or Failed
+)
 
 
 def listing(settings: Settings) -> list[str]:
@@ -69,13 +71,17 @@ def pod_phases(text: bytes) -> list[str]:
 
 
 def job_outcome(text: bytes) -> str | None:
-    """"Complete" or "Failed" from `kubectl get job -o json` output; None while undecided."""
+    """ "Complete" or "Failed" from `kubectl get job -o json` output; None while undecided."""
     status = _json_object(text).get("status")
     if not isinstance(status, dict):
         return None
     conditions = status.get("conditions")
     for condition in conditions if isinstance(conditions, list) else []:
-        if isinstance(condition, dict) and condition.get("status") == "True" and condition.get("type") in _OUTCOMES:
+        if (
+            isinstance(condition, dict)
+            and condition.get("status") == "True"
+            and condition.get("type") in _OUTCOMES
+        ):
             return condition["type"]
     succeeded = status.get("succeeded")
     if isinstance(succeeded, int) and succeeded >= 1:
@@ -94,7 +100,14 @@ def _poll(check: Callable[[], bool], timeout: float) -> bool:
         time.sleep(POLL_INTERVAL)
 
 
-def run(ctx: Context, name: str, extra: list[str], *, print_value: bool = False, follow: bool = False) -> int:
+def run(
+    ctx: Context,
+    name: str,
+    extra: list[str],
+    *,
+    print_value: bool = False,
+    follow: bool = False,
+) -> int:
     settings = ctx.repo.load_settings()
     shortcut = settings.shortcuts.get(name)
     if shortcut is None:
@@ -102,11 +115,17 @@ def run(ctx: Context, name: str, extra: list[str], *, print_value: bool = False,
         hint = f"known: {known}" if known else f"define shortcuts in {MARKER}"
         raise ValidationError(f"unknown shortcut {name!r}", hint=hint)
     if extra and shortcut.kind != "run":
-        raise ValidationError(f"shortcut {name} ({shortcut.kind}) takes no extra arguments")
+        raise ValidationError(
+            f"shortcut {name} ({shortcut.kind}) takes no extra arguments"
+        )
     if print_value and shortcut.kind != "secret":
-        raise ValidationError(f"--print only applies to secret shortcuts, {name} is {shortcut.kind}")
+        raise ValidationError(
+            f"--print only applies to secret shortcuts, {name} is {shortcut.kind}"
+        )
     if follow and shortcut.kind != "job":
-        raise ValidationError(f"--follow only applies to job shortcuts, {name} is {shortcut.kind}")
+        raise ValidationError(
+            f"--follow only applies to job shortcuts, {name} is {shortcut.kind}"
+        )
 
     if shortcut.kind == "secret":
         return _secret(ctx, shortcut, print_value)
@@ -126,14 +145,21 @@ def _secret(ctx: Context, shortcut: Shortcut, print_value: bool) -> int:
     try:
         data = json.loads(raw).get("data") or {}
     except (json.JSONDecodeError, AttributeError):
-        raise ValidationError(f"kubectl returned no valid JSON for secret {ns}/{secret}") from None
+        raise ValidationError(
+            f"kubectl returned no valid JSON for secret {ns}/{secret}"
+        ) from None
     if key not in data:
         available = ", ".join(sorted(data)) or "none"
-        raise ValidationError(f"secret {ns}/{secret} has no key {key!r}", hint=f"available keys: {available}")
+        raise ValidationError(
+            f"secret {ns}/{secret} has no key {key!r}",
+            hint=f"available keys: {available}",
+        )
     try:
         value = base64.b64decode(data[key], validate=True)
     except (binascii.Error, TypeError):
-        raise ValidationError(f"key {key!r} of secret {ns}/{secret} is not valid base64") from None
+        raise ValidationError(
+            f"key {key!r} of secret {ns}/{secret} is not valid base64"
+        ) from None
 
     if print_value:
         sys.stdout.flush()
@@ -144,12 +170,16 @@ def _secret(ctx: Context, shortcut: Shortcut, print_value: bool) -> int:
     try:
         clipboard.schedule_clear(ctx.runner, value)
     except TalkubError:
-        print("warning: the clipboard will not be cleared automatically", file=sys.stderr)
+        print(
+            "warning: the clipboard will not be cleared automatically", file=sys.stderr
+        )
     try:
         size = f"{len(value.decode())} chars"
     except UnicodeDecodeError:
         size = f"{len(value)} bytes"
-    print(f"copied {shortcut.name} ({size}); the clipboard is cleared in {clipboard.clear_seconds():g} s")
+    print(
+        f"copied {shortcut.name} ({size}); the clipboard is cleared in {clipboard.clear_seconds():g} s"
+    )
     return 0
 
 
@@ -171,21 +201,32 @@ def _follow(ctx: Context, kube: KubeSession, ns: str, name: str) -> int:
 
     def pod_started() -> bool:
         nonlocal phases
-        phases = pod_phases(kube.kubectl(["-n", ns, "get", "pods", "-l", f"job-name={name}", "-o", "json"]).stdout)
+        phases = pod_phases(
+            kube.kubectl(
+                ["-n", ns, "get", "pods", "-l", f"job-name={name}", "-o", "json"]
+            ).stdout
+        )
         return any(phase != "Pending" for phase in phases)
 
     if not _poll(pod_started, POD_START_TIMEOUT):
         if not phases:
             raise CommandFailed("job pod did not start within 5 min", hint=describe)
-        print(f"note: the pod of job {ns}/{name} is still pending; following its logs anyway", file=sys.stderr)
+        print(
+            f"note: the pod of job {ns}/{name} is still pending; following its logs anyway",
+            file=sys.stderr,
+        )
 
-    logs = ctx.runner.call(["kubectl", "-n", ns, "logs", "-f", f"job/{name}"], env=kube.env)
+    logs = ctx.runner.call(
+        ["kubectl", "-n", ns, "logs", "-f", f"job/{name}"], env=kube.env
+    )
 
     outcome: str | None = None
 
     def settled() -> bool:
         nonlocal outcome
-        outcome = job_outcome(kube.kubectl(["-n", ns, "get", "job", name, "-o", "json"]).stdout)
+        outcome = job_outcome(
+            kube.kubectl(["-n", ns, "get", "job", name, "-o", "json"]).stdout
+        )
         return outcome is not None
 
     # After an interrupted or failed `logs -f` (e.g. Ctrl-C), check once instead of waiting.
@@ -203,6 +244,13 @@ def _follow(ctx: Context, kube: KubeSession, ns: str, name: str) -> int:
 def _port_forward(ctx: Context, shortcut: Shortcut) -> int:
     with kube_session(ctx) as kube:
         return ctx.runner.call(
-            ["kubectl", "-n", shortcut.namespace, "port-forward", f"svc/{shortcut.service}", *shortcut.ports],
+            [
+                "kubectl",
+                "-n",
+                shortcut.namespace,
+                "port-forward",
+                f"svc/{shortcut.service}",
+                *shortcut.ports,
+            ],
             env=kube.env,
         )
