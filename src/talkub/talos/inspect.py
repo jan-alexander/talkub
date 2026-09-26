@@ -296,6 +296,25 @@ def machine_ca(text: str) -> tuple[str, str]:
     raise ValidationError("no machine CA in the machine config")
 
 
+def application_sync_revision(text: str, *, source_index: int | None) -> str | None:
+    """Running revision of one Argo CD Application (`kubectl get application <name> -o json`):
+    `status.sync.revision` for a single-source app (`source_index` is `None`), or
+    `status.sync.revisions[source_index]` for a multi-source one. `None` if not parseable, not
+    synced yet, or the index is out of range."""
+    docs = json_documents(text)
+    if len(docs) != 1 or not isinstance(docs[0], dict):
+        return None
+    sync = _dict(_dict(docs[0].get("status")).get("sync"))
+    if source_index is None:
+        revision = sync.get("revision")
+        return revision if isinstance(revision, str) else None
+    revisions = sync.get("revisions")
+    if not isinstance(revisions, list) or not (0 <= source_index < len(revisions)):
+        return None
+    revision = revisions[source_index]
+    return revision if isinstance(revision, str) else None
+
+
 def application_summary(text: str) -> dict[str, int] | None:
     """'<sync>/<health>' -> count from `kubectl get applications -o json`; None if not parseable."""
     docs = json_documents(text)

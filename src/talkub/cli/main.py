@@ -21,6 +21,7 @@ from talkub.cli import sops as sops_cli
 from talkub.cli import status as status_cli
 from talkub.cli import tailscale as tailscale_cli
 from talkub.cli import upgrade as upgrade_cli
+from talkub.cli import versions as versions_cli
 from talkub.cli.state import State
 from talkub.errors import TalkubError
 
@@ -65,6 +66,7 @@ app.command("apply")(lifecycle_cli.apply)
 app.command("bootstrap")(bootstrap_cli.bootstrap)
 app.add_typer(upgrade_cli.app, name="upgrade")
 app.command("status")(status_cli.status)
+app.add_typer(versions_cli.app, name="versions")
 app.add_typer(tailscale_cli.app, name="tailscale")
 app.add_typer(repo_cli.app, name="repo")
 app.add_typer(coredns_cli.app, name="coredns")

@@ -19,12 +19,20 @@ CATALOG: dict[str, tuple[str, str]] = {
 DEFAULT_KEYS = ("argocd", "sealed-secrets")
 
 
-def latest_version(runner: Runner, repo: str, chart: str) -> str:
+def show_chart(runner: Runner, repo: str, chart: str, version: str | None = None) -> dict:
+    """Full `helm show chart` document (`version`, `appVersion`, ...); pinned to `version` if
+    given, else the repo's latest."""
     if repo.startswith("oci://"):
         argv = ["helm", "show", "chart", f"{repo.rstrip('/')}/{chart}"]
     else:
         argv = ["helm", "show", "chart", chart, "--repo", repo]
-    return str(yamlio.load(runner.run(argv).stdout.decode())["version"])
+    if version is not None:
+        argv = [*argv, "--version", version]
+    return yamlio.load(runner.run(argv).stdout.decode())
+
+
+def latest_version(runner: Runner, repo: str, chart: str) -> str:
+    return str(show_chart(runner, repo, chart)["version"])
 
 
 def resolve_defaults(runner: Runner) -> dict[str, ChartSpec]:
