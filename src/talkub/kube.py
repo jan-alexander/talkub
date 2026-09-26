@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from talkub.context import Context
-from talkub.ephemeral import decrypted
-from talkub.errors import ValidationError
-from talkub.runner import Runner, require_tool
+from talkub.core.ephemeral import decrypted
+from talkub.core.errors import ValidationError
+from talkub.core.runner import Runner, require_tool
 
 
 @dataclass(frozen=True)

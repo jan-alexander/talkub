@@ -1,5 +1,6 @@
-from talkub import apps, yamlio
-from talkub.repo import ChartSpec
+from talkub import apps
+from talkub.config.repo import ChartSpec
+from talkub.core import yamlio
 
 
 def _chart():

@@ -15,11 +15,11 @@ from dataclasses import dataclass
 
 from talkub import argoapps, charts
 from talkub.argoapps import HelmSource
+from talkub.config.repo import Repo, Settings
 from talkub.context import Context
-from talkub.errors import TalkubError, ValidationError
+from talkub.core.errors import TalkubError, ValidationError
 from talkub.kube import kube_session
 from talkub.lifecycle import ordered_nodes
-from talkub.repo import Repo, Settings
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
 

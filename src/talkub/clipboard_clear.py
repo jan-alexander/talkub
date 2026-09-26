@@ -13,7 +13,7 @@ import sys
 import time
 
 from talkub import clipboard
-from talkub.runner import Runner
+from talkub.core.runner import Runner
 
 
 def main() -> None:

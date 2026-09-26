@@ -15,15 +15,15 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from talkub import yamlio
 from talkub.argoapps import SECRET_TYPE_LABEL
+from talkub.config.repo import GitSpec, Repo
 from talkub.context import Context
-from talkub.ephemeral import decrypted, private_tempdir
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.ephemeral import decrypted, private_tempdir
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner
 from talkub.kube import KubeSession
-from talkub.repo import GitSpec, Repo
-from talkub.runner import Runner
 
 ARGOCD_KNOWN_HOSTS = frozenset(
     {

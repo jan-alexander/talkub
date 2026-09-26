@@ -2,8 +2,8 @@ import pytest
 from helpers import need
 
 from talkub.context import Context
-from talkub.errors import ToolMissing, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core.errors import ToolMissing, ValidationError
+from talkub.core.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops")
 

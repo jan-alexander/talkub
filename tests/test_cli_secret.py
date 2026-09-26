@@ -3,7 +3,7 @@ from helpers import need
 
 from talkub import sealing
 from talkub.cli.main import main
-from talkub.fsutil import atomic_write
+from talkub.core.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops", "kubeseal")
 

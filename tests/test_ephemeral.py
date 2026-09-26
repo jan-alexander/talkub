@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from talkub.ephemeral import decrypted, private_tempdir
+from talkub.core.ephemeral import decrypted, private_tempdir
 
 
 class FakeSops:

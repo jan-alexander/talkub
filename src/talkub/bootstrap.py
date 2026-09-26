@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from talkub import gitrepo, sealing, tailscale
 from talkub.argoapps import HelmSource, app_source
+from talkub.config.repo import Repo, Settings
 from talkub.context import Context
-from talkub.ephemeral import decrypted
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core.ephemeral import decrypted
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import require_tool
 from talkub.helm.install import helm_install
 from talkub.kube import KubeSession, kube_session
 from talkub.lifecycle import ordered_nodes
-from talkub.repo import Repo, Settings
-from talkub.runner import require_tool
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.inspect import bootstrap_already_done, etcd_member_count
 

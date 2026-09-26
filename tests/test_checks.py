@@ -2,11 +2,11 @@ from helpers import need
 
 from talkub.checks import run_checks
 from talkub.context import Context
-from talkub.crypto import age
-from talkub.crypto.sops import render_sops_config
-from talkub.keyring import Keyring
-from talkub.recipients import Recipient
-from talkub.runner import Runner
+from talkub.core.runner import Runner
+from talkub.secrets import age
+from talkub.secrets.keyring import Keyring
+from talkub.secrets.recipients import Recipient
+from talkub.secrets.sops import render_sops_config
 
 pytestmark = need("age", "age-keygen", "sops")
 

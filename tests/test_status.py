@@ -4,11 +4,11 @@ from helpers import DEFAULT_SCHEMATIC_ID, need
 
 from talkub import status
 from talkub.cli.main import main
+from talkub.config.repo import NodeSpec
 from talkub.context import Context
-from talkub.errors import TalkubError
-from talkub.fsutil import atomic_write
+from talkub.core.errors import TalkubError
+from talkub.core.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
-from talkub.repo import NodeSpec
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 

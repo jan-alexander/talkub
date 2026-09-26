@@ -8,7 +8,7 @@ import pytest
 
 from talkub import renovate
 from talkub.cli.main import main
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 
 
 def test_render_is_valid_json_with_trailing_newline():

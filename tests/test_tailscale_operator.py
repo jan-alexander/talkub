@@ -3,13 +3,14 @@ import base64
 import pytest
 from helpers import need
 
-from talkub import coredns, tailscale_operator, yamlio
+from talkub import coredns, tailscale_operator
 from talkub.checks import run_checks
 from talkub.cli.main import main
+from talkub.config.repo import GitSpec, TailscaleSpec
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
-from talkub.repo import GitSpec, TailscaleSpec
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops")
 

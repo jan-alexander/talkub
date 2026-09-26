@@ -11,14 +11,14 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import yamlio
+from talkub.config.repo import Repo
 from talkub.context import Context
-from talkub.ephemeral import private_file
-from talkub.errors import TalkubError, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.ephemeral import private_file
+from talkub.core.errors import TalkubError, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import require_tool
 from talkub.kube import kube_session
-from talkub.repo import Repo
-from talkub.runner import require_tool
 
 CONTROLLER = [
     "--controller-name",

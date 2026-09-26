@@ -16,14 +16,14 @@ from yamllint import linter
 from yamllint.config import YamlLintConfig, YamlLintConfigError
 
 from talkub.argoapps import HelmSource, helm_sources
+from talkub.config.repo import ChartSpec, Repo
 from talkub.context import Context
-from talkub.ephemeral import private_tempdir
-from talkub.errors import ValidationError
-from talkub.findings import (
+from talkub.core.ephemeral import private_tempdir
+from talkub.core.errors import ValidationError
+from talkub.core.findings import (
     Finding,  # moved to findings.py; kept importable from here too
 )
 from talkub.helm.install import chart_ref
-from talkub.repo import ChartSpec, Repo
 
 # CRD schemas not covered by the default (Kubernetes-owned) schema location.
 DATREE_LOCATION = (

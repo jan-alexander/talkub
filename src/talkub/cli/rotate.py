@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from talkub import rotation
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 
 
 def rotate_ca(

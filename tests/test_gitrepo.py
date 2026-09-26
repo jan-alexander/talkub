@@ -4,11 +4,11 @@ import subprocess
 import pytest
 
 from talkub import gitrepo
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
+from talkub.config.repo import Repo
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner
 from talkub.gitrepo import GitUrl, classify_url
-from talkub.repo import Repo
-from talkub.runner import Runner
 from talkub.scaffold import TEMPLATES
 
 

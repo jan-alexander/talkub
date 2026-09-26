@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from talkub import lifecycle
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 
 NODES = typer.Argument(None, help="Nodes (default: all, control planes first).")
 

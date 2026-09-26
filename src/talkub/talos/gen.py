@@ -6,9 +6,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from talkub import yamlio
-from talkub.errors import ValidationError
-from talkub.runner import Runner
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.runner import Runner
 
 
 @dataclass(frozen=True)

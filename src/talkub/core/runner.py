@@ -15,7 +15,7 @@ import threading
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from talkub.errors import CommandFailed, ToolMissing
+from talkub.core.errors import CommandFailed, ToolMissing
 
 SENSITIVE_ENV = ("SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE", "TALKUB_IDENTITY")
 

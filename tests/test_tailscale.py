@@ -3,9 +3,10 @@ import subprocess
 import pytest
 from helpers import need, sample_settings
 
-from talkub import tailscale, yamlio
-from talkub.errors import ValidationError
-from talkub.repo import NodeSpec
+from talkub import tailscale
+from talkub.config.repo import NodeSpec
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
 
 TALOSCONFIG = b"""context: test
 contexts:

@@ -3,12 +3,13 @@ from string import Template
 import pytest
 from helpers import need
 
-from talkub import gitrepo, yamlio
+from talkub import gitrepo
+from talkub.config.repo import GitSpec
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 from talkub.kube import kube_session
-from talkub.repo import GitSpec
 from talkub.scaffold import TEMPLATES
 
 pytestmark = need("age", "age-keygen", "sops")

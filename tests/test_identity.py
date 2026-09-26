@@ -3,8 +3,9 @@ import os
 import pytest
 from helpers import FakeRunner, need
 
-from talkub.errors import NoIdentity
-from talkub.identity import (
+from talkub.core.errors import NoIdentity
+from talkub.core.runner import Runner
+from talkub.secrets.identity import (
     create_identity,
     identities_dir,
     identity_files,
@@ -12,7 +13,6 @@ from talkub.identity import (
     own_recipients,
     recipient_of,
 )
-from talkub.runner import Runner
 
 SECRET = "AGE-SECRET-KEY-133FP6CADJCE6M9H6AUXY3NLXNX73NSSLQS0CHGVLPSVZKK87V80SPY0R56"
 SECRET2 = "AGE-SECRET-KEY-1LHPX92WHKCJYFAXTHK80Z8AU99RC40TTJWPGPX2QKM37N4XJNAWSJJJVF7"

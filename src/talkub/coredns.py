@@ -17,14 +17,15 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from talkub import apps, argoapps, charts, lifecycle, yamlio
+from talkub import apps, argoapps, charts, lifecycle
+from talkub.config.repo import ChartSpec, Repo, Settings
 from talkub.context import Context
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import require_tool
 from talkub.helm.install import chart_ref, helm_install
 from talkub.kube import KubeSession, kube_session
-from talkub.repo import ChartSpec, Repo, Settings
-from talkub.runner import require_tool
 from talkub.talos.inspect import endpointslice_pod_names, service_spec
 
 CLUSTER_DNS_IP = "10.96.0.10"

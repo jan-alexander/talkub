@@ -3,9 +3,9 @@ from pathlib import Path
 from helpers import FakeRunner
 
 from talkub.argoapps import HelmSource
+from talkub.config.repo import ChartSpec
 from talkub.helm.install import chart_ref, helm_install
 from talkub.kube import KubeSession
-from talkub.repo import ChartSpec
 
 
 def test_chart_ref_oci_is_a_single_reference():

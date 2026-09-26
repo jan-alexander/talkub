@@ -8,8 +8,8 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 
-from talkub.errors import CommandFailed
-from talkub.schematic import FACTORY_HOST, schematic_document
+from talkub.config.schematic import FACTORY_HOST, schematic_document
+from talkub.core.errors import CommandFailed
 
 DEFAULT_URL = f"https://{FACTORY_HOST}"
 _BOOT_MEDIA = {"metal": "iso", "hcloud": "raw.xz"}

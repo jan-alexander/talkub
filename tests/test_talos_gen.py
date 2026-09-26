@@ -3,9 +3,9 @@ import re
 import pytest
 from helpers import need
 
-from talkub import yamlio
-from talkub.errors import ValidationError
-from talkub.runner import Runner
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.runner import Runner
 from talkub.talos import gen
 
 MULTIDOC = """version: v1alpha1

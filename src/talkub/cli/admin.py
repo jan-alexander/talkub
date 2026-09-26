@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub.recipients import Recipient, validate_key, validate_name
+from talkub.secrets.recipients import Recipient, validate_key, validate_name
 
 app = typer.Typer(
     help="Manage who can decrypt the cluster master key.", no_args_is_help=True

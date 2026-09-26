@@ -8,10 +8,11 @@ import os
 import pytest
 from helpers import FakeRunner, write_chart_app
 
-from talkub import argoapps, chart_upgrade, yamlio
+from talkub import argoapps, chart_upgrade
 from talkub.cli.main import main
 from talkub.context import Context
-from talkub.errors import CommandFailed, ToolMissing, ValidationError
+from talkub.core import yamlio
+from talkub.core.errors import CommandFailed, ToolMissing, ValidationError
 
 CHART_OLD = b"apiVersion: v2\nname: mychart\nversion: 1.0.0\nappVersion: v1.0\n"
 CHART_NEW = b"apiVersion: v2\nname: mychart\nversion: 2.0.0\nappVersion: v2.0\n"

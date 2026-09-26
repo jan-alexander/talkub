@@ -9,8 +9,8 @@ from pathlib import Path
 import typer
 
 from talkub import sealing
-from talkub.errors import ValidationError
-from talkub.repo import Repo
+from talkub.config.repo import Repo
+from talkub.core.errors import ValidationError
 
 app = typer.Typer(
     help="Sealed Secrets for manifests under gitops/.", no_args_is_help=True

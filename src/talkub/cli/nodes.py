@@ -6,8 +6,8 @@ import sys
 
 import typer
 
+from talkub.config.repo import NodeSpec
 from talkub.nodes import NodeOptions, add_node, node_patch_path
-from talkub.repo import NodeSpec
 
 app = typer.Typer(help="Describe cluster nodes.", no_args_is_help=True)
 

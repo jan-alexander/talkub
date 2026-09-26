@@ -5,12 +5,12 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
+from talkub.config.repo import Settings
 from talkub.context import Context
-from talkub.ephemeral import private_file
-from talkub.errors import TalkubError
+from talkub.core.ephemeral import private_file
+from talkub.core.errors import TalkubError
 from talkub.kube import kube_session
 from talkub.lifecycle import is_bootstrapped, ordered_nodes, prepare
-from talkub.repo import Settings
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
 

@@ -9,7 +9,7 @@ import typer
 
 from talkub import bootstrap, gitrepo
 from talkub.cli.prompts import read_secret
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 from talkub.kube import kube_session
 
 app = typer.Typer(

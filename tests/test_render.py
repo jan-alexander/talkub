@@ -1,13 +1,13 @@
 import pytest
 from helpers import DEFAULT_SCHEMATIC_ID, need
 
-from talkub import yamlio
+from talkub.config.repo import NodeSpec, SchematicSpec
+from talkub.config.schematic import customization_hash
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
-from talkub.repo import NodeSpec, SchematicSpec
-from talkub.schematic import customization_hash
 from talkub.talos.render import (
     PatchRef,
     install_summary,
@@ -99,7 +99,7 @@ def test_render_hcloud_worker_and_sans(talos_repo):
 
 @pytestmark_bins
 def test_render_adds_tailnet_sans_for_controlplanes(talos_repo):
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     settings = talos_repo.load_settings()
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
@@ -109,7 +109,7 @@ def test_render_adds_tailnet_sans_for_controlplanes(talos_repo):
 
 @pytestmark_bins
 def test_render_does_not_duplicate_tailnet_san_already_used_as_mgmt(talos_repo):
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     settings = talos_repo.load_settings()
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
@@ -132,7 +132,7 @@ def _cert_sans(config: bytes) -> list[str]:
 def test_render_worker_gets_its_own_tailnet_and_mgmt_names(talos_repo):
     """After lockdown talkub connects to every node by its own name, so each node's
     certificate must cover it, not only the control planes' names."""
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     settings = talos_repo.load_settings()
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")

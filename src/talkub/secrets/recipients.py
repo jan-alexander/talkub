@@ -12,7 +12,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 
 HEADER = "# talkub admin recipients - managed by `talkub admin`, readable by `age -R`"
 _NAME_LINE = re.compile(r"^#\s*name:\s*(\S+)\s*$")

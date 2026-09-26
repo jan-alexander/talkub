@@ -14,10 +14,10 @@ import pytest
 from helpers import need
 
 from talkub import shortcuts
+from talkub.config.repo import Shortcut
 from talkub.context import Context
-from talkub.errors import CommandFailed, ValidationError
-from talkub.repo import Shortcut
-from talkub.runner import Runner
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.runner import Runner
 
 pytestmark = need("age", "age-keygen", "sops")
 

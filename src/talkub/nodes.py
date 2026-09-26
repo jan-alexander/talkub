@@ -8,10 +8,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from talkub import yamlio
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
-from talkub.repo import NodeSpec, Repo, SchematicSpec, Settings
+from talkub.config.repo import NodeSpec, Repo, SchematicSpec, Settings
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 LINK = "net0"
 # ARPHRD_ETHER and no link kind (not a VLAN, bond or bridge): the physical Ethernet port.

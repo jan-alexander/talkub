@@ -328,7 +328,7 @@ MACHINE = f"version: v1alpha1\nmachine:\n  type: controlplane\n  ca:\n    crt: {
 
 
 def _resource(spec) -> str:
-    from talkub import yamlio
+    from talkub.core import yamlio
 
     return (
         yamlio.dump(
@@ -353,7 +353,7 @@ def test_machine_ca_from_spec_string():
 
 
 def test_machine_ca_from_spec_mapping():
-    from talkub import yamlio
+    from talkub.core import yamlio
     from talkub.talos.inspect import machine_ca
 
     assert machine_ca(_resource(yamlio.load_all(MACHINE)[0])) == (CRT, KEY)
@@ -362,7 +362,7 @@ def test_machine_ca_from_spec_mapping():
 def test_machine_ca_missing():
     import pytest
 
-    from talkub.errors import ValidationError
+    from talkub.core.errors import ValidationError
     from talkub.talos.inspect import machine_ca
 
     with pytest.raises(ValidationError):

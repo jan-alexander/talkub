@@ -3,14 +3,14 @@ import subprocess
 import pytest
 from helpers import need
 
-from talkub import yamlio
+from talkub.config.repo import NodeSpec
 from talkub.context import Context
-from talkub.ephemeral import decrypted
-from talkub.errors import CommandFailed, ValidationError
-from talkub.recipients import Recipient
-from talkub.repo import NodeSpec
-from talkub.runner import Runner
+from talkub.core import yamlio
+from talkub.core.ephemeral import decrypted
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.runner import Runner
 from talkub.scaffold import TEMPLATES, InitRequest, init_cluster
+from talkub.secrets.recipients import Recipient
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
@@ -99,7 +99,7 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     talosconfig = yamlio.load(ctx.sops.decrypt(repo.talosconfig).decode())
     assert list(talosconfig["contexts"]["demo"]["endpoints"]) == ["10.0.0.10"]
 
-    from talkub.repo import GitSpec
+    from talkub.config.repo import GitSpec
 
     assert settings.git == GitSpec(url="https://git.example.com/demo.git")
 

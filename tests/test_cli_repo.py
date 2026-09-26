@@ -7,7 +7,7 @@ from helpers import need, write_chart_app
 
 from talkub import gitrepo
 from talkub.cli.main import main
-from talkub.fsutil import atomic_write
+from talkub.core.fsutil import atomic_write
 from talkub.scaffold import TEMPLATES
 
 pytestmark = need("age", "age-keygen", "sops", "ssh-keygen")

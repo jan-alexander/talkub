@@ -4,8 +4,8 @@ both paired with a git `values`/`ref` source per the multi-source pattern alread
 
 from __future__ import annotations
 
-from talkub import yamlio
-from talkub.repo import ChartSpec
+from talkub.config.repo import ChartSpec
+from talkub.core import yamlio
 
 _HEADER = "# Managed by talkub.\n"
 _DESTINATION_SERVER = "https://kubernetes.default.svc"

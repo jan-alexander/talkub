@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
-from talkub.repo import Repo
+from talkub.config.repo import Repo
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 FILENAME = "renovate.json"
 

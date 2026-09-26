@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from talkub.fsutil import atomic_write
+from talkub.core.fsutil import atomic_write
 
 
 def test_atomic_write_creates_parents_and_sets_mode(tmp_path):

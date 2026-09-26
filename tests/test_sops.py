@@ -1,11 +1,11 @@
 import pytest
 from helpers import need
 
-from talkub import yamlio
 from talkub.context import Context
-from talkub.crypto.sops import Sops, render_sops_config
-from talkub.errors import DecryptFailed
-from talkub.runner import Runner
+from talkub.core import yamlio
+from talkub.core.errors import DecryptFailed
+from talkub.core.runner import Runner
+from talkub.secrets.sops import Sops, render_sops_config
 
 pytestmark = need("age", "age-keygen", "sops")
 

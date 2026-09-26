@@ -4,8 +4,8 @@ from helpers import need
 from talkub import tailscale
 from talkub.cli.main import main
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops")
 
@@ -142,7 +142,7 @@ def test_init_with_tailscale(tmp_path, software_identity, fake_bin, monkeypatch)
         ]
     )
     assert code == 0
-    from talkub.repo import Repo
+    from talkub.config.repo import Repo
 
     repo = Repo((tmp_path / "demo").resolve())
     settings = repo.load_settings()

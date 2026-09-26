@@ -83,8 +83,8 @@ def _require(*tools: str) -> None:
 def software_identity():
     """A software age identity in the isolated default identities dir: (path, public key)."""
     _require("age-keygen")
-    from talkub.identity import create_identity, identities_dir
-    from talkub.runner import Runner
+    from talkub.core.runner import Runner
+    from talkub.secrets.identity import create_identity, identities_dir
 
     return create_identity(Runner(), "software", identities_dir(os.environ))
 
@@ -92,7 +92,7 @@ def software_identity():
 @pytest.fixture
 def empty_repo(tmp_path):
     """A directory with a valid .talkub.yaml and nothing else."""
-    from talkub.repo import Repo
+    from talkub.config.repo import Repo
 
     root = tmp_path / "cluster"
     root.mkdir()
@@ -105,9 +105,9 @@ def empty_repo(tmp_path):
 def keyed_repo(empty_repo, software_identity):
     """empty_repo plus a master key encrypted to software_identity (recipient 'me')."""
     _require("age")
-    from talkub.keyring import Keyring
-    from talkub.recipients import Recipient
-    from talkub.runner import Runner
+    from talkub.core.runner import Runner
+    from talkub.secrets.keyring import Keyring
+    from talkub.secrets.recipients import Recipient
 
     Keyring(empty_repo, Runner()).create([Recipient("me", software_identity[1])])
     return empty_repo
@@ -118,8 +118,8 @@ def repo_with_configs(keyed_repo):
     """keyed_repo plus .sops.yaml and SOPS-encrypted talosconfig and kubeconfig with marker content."""
     _require("sops")
     from talkub.context import Context
-    from talkub.crypto.sops import render_sops_config
-    from talkub.fsutil import atomic_write
+    from talkub.core.fsutil import atomic_write
+    from talkub.secrets.sops import render_sops_config
 
     ctx = Context.open(keyed_repo)
     public = ctx.keyring.public_key()
@@ -139,10 +139,10 @@ def talos_repo(repo_with_configs):
     """repo_with_configs plus real SOPS-encrypted Talos secrets and the cp-01 node patch."""
     _require("talosctl")
     from talkub.context import Context
-    from talkub.ephemeral import private_tempdir
-    from talkub.fsutil import atomic_write
+    from talkub.core.ephemeral import private_tempdir
+    from talkub.core.fsutil import atomic_write
+    from talkub.core.runner import Runner
     from talkub.nodes import node_patch_path, render_node_patch
-    from talkub.runner import Runner
     from talkub.talos import gen
 
     ctx = Context.open(repo_with_configs)

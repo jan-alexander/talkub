@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from talkub import yamlio
-from talkub.repo import ChartSpec
-from talkub.runner import Runner
+from talkub.config.repo import ChartSpec
+from talkub.core import yamlio
+from talkub.core.runner import Runner
 
 # chart key (= gitops/apps/<key>.yaml) -> (Helm repo, chart name); used only to create new app
 # files (`init`, `coredns takeover`, `tailscale operator enable`) at the latest chart version.

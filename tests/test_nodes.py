@@ -4,8 +4,9 @@ import subprocess
 import pytest
 from helpers import need
 
-from talkub import yamlio
-from talkub.errors import ValidationError
+from talkub.config.repo import NodeSpec, SchematicSpec
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
 from talkub.nodes import (
     FIRST_ETHERNET,
     NodeOptions,
@@ -13,7 +14,6 @@ from talkub.nodes import (
     node_patch_path,
     render_node_patch,
 )
-from talkub.repo import NodeSpec, SchematicSpec
 
 
 def _docs(text):
@@ -289,7 +289,7 @@ def test_add_node_rejects_bad_addresses(empty_repo, spec, flag):
 
 def test_add_node_after_lockdown_uses_tailnet_mgmt(empty_repo):
     from talkub import tailscale
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     settings = empty_repo.load_settings()
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
@@ -314,7 +314,7 @@ def test_add_node_after_lockdown_uses_tailnet_mgmt(empty_repo):
 
 def test_add_node_after_lockdown_use_ips_keeps_lan_ip_and_warns(empty_repo):
     from talkub import tailscale
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     settings = empty_repo.load_settings()
     settings.tailscale = TailscaleSpec(
@@ -345,7 +345,7 @@ def test_add_node_after_lockdown_use_ips_keeps_lan_ip_and_warns(empty_repo):
 
 def test_add_node_after_lockdown_warns_outside_the_node_network(empty_repo):
     from talkub import tailscale
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     settings = empty_repo.load_settings()
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")

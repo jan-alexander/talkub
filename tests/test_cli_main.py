@@ -1,9 +1,9 @@
 import pytest
 from helpers import need
 
-from talkub import yamlio
 from talkub.cli.main import PASSTHROUGH, main, split_globals
 from talkub.context import Context
+from talkub.core import yamlio
 
 pytestmark = need("age", "age-keygen", "sops")
 
@@ -148,7 +148,7 @@ def test_sops_edit_unchanged_exits_zero_and_keeps_file(
 
 
 def _with_shortcuts(repo):
-    from talkub.repo import Shortcut
+    from talkub.config.repo import Shortcut
 
     settings = repo.load_settings()
     settings.shortcuts = {

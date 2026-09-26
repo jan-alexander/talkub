@@ -2,12 +2,12 @@ import pytest
 from helpers import need, sample_settings
 
 from talkub import lifecycle
+from talkub.config.repo import NodeSpec
 from talkub.context import Context
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner
 from talkub.nodes import node_patch_path, render_node_patch
-from talkub.repo import NodeSpec
-from talkub.runner import Runner
 from talkub.talos.client import TalosSession
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from talkub.runner import Runner
+from talkub.core.runner import Runner
 
 
 def need(*tools: str) -> pytest.MarkDecorator:
@@ -68,8 +68,8 @@ DEFAULT_SCHEMATIC_ID = (
 
 
 def sample_settings():
-    from talkub.repo import NodeSpec, SchematicSpec, Settings
-    from talkub.schematic import customization_hash
+    from talkub.config.repo import NodeSpec, SchematicSpec, Settings
+    from talkub.config.schematic import customization_hash
 
     return Settings(
         name="test",
@@ -193,8 +193,8 @@ def write_chart_app(
 ) -> None:
     """`gitops/apps/<key>.yaml` (as talkub renders it) plus an empty `gitops/values/<key>.yaml`."""
     from talkub import apps
-    from talkub.fsutil import atomic_write
-    from talkub.repo import ChartSpec
+    from talkub.config.repo import ChartSpec
+    from talkub.core.fsutil import atomic_write
 
     values_file = f"gitops/values/{key}.yaml"
     atomic_write(repo.root / values_file, b"{}\n")

@@ -2,9 +2,9 @@ import pytest
 from helpers import need
 
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
+from talkub.core.runner import Runner
 from talkub.kube import kube_session
-from talkub.runner import Runner
 
 
 def test_spy_rules_first_match_and_logging(spy):

@@ -4,11 +4,12 @@ import sys
 import pytest
 from helpers import need
 
-from talkub import coredns, lifecycle, yamlio
+from talkub import coredns, lifecycle
+from talkub.config.repo import GitSpec
 from talkub.context import Context
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
-from talkub.repo import GitSpec
+from talkub.core import yamlio
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
 from talkub.talos import inspect
 
 pytestmark = need("age", "age-keygen", "sops")
@@ -285,7 +286,7 @@ def test_happy_path_order_files_and_notes(cluster):
 
 
 def test_values_get_stub_zone_when_operator_app_exists(cluster):
-    from talkub.repo import TailscaleSpec
+    from talkub.config.repo import TailscaleSpec
 
     repo, _, _ = cluster
     settings = repo.load_settings()

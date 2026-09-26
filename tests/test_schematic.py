@@ -1,5 +1,9 @@
-from talkub import yamlio
-from talkub.schematic import customization, customization_hash, schematic_document
+from talkub.config.schematic import (
+    customization,
+    customization_hash,
+    schematic_document,
+)
+from talkub.core import yamlio
 
 
 def test_empty_customization():

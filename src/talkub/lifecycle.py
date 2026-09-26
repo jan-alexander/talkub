@@ -9,12 +9,12 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from talkub import images
+from talkub.config.repo import Settings
 from talkub.context import Context
-from talkub.ephemeral import private_file
-from talkub.errors import CommandFailed, ValidationError
+from talkub.core.ephemeral import private_file
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.runner import require_tool
 from talkub.factory import FactoryClient
-from talkub.repo import Settings
-from talkub.runner import require_tool
 from talkub.talos import inspect
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.render import install_summary, render_configs

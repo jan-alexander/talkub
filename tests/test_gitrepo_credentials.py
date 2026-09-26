@@ -4,9 +4,10 @@ import subprocess
 import pytest
 from helpers import need
 
-from talkub import gitrepo, yamlio
+from talkub import gitrepo
 from talkub.context import Context
-from talkub.errors import CommandFailed, ValidationError
+from talkub.core import yamlio
+from talkub.core.errors import CommandFailed, ValidationError
 from talkub.gitrepo import classify_url
 
 pytestmark = need("age", "age-keygen", "sops", "ssh-keygen")

@@ -4,7 +4,7 @@ import pytest
 from helpers import need
 
 from talkub.cli.main import main
-from talkub.identity import identities_dir
+from talkub.secrets.identity import identities_dir
 
 HELM = "printf 'apiVersion: v2\\nname: x\\nversion: 1.2.3\\n'\n"
 OTHER_KEY = "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"

@@ -3,10 +3,11 @@ import base64
 import pytest
 from helpers import need
 
-from talkub import sealing, yamlio
+from talkub import sealing
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 KEY_LIST = """apiVersion: v1
 kind: List
@@ -163,7 +164,7 @@ def test_sealing_cert_no_warning_when_stored_cert_matches(
 
 
 def test_warn_if_cert_changed(tmp_path, capfd):
-    from talkub.repo import Repo
+    from talkub.config.repo import Repo
 
     repo = Repo(tmp_path)
     live = b"-----BEGIN CERTIFICATE-----\nlive\n-----END CERTIFICATE-----\n"

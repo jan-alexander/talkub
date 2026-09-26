@@ -5,7 +5,7 @@ from helpers import need
 
 from talkub import access
 from talkub.context import Context
-from talkub.errors import ToolMissing, ValidationError
+from talkub.core.errors import ToolMissing, ValidationError
 
 pytestmark = need("age", "age-keygen", "sops")
 

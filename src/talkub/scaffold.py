@@ -11,16 +11,7 @@ from pathlib import Path
 from string import Template
 
 from talkub import charts, coredns
-from talkub.crypto.sops import Sops, render_sops_config
-from talkub.ephemeral import private_tempdir
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
-from talkub.gitrepo import classify_url
-from talkub.keyring import Keyring
-from talkub.lint import DEFAULT_YAMLLINT
-from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
-from talkub.recipients import Recipient
-from talkub.repo import (
+from talkub.config.repo import (
     PLATFORMS,
     ChartSpec,
     GitSpec,
@@ -30,8 +21,17 @@ from talkub.repo import (
     Settings,
     parse_installer_image,
 )
-from talkub.runner import Runner
-from talkub.schematic import customization_hash
+from talkub.config.schematic import customization_hash
+from talkub.core.ephemeral import private_tempdir
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner
+from talkub.gitrepo import classify_url
+from talkub.lint import DEFAULT_YAMLLINT
+from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
+from talkub.secrets.keyring import Keyring
+from talkub.secrets.recipients import Recipient
+from talkub.secrets.sops import Sops, render_sops_config
 from talkub.talos import gen
 
 TEMPLATES = resources.files("talkub") / "templates"

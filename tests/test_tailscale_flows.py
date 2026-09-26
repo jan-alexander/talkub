@@ -1,11 +1,12 @@
 import pytest
 from helpers import need
 
-from talkub import tailscale, yamlio
+from talkub import tailscale
+from talkub.config.repo import NodeSpec
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
-from talkub.repo import NodeSpec
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 pytestmark = need("age", "age-keygen", "sops")
 

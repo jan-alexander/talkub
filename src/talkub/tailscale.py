@@ -15,12 +15,13 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import images, yamlio
+from talkub import images
+from talkub.config.repo import Repo, Settings, TailscaleSpec
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 from talkub.lifecycle import is_bootstrapped, ordered_nodes
-from talkub.repo import Repo, Settings, TailscaleSpec
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
 

@@ -15,10 +15,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from talkub import access, clipboard
+from talkub.config.repo import MARKER, Settings, Shortcut
 from talkub.context import Context
-from talkub.errors import CommandFailed, TalkubError, ValidationError
+from talkub.core.errors import CommandFailed, TalkubError, ValidationError
 from talkub.kube import KubeSession, kube_session
-from talkub.repo import MARKER, Settings, Shortcut
 
 _KUBECTL = ("k", "kubectl")
 _JOB_NAME_MAX = 63

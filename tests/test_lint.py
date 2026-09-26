@@ -7,10 +7,13 @@ from pathlib import Path
 import pytest
 from helpers import FakeRunner, need
 
-from talkub import apps, coredns, yamlio
+from talkub import apps, coredns
 from talkub.cli.main import main
+from talkub.config.repo import ChartSpec
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.runner import Runner
 from talkub.lint import (
     _DOWNLOAD_ERROR_PREFIX,
     DEFAULT_YAMLLINT,
@@ -27,8 +30,6 @@ from talkub.lint import (
     run,
     yaml_files,
 )
-from talkub.repo import ChartSpec
-from talkub.runner import Runner
 
 
 def _run(argv):
@@ -160,10 +161,10 @@ def test_cli_lint_exit_1_on_error(empty_repo, monkeypatch, capfd):
 
 @need("age", "age-keygen", "sops", "talosctl", "helm")
 def test_fresh_init_repo_has_no_yamllint_errors(tmp_path, software_identity, fake_bin):
-    from talkub.recipients import Recipient
-    from talkub.repo import NodeSpec
-    from talkub.runner import Runner
+    from talkub.config.repo import NodeSpec
+    from talkub.core.runner import Runner
     from talkub.scaffold import InitRequest, init_cluster
+    from talkub.secrets.recipients import Recipient
 
     fake_bin("helm", "printf 'apiVersion: v2\\nname: x\\nversion: 1.2.3\\n'\n")
     request = InitRequest(

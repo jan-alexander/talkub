@@ -8,12 +8,13 @@ import pytest
 from helpers import need
 from test_inspect import _resource
 
-from talkub import rotation, yamlio
+from talkub import rotation
+from talkub.config.repo import NodeSpec
 from talkub.context import Context
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core import yamlio
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
 from talkub.nodes import node_patch_path, render_node_patch
-from talkub.repo import NodeSpec
 
 BUNDLE = (
     "cluster:\n    id: cid\n    secret: csecret\n"

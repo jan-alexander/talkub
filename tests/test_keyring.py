@@ -1,12 +1,12 @@
 import pytest
 from helpers import need
 
-from talkub.crypto import age
-from talkub.errors import DecryptFailed, NoIdentity, ValidationError
-from talkub.identity import create_identity
-from talkub.keyring import Keyring
-from talkub.recipients import Recipient
-from talkub.runner import Runner
+from talkub.core.errors import DecryptFailed, NoIdentity, ValidationError
+from talkub.core.runner import Runner
+from talkub.secrets import age
+from talkub.secrets.identity import create_identity
+from talkub.secrets.keyring import Keyring
+from talkub.secrets.recipients import Recipient
 
 pytestmark = need("age", "age-keygen")
 

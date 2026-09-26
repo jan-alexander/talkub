@@ -13,8 +13,8 @@ import shutil
 import sys
 from dataclasses import dataclass
 
-from talkub.errors import CommandFailed, ValidationError
-from talkub.runner import Runner
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.runner import Runner
 
 CLEAR_SECONDS_ENV = "TALKUB_CLIPBOARD_CLEAR_SECONDS"
 DEFAULT_CLEAR_SECONDS = 45.0

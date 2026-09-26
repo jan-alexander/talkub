@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 
-from talkub import yamlio
+from talkub.core import yamlio
 
 FACTORY_HOST = "factory.talos.dev"
 

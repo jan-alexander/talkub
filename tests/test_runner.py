@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from talkub.errors import CommandFailed, ToolMissing
-from talkub.runner import Runner, child_env, require_tool
+from talkub.core.errors import CommandFailed, ToolMissing
+from talkub.core.runner import Runner, child_env, require_tool
 
 
 def test_child_env_strips_key_material(monkeypatch):

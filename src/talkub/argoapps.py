@@ -14,10 +14,10 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import yamlio
-from talkub.errors import ValidationError
-from talkub.findings import Finding
-from talkub.repo import Repo
+from talkub.config.repo import Repo
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.findings import Finding
 
 # Label that marks a Secret as Argo CD configuration (repository, cluster, ...).
 SECRET_TYPE_LABEL = "argocd.argoproj.io/secret-type"

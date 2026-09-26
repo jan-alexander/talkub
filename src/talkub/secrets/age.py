@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from talkub.errors import CommandFailed, DecryptFailed, ValidationError
-from talkub.runner import Runner
+from talkub.core.errors import CommandFailed, DecryptFailed, ValidationError
+from talkub.core.runner import Runner
 
 
 @dataclass(frozen=True)

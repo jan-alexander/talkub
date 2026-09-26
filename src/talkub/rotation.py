@@ -13,12 +13,12 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
+from talkub.config.repo import Repo, Settings
 from talkub.context import Context
-from talkub.ephemeral import private_tempdir
-from talkub.errors import CommandFailed, ValidationError
-from talkub.fsutil import atomic_write
+from talkub.core.ephemeral import private_tempdir
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.fsutil import atomic_write
 from talkub.lifecycle import node_drift, prepare, wait_healthy
-from talkub.repo import Repo, Settings
 from talkub.tailscale import controlplanes, rewrite_talosconfig
 from talkub.talos import inspect
 from talkub.talos.client import talos_session, talos_session_from

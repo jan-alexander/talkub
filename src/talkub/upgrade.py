@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from talkub.context import Context
-from talkub.errors import CommandFailed
+from talkub.core.errors import CommandFailed
 from talkub.lifecycle import (
     Confirm,
     ensure_images,

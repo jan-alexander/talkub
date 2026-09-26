@@ -11,7 +11,7 @@ from helpers import need, write_chart_app
 from talkub import versions
 from talkub.cli.main import main
 from talkub.context import Context
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 
 pytestmark = need("age", "age-keygen", "sops")
 
@@ -119,9 +119,9 @@ def test_kubernetes_running_is_question_mark_without_kubeconfig(
 def test_multiple_distinct_talos_versions_are_comma_joined(
     repo_with_configs, spy, version_http_stub
 ):
-    from talkub.fsutil import atomic_write
+    from talkub.config.repo import NodeSpec
+    from talkub.core.fsutil import atomic_write
     from talkub.nodes import node_patch_path, render_node_patch
-    from talkub.repo import NodeSpec
 
     settings = repo_with_configs.load_settings()
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker")

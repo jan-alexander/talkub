@@ -10,8 +10,8 @@ import time
 
 import pytest
 
-from talkub.errors import CommandFailed, ValidationError
-from talkub.runner import Runner
+from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.runner import Runner
 
 SECRET = b"top-secret-value"
 

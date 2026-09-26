@@ -25,7 +25,7 @@ from talkub.cli import tailscale as tailscale_cli
 from talkub.cli import upgrade as upgrade_cli
 from talkub.cli import versions as versions_cli
 from talkub.cli.state import State
-from talkub.errors import TalkubError
+from talkub.core.errors import TalkubError
 
 app = typer.Typer(
     help="Administer a Talos cluster repo (ArgoCD, SOPS/age, Sealed Secrets).",

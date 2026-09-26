@@ -7,7 +7,7 @@ from string import Template
 
 import pytest
 
-from talkub import apps, coredns, yamlio
+from talkub import apps, coredns
 from talkub.argoapps import (
     HelmSource,
     app_chart_sources,
@@ -18,9 +18,10 @@ from talkub.argoapps import (
     is_single_chart_app,
     set_target_revision,
 )
-from talkub.errors import ValidationError
-from talkub.findings import Finding
-from talkub.repo import ChartSpec
+from talkub.config.repo import ChartSpec
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.findings import Finding
 
 
 def _write_app_doc(repo, name, doc):

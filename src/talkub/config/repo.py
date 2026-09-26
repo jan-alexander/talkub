@@ -9,10 +9,10 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import yamlio
-from talkub.errors import RepoNotFound, ValidationError
-from talkub.fsutil import atomic_write
-from talkub.schematic import FACTORY_HOST, customization_hash
+from talkub.config.schematic import FACTORY_HOST, customization_hash
+from talkub.core import yamlio
+from talkub.core.errors import RepoNotFound, ValidationError
+from talkub.core.fsutil import atomic_write
 
 MARKER = ".talkub.yaml"
 ROLES = ("controlplane", "worker")

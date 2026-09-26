@@ -13,11 +13,11 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import yamlio
-from talkub.ephemeral import private_file
-from talkub.errors import CommandFailed, DecryptFailed, ValidationError
-from talkub.fsutil import atomic_write
-from talkub.runner import Runner, require_tool
+from talkub.core import yamlio
+from talkub.core.ephemeral import private_file
+from talkub.core.errors import CommandFailed, DecryptFailed, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner, require_tool
 
 
 def render_sops_config(public_key: str) -> str:

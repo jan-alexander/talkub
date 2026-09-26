@@ -13,8 +13,8 @@ from collections import Counter
 
 from ruamel.yaml.error import YAMLError
 
-from talkub import yamlio
-from talkub.errors import ValidationError
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
 
 _SERVER_TAG = re.compile(r"^Server:\s*$.*?^\s*Tag:\s*(\S+)", re.MULTILINE | re.DOTALL)
 _TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")

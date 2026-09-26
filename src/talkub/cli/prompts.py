@@ -6,7 +6,7 @@ import getpass
 import sys
 from pathlib import Path
 
-from talkub.errors import ValidationError
+from talkub.core.errors import ValidationError
 
 
 def read_secret(path: Path | None, prompt: str, repo_root: Path | None = None) -> str:

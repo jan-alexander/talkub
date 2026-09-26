@@ -7,10 +7,10 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
-from talkub.errors import CommandFailed, NoIdentity, ValidationError
-from talkub.fsutil import atomic_write
-from talkub.recipients import Recipient
-from talkub.runner import Runner
+from talkub.core.errors import CommandFailed, NoIdentity, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner
+from talkub.secrets.recipients import Recipient
 
 KINDS = ("software", "yubikey", "se")
 

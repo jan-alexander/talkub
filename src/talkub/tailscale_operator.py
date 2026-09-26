@@ -11,11 +11,12 @@ from __future__ import annotations
 import ipaddress
 from pathlib import Path
 
-from talkub import apps, charts, coredns, sealing, yamlio
+from talkub import apps, charts, coredns, sealing
+from talkub.config.repo import ChartSpec, Repo, Settings, valid_label
 from talkub.context import Context
-from talkub.errors import ValidationError
-from talkub.fsutil import atomic_write
-from talkub.repo import ChartSpec, Repo, Settings, valid_label
+from talkub.core import yamlio
+from talkub.core.errors import ValidationError
+from talkub.core.fsutil import atomic_write
 
 NAMESPACE = "tailscale"
 CHART_KEY = "tailscale-operator"

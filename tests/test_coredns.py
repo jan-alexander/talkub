@@ -3,7 +3,8 @@ import subprocess
 import pytest
 from helpers import need
 
-from talkub import coredns, yamlio
+from talkub import coredns
+from talkub.core import yamlio
 
 TAILNET = "tail1234.ts.net"
 

@@ -10,15 +10,14 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping, Sequence
 
-from talkub import identity
-from talkub import recipients as recipients_file
-from talkub.crypto import age
-from talkub.crypto.sops import Sops, render_sops_config
-from talkub.errors import NoIdentity, ValidationError
-from talkub.fsutil import atomic_write
-from talkub.recipients import Recipient
-from talkub.repo import Repo
-from talkub.runner import Runner
+from talkub.config.repo import Repo
+from talkub.core.errors import NoIdentity, ValidationError
+from talkub.core.fsutil import atomic_write
+from talkub.core.runner import Runner
+from talkub.secrets import age, identity
+from talkub.secrets import recipients as recipients_file
+from talkub.secrets.recipients import Recipient
+from talkub.secrets.sops import Sops, render_sops_config
 
 
 class Keyring:

@@ -2,9 +2,9 @@ import hashlib
 
 import pytest
 
-from talkub.errors import CommandFailed
+from talkub.config.schematic import schematic_document
+from talkub.core.errors import CommandFailed
 from talkub.factory import FactoryClient, boot_media_url
-from talkub.schematic import schematic_document
 
 
 def test_schematic_id_posts_the_document(factory_stub):

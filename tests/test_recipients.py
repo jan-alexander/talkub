@@ -1,7 +1,7 @@
 import pytest
 
-from talkub.errors import ValidationError
-from talkub.recipients import Recipient, parse, render
+from talkub.core.errors import ValidationError
+from talkub.secrets.recipients import Recipient, parse, render
 
 KEY_A = "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"
 KEY_B = "age1yubikey1qgw6x0m7l9t6tg3hvc8d0x3q7tnfq8m5h4k6s2r3v4w5x6y7z8a9bcdefg"

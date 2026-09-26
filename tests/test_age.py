@@ -1,9 +1,9 @@
 import pytest
 from helpers import FakeRunner, need
 
-from talkub.crypto import age
-from talkub.errors import DecryptFailed, ValidationError
-from talkub.runner import Runner
+from talkub.core.errors import DecryptFailed, ValidationError
+from talkub.core.runner import Runner
+from talkub.secrets import age
 
 
 @need("age", "age-keygen")
