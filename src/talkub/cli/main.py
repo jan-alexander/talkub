@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from talkub import __version__, access, shortcuts
-from talkub.cli import admin, check, image, keys, secret, session, setup
+from talkub.cli import admin, check, image, keys, lint, secret, session, setup
 from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import coredns as coredns_cli
 from talkub.cli import lifecycle as lifecycle_cli
@@ -57,6 +57,7 @@ app.add_typer(image.app, name="image")
 app.add_typer(secret.app, name="secret")
 app.add_typer(nodes_cli.app, name="node")
 app.command("check")(check.check)
+app.command("lint")(lint.lint)
 app.command("plan")(lifecycle_cli.plan)
 app.command("apply")(lifecycle_cli.apply)
 app.command("bootstrap")(bootstrap_cli.bootstrap)
