@@ -1,11 +1,12 @@
+from pathlib import Path
+
 import pytest
 
-from helpers import need
+from helpers import need, write_chart_app
 from talkub import bootstrap, sealing
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
-from talkub.repo import ChartSpec
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
@@ -19,15 +20,12 @@ CERT = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 
 @pytest.fixture
 def cluster(talos_repo, spy):
-    """talos_repo prepared for bootstrap: charts, values, root app; no kubeconfig yet; spies."""
-    settings = talos_repo.load_settings()
-    settings.charts = {
-        "sealed-secrets": ChartSpec("https://bitnami.github.io/sealed-secrets", "sealed-secrets", "2.20.0"),
-        "argocd": ChartSpec("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2"),
-    }
-    talos_repo.write_settings(settings)
-    for name in ("sealed-secrets.yaml", "argocd.yaml"):
-        atomic_write(talos_repo.gitops_dir / "values" / name, b"{}\n")
+    """talos_repo prepared for bootstrap: chart apps, values, root app; no kubeconfig yet; spies."""
+    write_chart_app(
+        talos_repo, "sealed-secrets", "https://bitnami.github.io/sealed-secrets", "sealed-secrets", "2.20.0",
+        "kube-system",
+    )
+    write_chart_app(talos_repo, "argocd", "https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2", "argocd")
     atomic_write(talos_repo.gitops_dir / "root.yaml", b"kind: Application\n")
     talos_repo.kubeconfig.unlink()
     spies = {
@@ -52,7 +50,12 @@ def test_fresh_bootstrap(cluster):
     assert "--create-namespace" not in helm[0]
     assert helm[1][:4] == ["upgrade", "--install", "argocd", "argo-cd"]
     assert "--create-namespace" in helm[1] and "argocd" in helm[1]
-    assert all(call["kubeconfig"] and call["files"]["--values"] for call in spies["helm"].calls)
+    assert helm[0][helm[0].index("--version") + 1] == "2.20.0"
+    assert helm[0][helm[0].index("-n") + 1] == "kube-system"
+    assert helm[0][helm[0].index("-f") + 1] == str(repo.gitops_dir / "values" / "sealed-secrets.yaml")
+    assert helm[1][helm[1].index("--version") + 1] == "10.9.2"
+    assert helm[1][helm[1].index("-n") + 1] == "argocd"
+    assert all(call["kubeconfig"] and call["files"]["-f"] for call in spies["helm"].calls)
     kubectl = spies["kubectl"].argvs
     assert kubectl[0][:2] == ["get", "secret"]  # the new key is backed up right after sealed-secrets installs
     assert kubectl[1] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]
@@ -195,15 +198,13 @@ def test_bootstrap_error_is_reported(cluster):
 
 def test_coredns_installed_first_when_configured(cluster):
     repo, spies = cluster
-    settings = repo.load_settings()
-    settings.charts["coredns"] = ChartSpec("https://coredns.github.io/helm", "coredns", "1.35.0")
-    repo.write_settings(settings)
-    atomic_write(repo.gitops_dir / "values" / "coredns.yaml", b"{}\n")
+    write_chart_app(repo, "coredns", "https://coredns.github.io/helm", "coredns", "1.35.0", "kube-system")
     bootstrap.run(Context.open(repo))
     helm = spies["helm"].argvs
     assert helm[0][:4] == ["upgrade", "--install", "coredns", "coredns"]
     assert "--create-namespace" not in helm[0]
-    assert helm[0][helm[0].index("--namespace") + 1] == "kube-system"
+    assert helm[0][helm[0].index("-n") + 1] == "kube-system"
+    assert helm[0][helm[0].index("--version") + 1] == "1.35.0"
     assert helm[1][:4] == ["upgrade", "--install", "sealed-secrets", "sealed-secrets"]
     assert helm[2][:4] == ["upgrade", "--install", "argocd", "argo-cd"]
 
@@ -215,14 +216,66 @@ def test_no_coredns_chart_leaves_bootstrap_unchanged(cluster):
     assert [a[2] for a in helm] == ["sealed-secrets", "argocd"]
 
 
-def test_missing_chart_settings(cluster):
-    repo, _ = cluster
-    settings = repo.load_settings()
-    del settings.charts["argocd"]
-    repo.write_settings(settings)
+@pytest.mark.parametrize("key", ["argocd", "sealed-secrets"])
+def test_missing_app_file_is_rejected_before_any_change(cluster, key):
+    repo, spies = cluster
+    (repo.gitops_dir / "apps" / f"{key}.yaml").unlink()
     with pytest.raises(ValidationError) as exc:
         bootstrap.run(Context.open(repo))
-    assert "argocd" in str(exc.value)
+    assert f"gitops/apps/{key}.yaml" in str(exc.value)
+    assert spies["talosctl"].argvs == [] and spies["helm"].argvs == []
+
+
+SEALED_SECRETS_APP = """apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sealed-secrets
+  namespace: argocd
+spec:
+  sources:
+    - repoURL: https://bitnami.github.io/sealed-secrets
+      chart: sealed-secrets
+      targetRevision: 2.21.1
+      helm:
+        releaseName: sealed-secrets-controller
+        valueFiles:
+          - $values/gitops/values/sealed-secrets.yaml
+          - $values/gitops/values/extra.yaml
+        valuesObject:
+          fullnameOverride: sealed-secrets-controller
+    - repoURL: https://git.example.com/x.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    namespace: sealing
+"""
+
+
+def test_release_namespace_version_and_values_come_from_the_app_file(cluster):
+    repo, spies = cluster
+    atomic_write(repo.gitops_dir / "values" / "extra.yaml", b"{}\n")
+    atomic_write(repo.gitops_dir / "apps" / "sealed-secrets.yaml", SEALED_SECRETS_APP.encode())
+    bootstrap.run(Context.open(repo))
+    argv = spies["helm"].argvs[0]
+    assert argv[:4] == ["upgrade", "--install", "sealed-secrets-controller", "sealed-secrets"]
+    assert argv[argv.index("--version") + 1] == "2.21.1"
+    assert argv[argv.index("-n") + 1] == "sealing"
+    values = [argv[i + 1] for i, arg in enumerate(argv) if arg == "-f"]
+    assert values[:2] == [str(repo.gitops_dir / "values" / name) for name in ("sealed-secrets.yaml", "extra.yaml")]
+    assert len(values) == 3  # the inline valuesObject goes through a private temp file ...
+    assert not Path(values[2]).exists()  # ... removed after the install
+    assert argv[-3:] == ["--wait", "--timeout", "10m"]
+
+
+def test_legacy_charts_block_is_ignored(cluster):
+    repo, spies = cluster
+    text = repo.settings_file.read_text()
+    text += "charts:\n  argocd: {repo: https://example.invalid, chart: old, version: 0.0.1}\n"
+    repo.settings_file.write_text(text)
+    bootstrap.run(Context.open(repo))
+    argv = spies["helm"].argvs[1]
+    assert argv[:4] == ["upgrade", "--install", "argocd", "argo-cd"]
+    assert argv[argv.index("--version") + 1] == "10.9.2"
 
 
 def test_commit_reminder_right_after_key_backup(cluster, capfd):
@@ -235,21 +288,23 @@ def test_commit_reminder_right_after_key_backup(cluster, capfd):
 
 
 def test_helm_install_oci_chart(tmp_path):
-    from pathlib import Path
-
     from helpers import FakeRunner
+    from talkub.argoapps import HelmSource
     from talkub.kube import KubeSession
-    from talkub.repo import Repo
 
-    repo = Repo(tmp_path)
-    atomic_write(repo.gitops_dir / "values" / "argocd.yaml", b"{}\n")
     runner = FakeRunner()
-    chart = ChartSpec("oci://ghcr.io/argoproj/argo-helm/", "argo-cd", "10.9.2")
-    bootstrap.helm_install(KubeSession(runner, Path("kc")), repo, "argocd", "argocd", chart, "argocd", True)
+    source = HelmSource(
+        app="argocd", release="argocd", namespace="argocd",
+        repo="oci://ghcr.io/argoproj/argo-helm/", chart="argo-cd", version="10.9.2",
+        value_files=(tmp_path / "argocd.yaml",),
+    )
+    bootstrap.helm_install(KubeSession(runner, Path("kc")), source, create_namespace=True)
     [call] = runner.calls
     assert call.argv[:5] == ["helm", "upgrade", "--install", "argocd", "oci://ghcr.io/argoproj/argo-helm/argo-cd"]
     assert "--repo" not in call.argv
     assert call.argv[call.argv.index("--version") + 1] == "10.9.2"
+    assert call.argv[call.argv.index("-f") + 1] == str(tmp_path / "argocd.yaml")
+    assert call.argv[-1] == "--create-namespace"
     assert call.env == {"KUBECONFIG": "kc"}
 
 

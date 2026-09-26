@@ -122,6 +122,11 @@ Version skew: repos written by this talkub version (`schematics` instead of `ins
     talkub upgrade talos             # nodes whose Talos version or schematic differs, one at a time
     talkub upgrade k8s               # shows the talosctl dry-run first
 
+Chart versions live only in the Argo CD apps (`gitops/apps/<chart>.yaml`: `repoURL`, `chart`,
+`targetRevision`, `helm.valueFiles`, `destination.namespace`); `bootstrap` and `repo apply` install
+exactly what those files say. An old `charts` block in `.talkub.yaml` is ignored and dropped on the
+next write.
+
 ## Sealed Secrets
 
     talkub secret seal db -n app --from-literal password=… -o gitops/manifests/app/db.sealed.yaml

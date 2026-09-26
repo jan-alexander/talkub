@@ -178,9 +178,7 @@ def test_enable_writes_repo_files_and_notes(repo, kubeseal_spy):
     }
 
     assert b"kind: SealedSecret" in tailscale_operator.secret_path(repo).read_bytes()
-    settings = repo.load_settings()
-    assert settings.charts["tailscale-operator"].version == "1.2.3"
-    assert settings.charts["tailscale-operator"].repo == "https://pkgs.tailscale.com/helmcharts"
+    assert "charts" not in repo.settings_file.read_text()
 
 
 def test_enable_writes_namespace_file(repo, kubeseal_spy):

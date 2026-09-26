@@ -155,3 +155,15 @@ class Spy:
     @property
     def argvs(self) -> list[list[str]]:
         return [call["args"] for call in self.calls]
+
+
+def write_chart_app(repo, key: str, repo_url: str, chart: str, version: str, namespace: str) -> None:
+    """`gitops/apps/<key>.yaml` (as talkub renders it) plus an empty `gitops/values/<key>.yaml`."""
+    from talkub import apps
+    from talkub.fsutil import atomic_write
+    from talkub.repo import ChartSpec
+
+    values_file = f"gitops/values/{key}.yaml"
+    atomic_write(repo.root / values_file, b"{}\n")
+    text = apps.helm_app(key, ChartSpec(repo_url, chart, version), "https://git.example.com/x.git", values_file, namespace)
+    atomic_write(repo.gitops_dir / "apps" / f"{key}.yaml", text.encode())

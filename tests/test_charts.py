@@ -20,3 +20,12 @@ def test_resolve_defaults_covers_both_charts():
     specs = charts.resolve_defaults(FakeRunner(outputs={"helm": CHART_YAML}))
     assert set(specs) == {"argocd", "sealed-secrets"}
     assert specs["sealed-secrets"].repo == "https://bitnami.github.io/sealed-secrets"
+
+
+def test_catalog_has_every_chart_talkub_writes_apps_for():
+    assert charts.CATALOG == {
+        "argocd": ("https://argoproj.github.io/argo-helm", "argo-cd"),
+        "sealed-secrets": ("https://bitnami.github.io/sealed-secrets", "sealed-secrets"),
+        "coredns": ("https://coredns.github.io/helm", "coredns"),
+        "tailscale-operator": ("https://pkgs.tailscale.com/helmcharts", "tailscale-operator"),
+    }

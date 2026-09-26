@@ -4,7 +4,6 @@ from helpers import DEFAULT_SCHEMATIC_ID, sample_settings
 from talkub.errors import RepoNotFound, ValidationError
 from talkub.repo import (
     MARKER,
-    ChartSpec,
     NodeSpec,
     Repo,
     SchematicSpec,
@@ -20,11 +19,21 @@ from talkub.schematic import customization_hash
 
 def test_settings_roundtrip(tmp_path):
     settings = sample_settings()
-    settings.charts["argocd"] = ChartSpec("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2")
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert repo.load_settings() == settings
     assert "talosVersion: v1.14.0" in repo.settings_file.read_text()
+
+
+def test_legacy_charts_block_is_ignored_and_dropped_on_write(tmp_path):
+    legacy = {"argocd": {"repo": "https://argoproj.github.io/argo-helm", "chart": "argo-cd", "version": "10.9.2"}}
+    settings = Settings.from_dict(_data(charts=legacy))
+    assert settings == sample_settings()
+    assert "charts" not in settings.to_dict()
+    repo = Repo(tmp_path)
+    repo.write_settings(settings)
+    assert "charts" not in repo.settings_file.read_text()
+    assert Settings.from_dict(_data(charts="garbage")) == sample_settings()  # not even validated
 
 
 def test_find_repo_searches_upwards(tmp_path):

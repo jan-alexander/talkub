@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from talkub import apps, bootstrap, charts, lifecycle, yamlio
+from talkub import apps, argoapps, bootstrap, charts, lifecycle, yamlio
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
@@ -154,9 +154,9 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
         raise ValidationError("no git URL in .talkub.yaml", hint="talkub repo set-url <url>")
     if app_path(repo).exists() and not resume:
         raise ValidationError("CoreDNS is already managed by talkub", hint="--resume if the takeover was interrupted")
-    if resume and not (app_path(repo).exists() and values_path(repo).exists() and "coredns" in settings.charts):
+    if resume and not (app_path(repo).exists() and values_path(repo).exists()):
         raise ValidationError(
-            "nothing to resume: gitops/apps/coredns.yaml, gitops/values/coredns.yaml or charts.coredns is missing",
+            "nothing to resume: gitops/apps/coredns.yaml or gitops/values/coredns.yaml is missing",
             hint="run `talkub coredns takeover` without --resume",
         )
     with kube_session(ctx) as kube:
@@ -187,7 +187,8 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
     if not resume:
         _write_repo_files(ctx)
         drifting = _controlplanes(settings)  # the new patch applies to control planes only
-    chart = repo.load_settings().charts["coredns"]
+    source = argoapps.app_source(repo, "coredns")
+    chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
 
     if drifting:
         _step("applying the Talos config (Talos stops managing CoreDNS)")
@@ -214,7 +215,7 @@ def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], boo
                 ports = _adopt_service(kube, repo, chart)
         _step(f"installing {DEPLOYMENT} (Helm release {RELEASE})")
         with _failing_step("helm install"):
-            bootstrap.helm_install(kube, repo, "coredns", RELEASE, chart, NAMESPACE, False)
+            bootstrap.helm_install(kube, source, create_namespace=False)
         with _failing_step("rollout status"):
             kube.kubectl(["-n", NAMESPACE, "rollout", "status", f"deploy/{DEPLOYMENT}", "--timeout", "5m"])
         with _failing_step("verify service"):
@@ -257,8 +258,6 @@ def _write_repo_files(ctx: Context) -> None:
     repo = ctx.repo
     settings = repo.load_settings()
     chart = charts.resolve(ctx.runner, "coredns")
-    settings.charts["coredns"] = chart
-    repo.write_settings(settings)
     operator_app = repo.gitops_dir / "apps" / "tailscale-operator.yaml"
     tailnet = settings.tailscale.tailnet if settings.tailscale and operator_app.exists() else None
     write_files(repo, chart, settings.git.url, tailnet)

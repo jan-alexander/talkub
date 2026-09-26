@@ -191,8 +191,6 @@ def enable(ctx: Context, *, client_id: str, client_secret: str, rotate_credentia
         return ["re-sealed the OAuth client secret", COMMIT_NOTE]
 
     chart = charts.resolve(ctx.runner, CHART_KEY)
-    settings.charts[CHART_KEY] = chart
-    repo.write_settings(settings)
     write_files(repo, chart, settings.git.url, settings.name)
     _add_coredns_stub(repo, settings.tailscale.tailnet)
     return [ACL_NOTE, SCOPES_NOTE, COMMIT_NOTE]

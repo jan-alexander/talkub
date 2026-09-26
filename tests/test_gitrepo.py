@@ -70,11 +70,11 @@ NEW = "git@github.com:me/test.git"
 def _gitops(tmp_path) -> Repo:
     """root.yaml + the two app templates rendered with OLD, as `init` writes them."""
     from string import Template
-    from talkub.charts import DEFAULT_CHARTS
+    from talkub.charts import CATALOG
 
     repo = Repo(tmp_path)
     values = {"git_url": OLD, "name": "test"}
-    for key, (repo_url, chart_name) in DEFAULT_CHARTS.items():
+    for key, (repo_url, chart_name) in CATALOG.items():
         prefix = key.replace("-", "_")
         values |= {f"{prefix}_repo": repo_url, f"{prefix}_chart": chart_name, f"{prefix}_version": "0.0.0"}
     for rel in ("gitops/root.yaml", "gitops/apps/argocd.yaml", "gitops/apps/sealed-secrets.yaml"):

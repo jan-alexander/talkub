@@ -36,7 +36,7 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     settings = repo.load_settings()
     assert settings.name == "demo"
     assert settings.nodes == {"cp-01": NodeSpec(ip="10.0.0.10")}
-    assert settings.charts["argocd"].version == "1.2.3"
+    assert "charts" not in repo.settings_file.read_text()
     assert settings.talos_version.startswith("v")
     assert settings.platform == "metal"
     assert settings.schematics["metal"].is_current
@@ -55,11 +55,11 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     ):
         assert (repo.root / rel).is_file(), rel
 
-    assert settings.charts["coredns"].version == "1.2.3"
     coredns_values = yamlio.load((repo.root / "gitops/values/coredns.yaml").read_text())
     assert "servers" in coredns_values and len(coredns_values["servers"]) == 1  # no tailnet stub zone yet
     coredns_app = yamlio.load((repo.root / "gitops/apps/coredns.yaml").read_text())
     assert coredns_app["spec"]["sources"][1]["repoURL"] == "https://git.example.com/demo.git"
+    assert coredns_app["spec"]["sources"][0]["targetRevision"] == "1.2.3"
     patch = yamlio.load((repo.root / "talos/patches/controlplane-coredns.yaml").read_text())
     assert patch == {"apiVersion": "v1alpha1", "kind": "KubeCoreDNSConfig", "enabled": False}
 

@@ -148,8 +148,8 @@ def test_happy_path_order_files_and_notes(cluster):
     helm = argvs[9]
     assert helm[:5] == ["upgrade", "--install", "coredns", "coredns", "--repo"]
     assert helm[helm.index("--version") + 1] == "1.45.0"
-    assert helm[helm.index("--namespace") + 1] == "kube-system"
-    assert helm[helm.index("--values") + 1] == str(repo.gitops_dir / "values" / "coredns.yaml")
+    assert helm[helm.index("-n") + 1] == "kube-system"
+    assert helm[helm.index("-f") + 1] == str(repo.gitops_dir / "values" / "coredns.yaml")
     assert "--create-namespace" not in helm
     assert argvs[10] == ["-n", "kube-system", "rollout", "status", "deploy/coredns-talkub", "--timeout", "5m"]
     assert argvs[11] == ["-n", "kube-system", "get", "svc", "kube-dns", "-o", "json"]
@@ -160,8 +160,7 @@ def test_happy_path_order_files_and_notes(cluster):
     assert len(argvs) == 18
     assert all(call["kubeconfig"] for call in kubectl.calls if call["args"][0] not in ("<talos apply>", "show"))
 
-    settings = repo.load_settings()
-    assert settings.charts["coredns"].version == "1.45.0"
+    assert "charts" not in repo.settings_file.read_text()
     assert (repo.talos_dir / "patches" / "controlplane-coredns.yaml").read_text() == coredns.talos_patch()
     assert (repo.gitops_dir / "values" / "coredns.yaml").read_text() == coredns.values()
     app = yamlio.load((repo.gitops_dir / "apps" / "coredns.yaml").read_text())
@@ -232,6 +231,7 @@ def test_resume_skips_file_writing_and_runs_the_rest(cluster):
     repo, kubectl, applied = cluster
     run(repo)
     app_text = "# edited by hand\n" + (repo.gitops_dir / "apps" / "coredns.yaml").read_text()
+    app_text = app_text.replace("targetRevision: 1.45.0", "targetRevision: 1.44.0")
     atomic_write(repo.gitops_dir / "apps" / "coredns.yaml", app_text.encode())
     kubectl.log.unlink()
     run(repo, resume=True)
@@ -239,6 +239,7 @@ def test_resume_skips_file_writing_and_runs_the_rest(cluster):
     assert not any(a[0] == "show" for a in argvs)  # no chart resolution
     assert ["<talos apply>"] not in argvs  # every node is in sync: the Talos step is skipped
     assert argvs[7][:3] == ["upgrade", "--install", "coredns"]
+    assert argvs[7][argvs[7].index("--version") + 1] == "1.44.0"  # the app file is the source
     assert argvs[10:15] == DELETES
     assert (repo.gitops_dir / "apps" / "coredns.yaml").read_text() == app_text
     assert applied == [APPLY]

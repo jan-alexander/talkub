@@ -803,9 +803,6 @@ def test_real_helm_and_kubeconform_validate_coredns_app(empty_repo, monkeypatch,
     monkeypatch.setenv("HELM_CONFIG_HOME", str(tmp_path / "helm-config"))
     monkeypatch.setenv("HELM_DATA_HOME", str(tmp_path / "helm-data"))
     chart = ChartSpec("https://coredns.github.io/helm", "coredns", "1.47.1")
-    settings = empty_repo.load_settings()
-    settings.charts["coredns"] = chart
-    empty_repo.write_settings(settings)
     values_dir = empty_repo.root / "gitops" / "values"
     values_dir.mkdir(parents=True)
     (values_dir / "coredns.yaml").write_text(coredns.values())

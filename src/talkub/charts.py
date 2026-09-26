@@ -1,4 +1,4 @@
-"""Helm charts installed by bootstrap and managed by ArgoCD afterwards."""
+"""Helm charts talkub writes Argo CD apps for; the apps under gitops/apps/ pin their versions."""
 
 from __future__ import annotations
 
@@ -6,17 +6,17 @@ from talkub import yamlio
 from talkub.repo import ChartSpec
 from talkub.runner import Runner
 
-DEFAULT_CHARTS: dict[str, tuple[str, str]] = {
+# chart key (= gitops/apps/<key>.yaml) -> (Helm repo, chart name); used only to create new app
+# files (`init`, `coredns takeover`, `tailscale operator enable`) at the latest chart version.
+CATALOG: dict[str, tuple[str, str]] = {
     "argocd": ("https://argoproj.github.io/argo-helm", "argo-cd"),
     "sealed-secrets": ("https://bitnami.github.io/sealed-secrets", "sealed-secrets"),
-}
-
-# Charts installed only when the corresponding feature is enabled (CoreDNS takeover,
-# Tailscale operator), resolved on demand via `resolve`.
-OPTIONAL_CHARTS: dict[str, tuple[str, str]] = {
     "coredns": ("https://coredns.github.io/helm", "coredns"),
     "tailscale-operator": ("https://pkgs.tailscale.com/helmcharts", "tailscale-operator"),
 }
+
+# The charts every repo gets from `init` (its templates under gitops/apps/).
+DEFAULT_KEYS = ("argocd", "sealed-secrets")
 
 
 def latest_version(runner: Runner, repo: str, chart: str) -> str:
@@ -28,13 +28,11 @@ def latest_version(runner: Runner, repo: str, chart: str) -> str:
 
 
 def resolve_defaults(runner: Runner) -> dict[str, ChartSpec]:
-    return {
-        key: ChartSpec(repo=repo, chart=chart, version=latest_version(runner, repo, chart))
-        for key, (repo, chart) in DEFAULT_CHARTS.items()
-    }
+    """Latest versions of the charts behind `init`'s templated apps (argocd, sealed-secrets)."""
+    return {key: resolve(runner, key) for key in DEFAULT_KEYS}
 
 
 def resolve(runner: Runner, key: str) -> ChartSpec:
-    """Latest version for one chart, from `DEFAULT_CHARTS` or `OPTIONAL_CHARTS`."""
-    repo, chart = (DEFAULT_CHARTS | OPTIONAL_CHARTS)[key]
+    """Latest version for one chart of `CATALOG`."""
+    repo, chart = CATALOG[key]
     return ChartSpec(repo=repo, chart=chart, version=latest_version(runner, repo, chart))

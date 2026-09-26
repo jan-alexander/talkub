@@ -22,6 +22,7 @@ from talkub.nodes import NodeOptions, render_node_patch, validate_node_name
 from talkub.recipients import Recipient
 from talkub.repo import (
     PLATFORMS,
+    ChartSpec,
     GitSpec,
     NodeSpec,
     Repo,
@@ -60,8 +61,7 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
         raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
 
     # Network lookups first: nothing is written if they fail.
-    chart_specs = charts.resolve_defaults(runner)
-    chart_specs["coredns"] = charts.resolve(runner, "coredns")
+    chart_specs = charts.resolve_defaults(runner) | {"coredns": charts.resolve(runner, "coredns")}
     target.mkdir(parents=True, exist_ok=True)
     try:
         return _populate(Repo(target.resolve()), request, chart_specs, runner)
@@ -105,7 +105,7 @@ def _cleanup(target: Path, existed: bool) -> None:
             child.unlink(missing_ok=True)
 
 
-def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> Repo:
+def _populate(repo: Repo, request: InitRequest, chart_specs: dict[str, ChartSpec], runner: Runner) -> Repo:
     keyring = Keyring(repo, runner, env={})
     keyring.create(request.recipients)
     public = keyring.public_key()
@@ -135,22 +135,21 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
         platform=request.platform,
         schematics={request.platform: SchematicSpec(id=default_id, hash=customization_hash([], []))},
         nodes=dict(request.nodes),
-        charts=chart_specs,
         git=GitSpec(url=git_url),
     )
     repo.write_settings(settings)
-    _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, git_url))
+    _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings.name, git_url, chart_specs))
     atomic_write(repo.root / ".yamllint", DEFAULT_YAMLLINT.encode())
-    coredns.write_files(repo, settings.charts["coredns"], git_url)
+    coredns.write_files(repo, chart_specs["coredns"], git_url)
     for node in request.nodes:
         options = request.node_options.get(node, NodeOptions())
         atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node, options).encode())
     return repo
 
 
-def _template_values(settings: Settings, git_url: str) -> dict[str, str]:
-    values = {"name": settings.name, "git_url": git_url}
-    for key, spec in settings.charts.items():
+def _template_values(name: str, git_url: str, chart_specs: dict[str, ChartSpec]) -> dict[str, str]:
+    values = {"name": name, "git_url": git_url}
+    for key, spec in chart_specs.items():
         prefix = key.replace("-", "_")
         values |= {f"{prefix}_repo": spec.repo, f"{prefix}_chart": spec.chart, f"{prefix}_version": spec.version}
     return values

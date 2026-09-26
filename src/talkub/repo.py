@@ -57,6 +57,8 @@ class NodeSpec:
 
 @dataclass(frozen=True)
 class ChartSpec:
+    """A Helm chart at one version (for rendering new Argo CD apps and naming the chart to helm)."""
+
     repo: str
     chart: str
     version: str
@@ -240,7 +242,6 @@ class Settings:
     platform: str = "metal"
     schematics: dict[str, SchematicSpec] = field(default_factory=dict)
     nodes: dict[str, NodeSpec] = field(default_factory=dict)
-    charts: dict[str, ChartSpec] = field(default_factory=dict)
     tailscale: TailscaleSpec | None = None
     git: GitSpec | None = None
     shortcuts: dict[str, Shortcut] = field(default_factory=dict)
@@ -282,10 +283,6 @@ class Settings:
             "platform": self.platform,
             "schematics": {p: _schematic_dict(s) for p, s in self.schematics.items()},
             "nodes": {name: _node_dict(n) for name, n in self.nodes.items()},
-            "charts": {
-                name: {"repo": c.repo, "chart": c.chart, "version": c.version}
-                for name, c in self.charts.items()
-            },
         }
         if self.tailscale is not None:
             data["tailscale"] = {"tailnet": self.tailscale.tailnet, "nodeCidr": self.tailscale.node_cidr}
@@ -367,16 +364,8 @@ class Settings:
                 arch=arch,
             )
 
-        charts: dict[str, ChartSpec] = {}
-        for name, spec in (data.get("charts") or {}).items():
-            try:
-                charts[str(name)] = ChartSpec(
-                    repo=str(spec["repo"]), chart=str(spec["chart"]), version=str(spec["version"])
-                )
-            except (KeyError, TypeError):
-                raise ValidationError(
-                    f"{MARKER}: chart '{name}' needs repo, chart and version"
-                ) from None
+        # A legacy `charts` block is ignored: the Argo CD apps under gitops/apps/ are the only
+        # source of chart versions, and the block disappears on the next write.
 
         tailscale = None
         raw_tailscale = data.get("tailscale")
@@ -418,7 +407,6 @@ class Settings:
             platform=platform,
             schematics=schematics,
             nodes=nodes,
-            charts=charts,
             tailscale=tailscale,
             git=git,
             shortcuts=shortcuts,
