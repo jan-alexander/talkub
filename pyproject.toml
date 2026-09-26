@@ -22,6 +22,7 @@ packages = ["src/talkub"]
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.15",
     "pytest>=8",
     "ruff>=0.16.9",
 ]
@@ -29,3 +30,26 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
+
+[tool.importlinter]
+root_package = "talkub"
+
+# Higher layers may import lower ones, never the reverse; `|` separates independent siblings.
+# See docs/superpowers/specs/2026-09-26-talkub-package-structure-design.md.
+[[tool.importlinter.contracts]]
+name = "Domain layers"
+type = "layers"
+containers = ["talkub"]
+layers = [
+    "cli",
+    "scaffold | overview",
+    "gitops | workstation",
+    "quality",
+    "helm | talos",
+    "argocd",
+    "kube",
+    "context",
+    "secrets",
+    "config",
+    "core",
+]
