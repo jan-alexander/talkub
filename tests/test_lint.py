@@ -18,6 +18,7 @@ from talkub.lint import (
     HelmSource,
     LintReport,
     _DOWNLOAD_ERROR_PREFIX,
+    _probe_version,
     cache_dir,
     helm_sources,
     kubeconform_argv,
@@ -354,7 +355,7 @@ def test_lint_manifests_offline_populated_cache_runs_normally(empty_repo, fake_b
     runner = FakeRunner(outputs={"kubeconform": _kubeconform_json([]).encode()})
     report = LintReport()
     lint_manifests(Context.open(empty_repo, runner=runner), report, offline=True)
-    assert len(runner.calls) == 1
+    assert len(runner.calls) == 2  # the version probe, then the real call
     assert report.findings == [] and report.skipped == []
 
 
@@ -373,104 +374,157 @@ def test_lint_manifests_calls_kubeconform_and_records_findings(empty_repo, fake_
     })
     report = LintReport()
     lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
-    assert len(runner.calls) == 1
-    call = runner.calls[0]
+    assert len(runner.calls) == 2  # the version probe, then the real call
+    call = runner.calls[1]
     assert call.argv[0] == "kubeconform"
     assert "gitops/apps/a.yaml" in call.argv
     assert report.findings == [Finding("error", "gitops/apps/a.yaml", "ConfigMap/x: /data: bad")]
     assert report.skipped == []
 
 
-def test_lint_manifests_version_fallback_reruns_with_master(empty_repo, fake_bin, monkeypatch, tmp_path):
+# --- version probing (fix round 1: was inferred from real output, now a dedicated stdin probe) ---
+
+
+def _probe_json(status, msg=""):
+    return _kubeconform_json([
+        {"filename": "-", "kind": "Namespace", "name": "talkub-lint-probe", "version": "v1", "status": status, "msg": msg}
+    ])
+
+
+def test_probe_version_uses_given_version_when_valid(empty_repo):
+    runner = ScriptedRunner(outputs=[_probe_json("statusValid").encode()])
+    report = LintReport()
+    version = _probe_version(Context.open(empty_repo, runner=runner), report, "1.37.0")
+    assert version == "1.37.0"
+    assert len(runner.calls) == 1
+    assert "1.37.0" in runner.calls[0]
+    assert report.findings == []
+
+
+def test_probe_version_falls_back_to_master_and_warns_once(empty_repo):
+    runner = ScriptedRunner(outputs=[_probe_json("statusSkipped").encode()])
+    report = LintReport()
+    version = _probe_version(Context.open(empty_repo, runner=runner), report, "1.99.0")
+    assert version == "master"
+    assert report.findings == [
+        Finding("warning", "kubeconform", "kubernetes schemas for 1.99.0 not available; validated against master")
+    ]
+
+
+def test_probe_version_download_error_uses_given_version_without_warning(empty_repo):
+    runner = ScriptedRunner(outputs=[
+        _probe_json("statusError", "failed downloading schema at https://x/namespace.json: boom").encode()
+    ])
+    report = LintReport()
+    version = _probe_version(Context.open(empty_repo, runner=runner), report, "1.37.0")
+    assert version == "1.37.0"
+    assert report.findings == []
+
+
+def test_probe_version_memoized_per_report(empty_repo):
+    runner = ScriptedRunner(outputs=[_probe_json("statusValid").encode()])
+    report = LintReport()
+    ctx = Context.open(empty_repo, runner=runner)
+    assert _probe_version(ctx, report, "1.37.0") == "1.37.0"
+    assert _probe_version(ctx, report, "1.37.0") == "1.37.0"  # cached: a second probe would IndexError (no output left)
+    assert len(runner.calls) == 1
+
+
+def test_lint_manifests_probe_available_ignores_crds_no_false_fallback(empty_repo, fake_bin, monkeypatch, tmp_path):
+    """Regression: a chart bundling CRDs must not look like a missing-schema-version problem."""
     _manifest(empty_repo, "a.yaml")
     fake_bin("kubeconform", "true\n")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    first = _kubeconform_json([
-        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusSkipped", "msg": ""},
+    real = _kubeconform_json([
+        {
+            "filename": "gitops/apps/a.yaml", "kind": "CustomResourceDefinition", "name": "foos.example.com",
+            "version": "apiextensions.k8s.io/v1", "status": "statusSkipped", "msg": "",
+        },
     ]).encode()
-    second = _kubeconform_json([
-        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
-    ]).encode()
-    runner = ScriptedRunner(outputs=[first, second])
+    runner = ScriptedRunner(outputs=[_probe_json("statusValid").encode(), real])
     report = LintReport()
     lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
     assert len(runner.calls) == 2
-    assert "1.37.0" in runner.calls[0]  # sample_settings' kubernetesVersion
+    assert "1.37.0" in runner.calls[0] and "1.37.0" in runner.calls[1]
+    assert not any("master" in c for c in runner.calls)
+    assert report.findings == []
+    assert report.skipped == ["manifests: 1 CustomResourceDefinition objects not validated (no schema)"]
+
+
+def test_lint_manifests_probe_missing_falls_back_to_master(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo, "a.yaml")
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    real = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
+    ]).encode()
+    runner = ScriptedRunner(outputs=[_probe_json("statusSkipped").encode(), real])
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    assert len(runner.calls) == 2
     assert "master" in runner.calls[1]
     assert report.findings == [
-        Finding(
-            "warning", "kubeconform",
-            "kubernetes schemas for 1.37.0 not available; validated against master",
-        )
+        Finding("warning", "kubeconform", "kubernetes schemas for 1.37.0 not available; validated against master")
     ]
     assert report.skipped == []
 
 
-def test_lint_manifests_version_fallback_preserves_invalid_crd_finding(empty_repo, fake_bin, monkeypatch, tmp_path):
+def test_probe_runs_once_across_manifests_and_helm_apps(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo, "a.yaml")
-    (empty_repo.root / "gitops" / "apps" / "b.yaml").write_text("x: 1\n")
+    _write_source_app(empty_repo, "myapp")
+    fake_bin("helm", "true\n")
     fake_bin("kubeconform", "true\n")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    first = _kubeconform_json([
-        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusSkipped", "msg": ""},
+    outputs = [
+        _probe_json("statusValid").encode(),  # the only probe call, shared by both lint steps
+        _kubeconform_json([]).encode(),  # lint_manifests' real call
+        b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n",  # helm template
+        _kubeconform_json([]).encode(),  # the helm app's real call
+    ]
+    runner = ScriptedRunner(outputs=outputs)
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    lint_helm_apps(Context.open(empty_repo, runner=runner), report, offline=False)
+    assert len(runner.calls) == 4  # a 5th call (a second probe) would IndexError on empty outputs
+    assert report.findings == [] and report.skipped == []
+
+
+def test_parse_kubeconform_collapses_crd_skips_to_one_summary_line():
+    stdout = _kubeconform_json([
         {
-            "filename": "gitops/apps/b.yaml", "kind": "DNSConfig", "name": "y", "version": "tailscale.com/v1alpha1",
-            "status": "statusInvalid", "msg": "bad", "validationErrors": [{"path": "/spec", "msg": "missing nameserver"}],
+            "filename": "gitops/apps/a.yaml", "kind": "CustomResourceDefinition", "name": "foos.example.com",
+            "version": "apiextensions.k8s.io/v1", "status": "statusSkipped", "msg": "",
         },
-    ]).encode()
-    # The master rerun's crafted output omits the CRD entirely (it should still be reported).
-    second = _kubeconform_json([
-        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
-    ]).encode()
-    runner = ScriptedRunner(outputs=[first, second])
-    report = LintReport()
-    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
-    assert len(runner.calls) == 2
-    crd_findings = [f for f in report.findings if f.path == "gitops/apps/b.yaml"]
-    assert crd_findings == [Finding("error", "gitops/apps/b.yaml", "DNSConfig/y: /spec: missing nameserver")]
+        {
+            "filename": "gitops/apps/b.yaml", "kind": "CustomResourceDefinition", "name": "bars.example.com",
+            "version": "apiextensions.k8s.io/v1", "status": "statusSkipped", "msg": "",
+        },
+        {"filename": "gitops/apps/c.yaml", "kind": "Deployment", "name": "x", "version": "apps/v1", "status": "statusValid", "msg": ""},
+    ])
+    findings, skipped = parse_kubeconform(stdout)
+    assert findings == []
+    assert skipped == ["manifests: 2 CustomResourceDefinition objects not validated (no schema)"]
 
 
-def test_lint_manifests_version_fallback_dedupes_resource_present_in_both_runs(empty_repo, fake_bin, monkeypatch, tmp_path):
-    _manifest(empty_repo, "a.yaml")
-    (empty_repo.root / "gitops" / "apps" / "b.yaml").write_text("x: 1\n")
-    fake_bin("kubeconform", "true\n")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    crd = {
-        "filename": "gitops/apps/b.yaml", "kind": "DNSConfig", "name": "y", "version": "tailscale.com/v1alpha1",
-        "status": "statusInvalid", "msg": "bad", "validationErrors": [{"path": "/spec", "msg": "missing nameserver"}],
-    }
-    first = _kubeconform_json([
-        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusSkipped", "msg": ""},
-        crd,
-    ]).encode()
-    second = _kubeconform_json([
-        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
-        crd,  # also reported by the master run: must not be duplicated
-    ]).encode()
-    runner = ScriptedRunner(outputs=[first, second])
-    report = LintReport()
-    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
-    crd_findings = [f for f in report.findings if f.path == "gitops/apps/b.yaml"]
-    assert len(crd_findings) == 1
+def test_parse_kubeconform_crd_summary_uses_prefix_label():
+    stdout = _kubeconform_json([
+        {
+            "filename": "-", "kind": "CustomResourceDefinition", "name": "foos.example.com",
+            "version": "apiextensions.k8s.io/v1", "status": "statusSkipped", "msg": "",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout, prefix="app coredns: ")
+    assert findings == []
+    assert skipped == ["app coredns: 1 CustomResourceDefinition objects not validated (no schema)"]
 
 
-def test_lint_manifests_crd_group_skip_does_not_trigger_fallback(empty_repo, fake_bin, monkeypatch, tmp_path):
-    _manifest(empty_repo, "a.yaml")
-    fake_bin("kubeconform", "true\n")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    runner = FakeRunner(outputs={
-        "kubeconform": _kubeconform_json([
-            {
-                "filename": "gitops/apps/a.yaml", "kind": "DNSConfig", "name": "x",
-                "version": "tailscale.com/v1alpha1", "status": "statusSkipped", "msg": "",
-            },
-        ]).encode(),
-    })
-    report = LintReport()
-    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
-    assert len(runner.calls) == 1  # no master rerun for a CRD group
-    assert report.findings == []
-    assert report.skipped == ["no schema for DNSConfig/x (tailscale.com/v1alpha1)"]
+def test_parse_kubeconform_non_crd_skip_is_unaffected():
+    stdout = _kubeconform_json([
+        {"filename": "gitops/apps/x.yaml", "kind": "Widget", "name": "foo", "version": "example.com/v1", "status": "statusSkipped", "msg": ""},
+    ])
+    findings, skipped = parse_kubeconform(stdout)
+    assert findings == []
+    assert skipped == ["no schema for Widget/foo (example.com/v1)"]
 
 
 _GOOD_DEPLOYMENT = """\
@@ -701,6 +755,14 @@ def test_helm_sources_skips_non_application_docs(empty_repo):
     assert sources == [] and findings == []
 
 
+def test_helm_sources_ignores_sops_yaml_files(empty_repo):
+    doc = _app_doc("secret", sources=[{"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"}])
+    _write_app_doc(empty_repo, "secret", doc)
+    (empty_repo.gitops_dir / "apps" / "secret.yaml").rename(empty_repo.gitops_dir / "apps" / "secret.sops.yaml")
+    sources, findings = helm_sources(empty_repo)
+    assert sources == [] and findings == []
+
+
 def test_helm_sources_skips_source_without_chart(empty_repo):
     doc = _app_doc(
         "dirapp",
@@ -737,9 +799,9 @@ def test_lint_helm_apps_renders_and_validates(empty_repo, spy):
     assert argv[argv.index("--repo") + 1] == "https://example.com/charts"
     assert argv[argv.index("--version") + 1] == "1.0.0"
     assert argv[argv.index("-n") + 1] == "ns1"
-    assert len(kubeconform.calls) == 1
-    assert kubeconform.calls[0]["stdin"] == manifest
-    assert kubeconform.calls[0]["args"][-1] == "-"
+    assert len(kubeconform.calls) == 2  # the version probe, then the real (stdin) call
+    assert kubeconform.calls[-1]["stdin"] == manifest
+    assert kubeconform.calls[-1]["args"][-1] == "-"
 
 
 def test_lint_helm_apps_uses_inline_values_file(empty_repo, fake_bin):
@@ -769,6 +831,7 @@ def test_lint_helm_apps_helm_failure_is_an_error(empty_repo, spy):
     _write_source_app(empty_repo, "myapp")
     helm = spy("helm")
     helm.on("template", stderr="line1\nline2\nline3\nline4\nline5\nline6\n", rc=1)
+    kubeconform = spy("kubeconform")  # never called: nothing rendered, so nothing to probe/validate
 
     report = LintReport()
     lint_helm_apps(Context.open(empty_repo), report, offline=False)
@@ -776,6 +839,7 @@ def test_lint_helm_apps_helm_failure_is_an_error(empty_repo, spy):
     assert report.findings == [
         Finding("error", "app myapp", "helm template failed: line1; line2; line3; line4; line5")
     ]
+    assert kubeconform.calls == []
 
 
 def test_lint_helm_apps_offline_skips(empty_repo, monkeypatch, tmp_path):

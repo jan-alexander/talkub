@@ -49,6 +49,9 @@ class Finding:
 class LintReport:
     findings: list[Finding] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)  # human-readable reasons
+    # Memoizes `_probe_version` per (version, cache dir) so one `run()` probes at most once per
+    # version, however many of lint_manifests/lint_helm_apps's kubeconform calls share it.
+    _version_probe_cache: dict[tuple[str, str], str] = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def errors(self) -> int:
@@ -151,33 +154,15 @@ def _try_resources(stdout: str) -> list[dict] | None:
     return data.get("resources", [])
 
 
-def _is_core_group(version: str) -> bool:
-    """True for no group ("v1") or a Kubernetes-owned group ("apps", "...k8s.io"); False for a CRD group."""
-    group = version.split("/", 1)[0] if "/" in version else ""
-    return not group or "." not in group or group.endswith(".k8s.io")
-
-
 def _is_download_error(res: dict) -> bool:
     """True for a schema-fetch failure (e.g. an unreachable host); unrelated to the k8s version."""
     return str(res.get("msg", "")).startswith(_DOWNLOAD_ERROR_PREFIX)
 
 
-def _resource_key(res: dict) -> tuple:
-    return (res.get("filename"), res.get("kind"), res.get("name"))
-
-
-def _needs_master_fallback(stdout: str) -> bool:
-    """True if a core/Kubernetes-owned resource was skipped, or errored for a reason other than a
-    download failure: the requested version's schemas are probably missing entirely, rather than
-    this being a genuine unknown-CRD skip or an unrelated network problem."""
-    resources = _try_resources(stdout)
-    if resources is None:
-        return False
-    return any(
-        _is_core_group(res.get("version", ""))
-        and (res.get("status") == "statusSkipped" or (res.get("status") == "statusError" and not _is_download_error(res)))
-        for res in resources
-    )
+# kubeconform has no schema for this *kind* in any -kubernetes-version (unlike a CRD-defined kind,
+# which is merely unknown to it); every skip is collapsed into one summary line instead of one per
+# object, and must never be mistaken for a missing-version problem (see `_probe_version`).
+_CRD_KIND = "CustomResourceDefinition"
 
 
 def _parse_resources(
@@ -185,6 +170,7 @@ def _parse_resources(
 ) -> tuple[list[Finding], list[str]]:
     findings: list[Finding] = []
     skipped: list[str] = []
+    crd_skipped = 0
     for res in resources:
         ident = f"{res.get('kind')}/{res.get('name')}"
         status = res.get("status")
@@ -200,7 +186,13 @@ def _parse_resources(
             else:
                 findings.append(Finding("error", path, f"{ident}: {res.get('msg', '')}"))
         elif status == "statusSkipped":
-            skipped.append(f"no schema for {ident} ({res.get('version', '')})")
+            if res.get("kind") == _CRD_KIND:
+                crd_skipped += 1
+            else:
+                skipped.append(f"no schema for {ident} ({res.get('version', '')})")
+    if crd_skipped:
+        label = prefix.rstrip(": ") if prefix else "manifests"
+        skipped.append(f"{label}: {crd_skipped} {_CRD_KIND} objects not validated (no schema)")
     return findings, skipped
 
 
@@ -226,45 +218,56 @@ def _cache_populated(cache: Path) -> bool:
     return cache.is_dir() and any(cache.rglob("*"))
 
 
-def _kubeconform_with_fallback(
-    ctx: Context,
-    version: str,
-    args: list[str],
-    *,
-    offline: bool,
-    input: bytes | None = None,
-    prefix: str | None = None,
-) -> tuple[list[Finding], list[str]]:
-    """Run kubeconform over `args` (repo-relative files, or `["-"]` with `input` on stdin),
-    retrying with `-kubernetes-version master` if `version`'s own schemas seem to be missing
-    entirely. Shared by manifest linting (Task 2) and Helm-rendered app linting (Task 3)."""
-    repo = ctx.repo
-    result = ctx.runner.run(kubeconform_argv(version) + args, cwd=repo.root, check=False, input=input)
-    stdout = result.stdout.decode()
+# A minimal, always-valid resource: only used to ask "does kubeconform have schemas for this
+# -kubernetes-version at all", never linted itself.
+_PROBE_MANIFEST = b"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: talkub-lint-probe\n"
 
-    if _needs_master_fallback(stdout):
-        # A CRD's validity doesn't depend on -kubernetes-version: keep those findings from this
-        # run rather than losing them when we discard the rest for the master rerun below.
-        carried = [
-            res
-            for res in (_try_resources(stdout) or [])
-            if res.get("status") == "statusInvalid" and not _is_core_group(res.get("version", ""))
-        ]
-        result = ctx.runner.run(kubeconform_argv("master") + args, cwd=repo.root, check=False, input=input)
-        stdout = result.stdout.decode()
-        master_resources = _try_resources(stdout) or []
-        seen = {_resource_key(res) for res in master_resources}
-        merged = master_resources + [res for res in carried if _resource_key(res) not in seen]
-        findings, skipped = _parse_resources(merged, prefix, offline=offline)
-        findings.append(
+
+def _probe_version(ctx: Context, report: LintReport, version: str) -> str:
+    """Which `-kubernetes-version` kubeconform can actually validate against for this run:
+    `version` itself, or `master` (with a one-time warning finding) if `version`'s schemas seem to
+    be missing entirely.
+
+    This used to be inferred from each real kubeconform call's own output (any Kubernetes-owned
+    resource skipped or erroring), which misfired on a resource kubeconform never has a schema for
+    in any version, such as a `CustomResourceDefinition` object bundled in a chart. Instead, a tiny
+    built-in manifest is validated on its own via stdin, once per (version, cache dir) — memoized
+    on `report` so lint_manifests and every lint_helm_apps source share one probe per `run()`.
+    A schema-download error (e.g. offline, or an unrelated network hiccup) says nothing about
+    whether `version` itself is supported, so it is treated as "assume `version` is fine", not as
+    a reason to fall back or to warn.
+    """
+    cache_key = (version, str(cache_dir()))
+    memo = report._version_probe_cache
+    if cache_key in memo:
+        return memo[cache_key]
+
+    result = ctx.runner.run(kubeconform_argv(version) + ["-"], input=_PROBE_MANIFEST, check=False)
+    resources = _try_resources(result.stdout.decode()) or []
+    status = resources[0].get("status") if resources else None
+
+    if status == "statusSkipped" or (status == "statusError" and not _is_download_error(resources[0])):
+        resolved = "master"
+        report.findings.append(
             Finding(
                 "warning", "kubeconform",
                 f"kubernetes schemas for {version} not available; validated against master",
             )
         )
-        return findings, skipped
+    else:
+        resolved = version
+    memo[cache_key] = resolved
+    return resolved
 
-    return parse_kubeconform(stdout, prefix, offline=offline)
+
+def _run_kubeconform(
+    ctx: Context, version: str, args: list[str], *, offline: bool, input: bytes | None = None, prefix: str | None = None
+) -> tuple[list[Finding], list[str]]:
+    """Run kubeconform once against `version` (already resolved by `_probe_version`) over `args`
+    (repo-relative files, or `["-"]` with `input` on stdin). Shared by manifest linting (Task 2)
+    and Helm-rendered app linting (Task 3)."""
+    result = ctx.runner.run(kubeconform_argv(version) + args, cwd=ctx.repo.root, check=False, input=input)
+    return parse_kubeconform(result.stdout.decode(), prefix, offline=offline)
 
 
 def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
@@ -282,9 +285,10 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
         return
     cache.mkdir(parents=True, exist_ok=True)
 
-    version = repo.load_settings().kubernetes_version.lstrip("v")
+    version_raw = repo.load_settings().kubernetes_version.lstrip("v")
+    version = _probe_version(ctx, report, version_raw)
     rel_files = [repo.rel(path) for path in files]
-    findings, skipped = _kubeconform_with_fallback(ctx, version, rel_files, offline=offline)
+    findings, skipped = _run_kubeconform(ctx, version, rel_files, offline=offline)
     report.findings.extend(findings)
     report.skipped.extend(skipped)
 
@@ -317,6 +321,8 @@ def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
         return sources, findings
 
     for path in sorted(apps_dir.glob("*.yaml")):
+        if path.name.endswith(".sops.yaml"):
+            continue
         for doc in yamlio.load_all(path.read_text()):
             if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
                 continue
@@ -413,7 +419,7 @@ def lint_helm_apps(ctx: Context, report: LintReport, *, offline: bool) -> None:
 
     # kubeconform missing is already reported as a skip reason by lint_manifests; don't duplicate it.
     kubeconform_available = shutil.which("kubeconform") is not None
-    version = repo.load_settings().kubernetes_version.lstrip("v")
+    version_raw = repo.load_settings().kubernetes_version.lstrip("v")
     if kubeconform_available:
         cache_dir().mkdir(parents=True, exist_ok=True)
 
@@ -422,7 +428,10 @@ def lint_helm_apps(ctx: Context, report: LintReport, *, offline: bool) -> None:
             manifest = _render_helm(ctx, source, tmp, index, report)
             if manifest is None or not kubeconform_available:
                 continue
-            findings, skipped = _kubeconform_with_fallback(
+            # Probed lazily (only once we actually have something to validate), not up front: no
+            # point asking kubeconform anything when every source failed to render.
+            version = _probe_version(ctx, report, version_raw)
+            findings, skipped = _run_kubeconform(
                 ctx, version, ["-"], offline=False, input=manifest, prefix=f"app {source.app}: "
             )
             report.findings.extend(findings)
