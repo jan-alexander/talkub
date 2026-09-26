@@ -18,7 +18,7 @@ from talkub.argoapps import (
     is_single_chart_app,
     set_target_revision,
 )
-from talkub.config.repo import ChartSpec
+from talkub.config import ChartSpec
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.findings import Finding

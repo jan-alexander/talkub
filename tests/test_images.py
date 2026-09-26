@@ -2,7 +2,7 @@ import pytest
 from helpers import DEFAULT_SCHEMATIC_ID, sample_settings
 
 from talkub import images
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.core.errors import ValidationError
 from talkub.factory import FactoryClient
 

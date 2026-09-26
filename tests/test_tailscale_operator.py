@@ -6,7 +6,7 @@ from helpers import need
 from talkub import coredns, tailscale_operator
 from talkub.checks import run_checks
 from talkub.cli.main import main
-from talkub.config.repo import GitSpec, TailscaleSpec
+from talkub.config import GitSpec, TailscaleSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError

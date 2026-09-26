@@ -3,7 +3,7 @@ import subprocess
 import pytest
 from helpers import need
 
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.ephemeral import decrypted
@@ -99,7 +99,7 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     talosconfig = yamlio.load(ctx.sops.decrypt(repo.talosconfig).decode())
     assert list(talosconfig["contexts"]["demo"]["endpoints"]) == ["10.0.0.10"]
 
-    from talkub.config.repo import GitSpec
+    from talkub.config import GitSpec
 
     assert settings.git == GitSpec(url="https://git.example.com/demo.git")
 

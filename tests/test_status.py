@@ -4,7 +4,7 @@ from helpers import DEFAULT_SCHEMATIC_ID, need
 
 from talkub import status
 from talkub.cli.main import main
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core.errors import TalkubError
 from talkub.core.fsutil import atomic_write

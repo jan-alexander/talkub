@@ -2,7 +2,7 @@ import pytest
 from helpers import need
 
 from talkub import tailscale
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError

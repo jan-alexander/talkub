@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from talkub import apps, argoapps, charts, lifecycle
-from talkub.config.repo import ChartSpec, Repo, Settings
+from talkub.config import ChartSpec, Repo, Settings
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import CommandFailed, ValidationError

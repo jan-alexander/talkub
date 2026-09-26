@@ -8,7 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from talkub.config.repo import Repo
+from talkub.config import Repo
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner

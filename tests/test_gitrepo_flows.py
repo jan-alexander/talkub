@@ -4,7 +4,7 @@ import pytest
 from helpers import need
 
 from talkub import gitrepo
-from talkub.config.repo import GitSpec
+from talkub.config import GitSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError

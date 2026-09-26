@@ -21,7 +21,7 @@ from talkub.cli.nodes import (
 )
 from talkub.cli.output import print_notes
 from talkub.cli.tailscale import read_authkey
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.core.runner import Runner

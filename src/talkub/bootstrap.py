@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from talkub import gitrepo, sealing, tailscale
 from talkub.argoapps import HelmSource, app_source
-from talkub.config.repo import Repo, Settings
+from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.ephemeral import decrypted
 from talkub.core.errors import CommandFailed, ValidationError

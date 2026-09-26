@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from talkub.config.repo import Settings
+from talkub.config import Settings
 from talkub.config.schematic import customization_hash
 from talkub.core.errors import ValidationError
 from talkub.factory import FactoryClient

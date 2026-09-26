@@ -16,7 +16,7 @@ from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from talkub.argoapps import SECRET_TYPE_LABEL
-from talkub.config.repo import GitSpec, Repo
+from talkub.config import GitSpec, Repo
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.ephemeral import decrypted, private_tempdir

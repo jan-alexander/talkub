@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from talkub import sealing
-from talkub.config.repo import Repo
+from talkub.config import Repo
 from talkub.core.errors import ValidationError
 
 app = typer.Typer(

@@ -142,7 +142,7 @@ def test_init_with_tailscale(tmp_path, software_identity, fake_bin, monkeypatch)
         ]
     )
     assert code == 0
-    from talkub.config.repo import Repo
+    from talkub.config import Repo
 
     repo = Repo((tmp_path / "demo").resolve())
     settings = repo.load_settings()

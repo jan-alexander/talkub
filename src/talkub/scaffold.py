@@ -11,7 +11,7 @@ from pathlib import Path
 from string import Template
 
 from talkub import charts, coredns
-from talkub.config.repo import (
+from talkub.config import (
     PLATFORMS,
     ChartSpec,
     GitSpec,

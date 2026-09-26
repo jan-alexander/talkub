@@ -68,7 +68,7 @@ DEFAULT_SCHEMATIC_ID = (
 
 
 def sample_settings():
-    from talkub.config.repo import NodeSpec, SchematicSpec, Settings
+    from talkub.config import NodeSpec, SchematicSpec, Settings
     from talkub.config.schematic import customization_hash
 
     return Settings(
@@ -193,7 +193,7 @@ def write_chart_app(
 ) -> None:
     """`gitops/apps/<key>.yaml` (as talkub renders it) plus an empty `gitops/values/<key>.yaml`."""
     from talkub import apps
-    from talkub.config.repo import ChartSpec
+    from talkub.config import ChartSpec
     from talkub.core.fsutil import atomic_write
 
     values_file = f"gitops/values/{key}.yaml"

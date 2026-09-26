@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from talkub import argoapps, charts
 from talkub.argoapps import HelmSource
-from talkub.config.repo import Repo, Settings
+from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.kube import kube_session

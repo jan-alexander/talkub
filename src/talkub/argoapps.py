@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub.config.repo import Repo
+from talkub.config import Repo
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.findings import Finding

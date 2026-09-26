@@ -16,7 +16,7 @@ from pathlib import Path
 from ruamel.yaml.error import YAMLError
 
 from talkub import images
-from talkub.config.repo import Repo, Settings, TailscaleSpec
+from talkub.config import Repo, Settings, TailscaleSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError

@@ -9,7 +9,7 @@ from helpers import FakeRunner, need
 
 from talkub import apps, coredns
 from talkub.cli.main import main
-from talkub.config.repo import ChartSpec
+from talkub.config import ChartSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
@@ -161,7 +161,7 @@ def test_cli_lint_exit_1_on_error(empty_repo, monkeypatch, capfd):
 
 @need("age", "age-keygen", "sops", "talosctl", "helm")
 def test_fresh_init_repo_has_no_yamllint_errors(tmp_path, software_identity, fake_bin):
-    from talkub.config.repo import NodeSpec
+    from talkub.config import NodeSpec
     from talkub.core.runner import Runner
     from talkub.scaffold import InitRequest, init_cluster
     from talkub.secrets.recipients import Recipient

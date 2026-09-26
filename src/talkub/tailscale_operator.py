@@ -12,7 +12,7 @@ import ipaddress
 from pathlib import Path
 
 from talkub import apps, charts, coredns, sealing
-from talkub.config.repo import ChartSpec, Repo, Settings, valid_label
+from talkub.config import ChartSpec, Repo, Settings, valid_label
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub.config.repo import Repo
+from talkub.config import Repo
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.ephemeral import private_file

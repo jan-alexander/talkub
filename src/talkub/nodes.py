@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from talkub.config.repo import NodeSpec, Repo, SchematicSpec, Settings
+from talkub.config import NodeSpec, Repo, SchematicSpec, Settings
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write

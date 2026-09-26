@@ -13,7 +13,7 @@ import shutil
 from collections.abc import Callable
 
 from talkub import argoapps, charts
-from talkub.config.repo import ChartSpec
+from talkub.config import ChartSpec
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.core.runner import require_tool

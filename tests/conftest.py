@@ -92,7 +92,7 @@ def software_identity():
 @pytest.fixture
 def empty_repo(tmp_path):
     """A directory with a valid .talkub.yaml and nothing else."""
-    from talkub.config.repo import Repo
+    from talkub.config import Repo
 
     root = tmp_path / "cluster"
     root.mkdir()

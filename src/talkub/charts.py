@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from talkub.config.repo import ChartSpec
+from talkub.config import ChartSpec
 from talkub.core import yamlio
 from talkub.core.runner import Runner
 

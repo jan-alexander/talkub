@@ -2,7 +2,7 @@ import pytest
 from helpers import need
 
 from talkub.cli.main import main
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 
 HELM = "printf 'apiVersion: v2\\nname: x\\nversion: 1.2.3\\n'\n"
 

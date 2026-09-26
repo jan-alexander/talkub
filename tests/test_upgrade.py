@@ -2,7 +2,7 @@ import pytest
 from helpers import DEFAULT_SCHEMATIC_ID, need
 
 from talkub import upgrade
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core.errors import CommandFailed
 from talkub.core.fsutil import atomic_write

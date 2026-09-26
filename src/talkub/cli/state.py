@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from talkub.config.repo import Repo, find_repo
+from talkub.config import Repo, find_repo
 from talkub.context import Context
 
 

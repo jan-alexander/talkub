@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
-from talkub.config.repo import Repo, Settings
+from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.ephemeral import private_tempdir
 from talkub.core.errors import CommandFailed, ValidationError

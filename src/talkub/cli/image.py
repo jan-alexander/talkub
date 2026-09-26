@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from talkub import images
-from talkub.config.repo import ARCHES, PLATFORMS
+from talkub.config import ARCHES, PLATFORMS
 from talkub.core.errors import ValidationError
 from talkub.factory import FactoryClient, boot_media_url
 

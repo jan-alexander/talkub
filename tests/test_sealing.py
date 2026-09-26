@@ -164,7 +164,7 @@ def test_sealing_cert_no_warning_when_stored_cert_matches(
 
 
 def test_warn_if_cert_changed(tmp_path, capfd):
-    from talkub.config.repo import Repo
+    from talkub.config import Repo
 
     repo = Repo(tmp_path)
     live = b"-----BEGIN CERTIFICATE-----\nlive\n-----END CERTIFICATE-----\n"

@@ -1,5 +1,5 @@
 from talkub import apps
-from talkub.config.repo import ChartSpec
+from talkub.config import ChartSpec
 from talkub.core import yamlio
 
 

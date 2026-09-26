@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from talkub.config.repo import Repo
+from talkub.config import Repo
 from talkub.core.runner import Runner
 from talkub.secrets.keyring import Keyring
 from talkub.secrets.sops import Sops

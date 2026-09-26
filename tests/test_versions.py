@@ -119,7 +119,7 @@ def test_kubernetes_running_is_question_mark_without_kubeconfig(
 def test_multiple_distinct_talos_versions_are_comma_joined(
     repo_with_configs, spy, version_http_stub
 ):
-    from talkub.config.repo import NodeSpec
+    from talkub.config import NodeSpec
     from talkub.core.fsutil import atomic_write
     from talkub.nodes import node_patch_path, render_node_patch
 

@@ -131,7 +131,7 @@ ETCD_MEMBERS = (
 
 
 def _add_controlplane(repo, name, ip):
-    from talkub.config.repo import NodeSpec
+    from talkub.config import NodeSpec
     from talkub.nodes import node_patch_path, render_node_patch
 
     settings = repo.load_settings()
@@ -411,7 +411,7 @@ def test_bootstrap_applies_repo_credentials_before_root(cluster):
 
 def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
     from talkub import tailscale
-    from talkub.config.repo import NodeSpec, TailscaleSpec
+    from talkub.config import NodeSpec, TailscaleSpec
     from talkub.core import yamlio
 
     repo, spies = cluster

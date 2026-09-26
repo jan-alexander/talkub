@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from talkub import images
-from talkub.config.repo import Settings
+from talkub.config import Settings
 from talkub.context import Context
 from talkub.core.ephemeral import private_file
 from talkub.core.errors import CommandFailed, ValidationError

@@ -148,7 +148,7 @@ def test_sops_edit_unchanged_exits_zero_and_keeps_file(
 
 
 def _with_shortcuts(repo):
-    from talkub.config.repo import Shortcut
+    from talkub.config import Shortcut
 
     settings = repo.load_settings()
     settings.shortcuts = {

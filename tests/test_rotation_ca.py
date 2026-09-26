@@ -9,7 +9,7 @@ from helpers import need
 from test_inspect import _resource
 
 from talkub import rotation
-from talkub.config.repo import NodeSpec
+from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import CommandFailed, ValidationError

@@ -1,7 +1,7 @@
 import pytest
 from helpers import DEFAULT_SCHEMATIC_ID, sample_settings
 
-from talkub.config.repo import (
+from talkub.config import (
     MARKER,
     NodeSpec,
     Repo,
@@ -230,7 +230,7 @@ def test_schematic_is_current_only_with_matching_hash():
 def test_git_block_round_trips(tmp_path):
     from helpers import sample_settings
 
-    from talkub.config.repo import GitSpec, Repo
+    from talkub.config import GitSpec, Repo
 
     repo = Repo(tmp_path)
     settings = sample_settings()
@@ -246,7 +246,7 @@ def test_git_block_round_trips(tmp_path):
 def test_git_block_must_have_url(tmp_path, raw):
     from helpers import sample_settings
 
-    from talkub.config.repo import Repo
+    from talkub.config import Repo
     from talkub.core import yamlio
     from talkub.core.errors import ValidationError
 
