@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from talkub import tailscale, tailscale_operator
+from talkub.cli.output import print_notes
 from talkub.cli.prompts import read_secret
 
 app = typer.Typer(
@@ -35,11 +36,6 @@ app.add_typer(egress_app, name="egress")
 def read_authkey(path: Path | None, repo_root: Path | None = None) -> str:
     """From a file, or prompted without echo — never from the command line."""
     return read_secret(path, "Tailscale auth key: ", repo_root)
-
-
-def print_notes(notes: list[str]) -> None:
-    for note in notes:
-        print(f"note: {note}")
 
 
 @app.command("enable")

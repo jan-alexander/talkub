@@ -17,10 +17,11 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from talkub import apps, argoapps, bootstrap, charts, lifecycle, yamlio
+from talkub import apps, argoapps, charts, lifecycle, yamlio
 from talkub.context import Context
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
+from talkub.helm.install import chart_ref, helm_install
 from talkub.kube import KubeSession, kube_session
 from talkub.repo import ChartSpec, Repo, Settings
 from talkub.runner import require_tool
@@ -273,7 +274,7 @@ def takeover(
                 ports = _adopt_service(kube, repo, chart)
         _step(f"installing {DEPLOYMENT} (Helm release {RELEASE})")
         with _failing_step("helm install"):
-            bootstrap.helm_install(kube, source, create_namespace=False)
+            helm_install(kube, source, create_namespace=False)
         with _failing_step("rollout status"):
             kube.kubectl(
                 [
@@ -358,7 +359,7 @@ def _rendered_ports(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dic
     argv = [
         "template",
         RELEASE,
-        *bootstrap.chart_ref(chart),
+        *chart_ref(chart),
         "--version",
         chart.version,
         "--namespace",

@@ -16,6 +16,7 @@ from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from talkub import yamlio
+from talkub.argoapps import SECRET_TYPE_LABEL
 from talkub.context import Context
 from talkub.ephemeral import decrypted, private_tempdir
 from talkub.errors import CommandFailed, ValidationError
@@ -169,7 +170,6 @@ def rewrite_repo_urls(repo: Repo, old: str, new: str) -> list[Path]:
 
 
 CREDENTIALS_FILE = "repo-credentials.sops.yaml"
-SECRET_TYPE_LABEL = "argocd.argoproj.io/secret-type"
 KEYSCAN_TIMEOUT = 30.0
 
 

@@ -19,6 +19,9 @@ from talkub.errors import ValidationError
 from talkub.findings import Finding
 from talkub.repo import Repo
 
+# Label that marks a Secret as Argo CD configuration (repository, cluster, ...).
+SECRET_TYPE_LABEL = "argocd.argoproj.io/secret-type"
+
 _VALUES_PREFIX = "$values/"
 
 _NO_CHART_SOURCE_HINT = (

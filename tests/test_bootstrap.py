@@ -387,40 +387,6 @@ def test_commit_reminder_right_after_key_backup(cluster, capfd):
     )
 
 
-def test_helm_install_oci_chart(tmp_path):
-    from helpers import FakeRunner
-
-    from talkub.argoapps import HelmSource
-    from talkub.kube import KubeSession
-
-    runner = FakeRunner()
-    source = HelmSource(
-        app="argocd",
-        release="argocd",
-        namespace="argocd",
-        repo="oci://ghcr.io/argoproj/argo-helm/",
-        chart="argo-cd",
-        version="10.9.2",
-        value_files=(tmp_path / "argocd.yaml",),
-    )
-    bootstrap.helm_install(
-        KubeSession(runner, Path("kc")), source, create_namespace=True
-    )
-    [call] = runner.calls
-    assert call.argv[:5] == [
-        "helm",
-        "upgrade",
-        "--install",
-        "argocd",
-        "oci://ghcr.io/argoproj/argo-helm/argo-cd",
-    ]
-    assert "--repo" not in call.argv
-    assert call.argv[call.argv.index("--version") + 1] == "10.9.2"
-    assert call.argv[call.argv.index("-f") + 1] == str(tmp_path / "argocd.yaml")
-    assert call.argv[-1] == "--create-namespace"
-    assert call.env == {"KUBECONFIG": "kc"}
-
-
 def test_bootstrap_applies_repo_credentials_before_root(cluster):
     from talkub import gitrepo
 

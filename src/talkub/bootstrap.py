@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
-
 from talkub import gitrepo, sealing, tailscale
 from talkub.argoapps import HelmSource, app_source
 from talkub.context import Context
-from talkub.ephemeral import decrypted, private_file
+from talkub.ephemeral import decrypted
 from talkub.errors import CommandFailed, ValidationError
 from talkub.fsutil import atomic_write
+from talkub.helm.install import helm_install
 from talkub.kube import KubeSession, kube_session
 from talkub.lifecycle import ordered_nodes
-from talkub.repo import ChartSpec, Repo, Settings
+from talkub.repo import Repo, Settings
 from talkub.runner import require_tool
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.inspect import bootstrap_already_done, etcd_member_count
@@ -186,39 +185,3 @@ def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
         ),
     )
     print(f"   wrote {ctx.repo.rel(target)}")
-
-
-def chart_ref(chart: ChartSpec) -> list[str]:
-    """helm arguments naming the chart: an OCI reference, or chart name plus --repo."""
-    if chart.repo.startswith("oci://"):
-        return [f"{chart.repo.rstrip('/')}/{chart.chart}"]
-    return [chart.chart, "--repo", chart.repo]
-
-
-def helm_install(
-    kube: KubeSession, source: HelmSource, *, create_namespace: bool
-) -> None:
-    """`helm upgrade --install` one Argo CD app's chart source as Argo CD would render it."""
-    chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
-    argv = [
-        "upgrade",
-        "--install",
-        source.release,
-        *chart_ref(chart),
-        "--version",
-        source.version,
-        "-n",
-        source.namespace,
-    ]
-    for value_file in source.value_files:
-        argv += ["-f", str(value_file)]
-    with ExitStack() as stack:
-        if source.inline_values is not None:
-            inline = stack.enter_context(
-                private_file("values.yaml", source.inline_values.encode())
-            )
-            argv += ["-f", str(inline)]
-        argv += ["--wait", "--timeout", "10m"]
-        if create_namespace:
-            argv.append("--create-namespace")
-        kube.helm(argv)

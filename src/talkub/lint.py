@@ -15,7 +15,6 @@ from pathlib import Path
 from yamllint import linter
 from yamllint.config import YamlLintConfig, YamlLintConfigError
 
-from talkub import bootstrap
 from talkub.argoapps import HelmSource, helm_sources
 from talkub.context import Context
 from talkub.ephemeral import private_tempdir
@@ -23,6 +22,7 @@ from talkub.errors import ValidationError
 from talkub.findings import (
     Finding,  # moved to findings.py; kept importable from here too
 )
+from talkub.helm.install import chart_ref
 from talkub.repo import ChartSpec, Repo
 
 # CRD schemas not covered by the default (Kubernetes-owned) schema location.
@@ -358,7 +358,7 @@ def _render_helm(
         "helm",
         "template",
         source.release,
-        *bootstrap.chart_ref(chart),
+        *chart_ref(chart),
         "--version",
         source.version,
         "-n",

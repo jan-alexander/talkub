@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from talkub import hooks
-from talkub.cli.tailscale import print_notes
+from talkub.cli.output import print_notes
 from talkub.runner import Runner
 
 app = typer.Typer(

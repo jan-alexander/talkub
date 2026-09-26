@@ -12,9 +12,10 @@ import difflib
 import shutil
 from collections.abc import Callable
 
-from talkub import argoapps, bootstrap, charts
+from talkub import argoapps, charts
 from talkub.context import Context
 from talkub.errors import TalkubError, ValidationError
+from talkub.helm.install import chart_ref
 from talkub.lint import LintReport, lint_helm_app
 from talkub.repo import ChartSpec
 from talkub.runner import require_tool
@@ -51,7 +52,7 @@ def _show_values(ctx: Context, chart: ChartSpec) -> str:
         "helm",
         "show",
         "values",
-        *bootstrap.chart_ref(chart),
+        *chart_ref(chart),
         "--version",
         chart.version,
     ]

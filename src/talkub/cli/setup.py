@@ -19,7 +19,8 @@ from talkub.cli.nodes import (
     node_options,
     print_warnings,
 )
-from talkub.cli.tailscale import print_notes, read_authkey
+from talkub.cli.output import print_notes
+from talkub.cli.tailscale import read_authkey
 from talkub.context import Context
 from talkub.errors import TalkubError, ValidationError
 from talkub.identity import create_identity, identities_dir, own_recipients

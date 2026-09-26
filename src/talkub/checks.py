@@ -10,8 +10,8 @@ from ruamel.yaml.error import YAMLError
 
 from talkub import recipients as recipients_file
 from talkub import yamlio
+from talkub.argoapps import SECRET_TYPE_LABEL
 from talkub.errors import ValidationError
-from talkub.gitrepo import SECRET_TYPE_LABEL
 from talkub.repo import Repo
 
 PLAINTEXT_NAMES = ("talos/secrets.yaml", "talos/talosconfig", "kubernetes/kubeconfig")
