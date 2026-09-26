@@ -7,7 +7,6 @@ from helpers import need, write_chart_app
 
 from talkub import gitrepo
 from talkub.cli.main import main
-from talkub.context import Context
 from talkub.fsutil import atomic_write
 from talkub.scaffold import TEMPLATES
 

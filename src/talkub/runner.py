@@ -80,6 +80,7 @@ class Runner:
                 env=child_env(env),
                 cwd=cwd,
                 timeout=timeout,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             message = f"{Path(argv[0]).name} timed out after {timeout:g}s"
@@ -195,6 +196,7 @@ class Runner:
             input=input,
             stdout=subprocess.DEVNULL,
             env=child_env(env),
+            check=False,
         )
         return proc.returncode
 

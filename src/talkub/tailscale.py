@@ -405,8 +405,10 @@ def lockdown(
     )
     notes = [
         f"talkub now reaches the nodes via: {', '.join(settings.mgmt_address(n) for n in settings.nodes)}",
-        "run `talkub apply` to activate the firewall; afterwards 50000/6443 are open only to the tailnet "
-        f"and the node network {settings.tailscale.node_cidr}",
+        (
+            "run `talkub apply` to activate the firewall; afterwards 50000/6443 are open only to the tailnet "
+            f"and the node network {settings.tailscale.node_cidr}"
+        ),
     ]
     non_tailnet = [
         f"{name} ({node.mgmt})"

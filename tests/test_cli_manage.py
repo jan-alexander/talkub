@@ -58,6 +58,7 @@ def test_init_then_admin_and_check(
             ["git", "-C", str(tmp_path / "demo"), "remote", "get-url", "origin"],
             capture_output=True,
             text=True,
+            check=False,
         )
         assert remote.stdout.strip() == "https://git.example.com/demo.git"
 
