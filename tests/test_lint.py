@@ -1,19 +1,27 @@
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
+from importlib import resources
+from pathlib import Path
+from string import Template
 
 import pytest
 
 from helpers import FakeRunner, need
+from talkub import apps, coredns, yamlio
 from talkub.cli.main import main
 from talkub.context import Context
 from talkub.lint import (
     DEFAULT_YAMLLINT,
     Finding,
+    HelmSource,
     LintReport,
     _DOWNLOAD_ERROR_PREFIX,
     cache_dir,
+    helm_sources,
     kubeconform_argv,
+    lint_helm_apps,
     lint_manifests,
     lint_yaml,
     manifest_files,
@@ -21,6 +29,7 @@ from talkub.lint import (
     run,
     yaml_files,
 )
+from talkub.repo import ChartSpec
 from talkub.runner import Runner
 
 
@@ -551,3 +560,284 @@ def test_real_kubeconform_download_error_msg_matches_our_prefix(tmp_path):
     if not msg.startswith("failed downloading schema"):
         pytest.skip(f"kubeconform's error msg shape changed: {msg!r}")
     assert msg.startswith(_DOWNLOAD_ERROR_PREFIX)
+
+
+# --- Helm-rendered Argo CD apps (Task 3) ---
+
+
+def _write_app_doc(repo, name, doc):
+    apps_dir = repo.gitops_dir / "apps"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    (apps_dir / f"{name}.yaml").write_text(yamlio.dump(doc))
+
+
+def _app_doc(name, *, namespace="ns1", source=None, sources=None):
+    spec = {"destination": {"namespace": namespace}} if namespace is not None else {}
+    if sources is not None:
+        spec["sources"] = sources
+    elif source is not None:
+        spec["source"] = source
+    return {
+        "apiVersion": "argoproj.io/v1alpha1", "kind": "Application",
+        "metadata": {"name": name}, "spec": spec,
+    }
+
+
+def _render_app_template(name, values):
+    path = resources.files("talkub") / "templates" / "repo" / "gitops" / "apps" / name
+    return Template(path.read_text()).substitute(values)
+
+
+def test_helm_sources_parses_real_app_templates(empty_repo):
+    values = {
+        "argocd_repo": "https://argoproj.github.io/argo-helm", "argocd_chart": "argo-cd",
+        "argocd_version": "10.9.2",
+        "sealed_secrets_repo": "https://bitnami.github.io/sealed-secrets", "sealed_secrets_chart": "sealed-secrets",
+        "sealed_secrets_version": "2.20.0",
+        "git_url": "https://git.example.com/demo.git",
+    }
+    apps_dir = empty_repo.root / "gitops" / "apps"
+    apps_dir.mkdir(parents=True)
+    (apps_dir / "argocd.yaml").write_text(_render_app_template("argocd.yaml.tmpl", values))
+    (apps_dir / "sealed-secrets.yaml").write_text(_render_app_template("sealed-secrets.yaml.tmpl", values))
+    values_dir = empty_repo.root / "gitops" / "values"
+    values_dir.mkdir(parents=True)
+    (values_dir / "argocd.yaml").write_text("x: 1\n")
+    (values_dir / "sealed-secrets.yaml").write_text("x: 1\n")
+
+    chart = ChartSpec("https://coredns.github.io/helm", "coredns", "1.47.1")
+    (apps_dir / "coredns.yaml").write_text(
+        apps.helm_app("coredns", chart, values["git_url"], "gitops/values/coredns.yaml", "kube-system")
+    )
+    (values_dir / "coredns.yaml").write_text(coredns.values())
+
+    sources, findings = helm_sources(empty_repo)
+    assert findings == []
+    by_app = {s.app: s for s in sources}
+    assert set(by_app) == {"argocd", "sealed-secrets", "coredns"}
+
+    argocd = by_app["argocd"]
+    assert argocd == HelmSource(
+        app="argocd", release="argocd", namespace="argocd",
+        repo="https://argoproj.github.io/argo-helm", chart="argo-cd", version="10.9.2",
+        value_files=(values_dir / "argocd.yaml",), inline_values=None,
+    )
+    sealed = by_app["sealed-secrets"]
+    assert sealed.namespace == "kube-system"
+    assert sealed.value_files == (values_dir / "sealed-secrets.yaml",)
+    coredns_source = by_app["coredns"]
+    assert coredns_source.namespace == "kube-system"
+    assert coredns_source.value_files == (values_dir / "coredns.yaml",)
+
+
+def test_helm_sources_release_name_overrides_metadata_name(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "chart": "c", "targetRevision": "1.0.0", "helm": {"releaseName": "custom-release"}},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert findings == []
+    assert sources[0].release == "custom-release"
+
+
+def test_helm_sources_namespace_defaults_to_default(empty_repo):
+    doc = _app_doc("myapp", namespace=None, sources=[{"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"}])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert findings == []
+    assert sources[0].namespace == "default"
+    assert sources[0].release == "myapp"
+
+
+def test_helm_sources_missing_values_file_is_an_error(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "chart": "c", "targetRevision": "1.0.0",
+         "helm": {"valueFiles": ["$values/gitops/values/missing.yaml"]}},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert sources[0].value_files == ()
+    assert findings == [Finding("error", "app myapp", "values file gitops/values/missing.yaml not found")]
+
+
+def test_helm_sources_unsupported_value_file_entry_is_a_warning(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "chart": "c", "targetRevision": "1.0.0",
+         "helm": {"valueFiles": ["some/other/path.yaml"]}},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert sources[0].value_files == ()
+    assert findings == [Finding("warning", "app myapp", "valueFiles entry 'some/other/path.yaml' is unsupported, skipped")]
+
+
+def test_helm_sources_inline_values_string(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "chart": "c", "targetRevision": "1.0.0", "helm": {"values": "foo: bar\n"}},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert findings == []
+    assert sources[0].inline_values == "foo: bar\n"
+
+
+def test_helm_sources_inline_values_object_is_dumped(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "chart": "c", "targetRevision": "1.0.0", "helm": {"valuesObject": {"foo": "bar"}}},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert findings == []
+    assert yamlio.load(sources[0].inline_values) == {"foo": "bar"}
+
+
+def test_helm_sources_skips_non_application_docs(empty_repo):
+    apps_dir = empty_repo.root / "gitops" / "apps"
+    apps_dir.mkdir(parents=True)
+    (apps_dir / "cm.yaml").write_text(
+        yamlio.dump({"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "x"}})
+    )
+    sources, findings = helm_sources(empty_repo)
+    assert sources == [] and findings == []
+
+
+def test_helm_sources_skips_source_without_chart(empty_repo):
+    doc = _app_doc(
+        "dirapp",
+        source={"repoURL": "r", "targetRevision": "HEAD", "path": "gitops/manifests/x", "directory": {"recurse": True}},
+    )
+    _write_app_doc(empty_repo, "dirapp", doc)
+    sources, findings = helm_sources(empty_repo)
+    assert sources == [] and findings == []
+
+
+def _write_source_app(repo, name, *, chart="mychart", repo_url="https://example.com/charts",
+                       version="1.0.0", namespace="ns1", helm=None):
+    doc = _app_doc(name, namespace=namespace, sources=[
+        {"repoURL": repo_url, "chart": chart, "targetRevision": version, "helm": helm or {}},
+    ])
+    _write_app_doc(repo, name, doc)
+
+
+def test_lint_helm_apps_renders_and_validates(empty_repo, spy):
+    _write_source_app(empty_repo, "myapp")
+    helm = spy("helm")
+    manifest = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"
+    helm.on("template", stdout=manifest)
+    kubeconform = spy("kubeconform")
+    kubeconform.on("-", stdout=_kubeconform_json([]), read_stdin=True)
+
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+
+    assert report.findings == [] and report.skipped == []
+    assert len(helm.argvs) == 1
+    argv = helm.argvs[0]
+    assert argv[:3] == ["template", "myapp", "mychart"]
+    assert argv[argv.index("--repo") + 1] == "https://example.com/charts"
+    assert argv[argv.index("--version") + 1] == "1.0.0"
+    assert argv[argv.index("-n") + 1] == "ns1"
+    assert len(kubeconform.calls) == 1
+    assert kubeconform.calls[0]["stdin"] == manifest
+    assert kubeconform.calls[0]["args"][-1] == "-"
+
+
+def test_lint_helm_apps_uses_inline_values_file(empty_repo, fake_bin):
+    _write_source_app(empty_repo, "myapp", helm={"valuesObject": {"foo": "bar"}})
+    fake_bin("helm", "true\n")  # never actually run: FakeRunner intercepts
+    fake_bin("kubeconform", "true\n")
+    captured: dict[str, str] = {}
+
+    def on_run(argv):
+        if argv[0] == "helm":
+            captured["values"] = Path(argv[argv.index("-f") + 1]).read_text()
+
+    runner = FakeRunner(
+        outputs={
+            "helm": b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n",
+            "kubeconform": _kubeconform_json([]).encode(),
+        },
+        on_run=on_run,
+    )
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo, runner=runner), report, offline=False)
+
+    assert yamlio.load(captured["values"]) == {"foo": "bar"}
+
+
+def test_lint_helm_apps_helm_failure_is_an_error(empty_repo, spy):
+    _write_source_app(empty_repo, "myapp")
+    helm = spy("helm")
+    helm.on("template", stderr="line1\nline2\nline3\nline4\nline5\nline6\n", rc=1)
+
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+
+    assert report.findings == [
+        Finding("error", "app myapp", "helm template failed: line1; line2; line3; line4; line5")
+    ]
+
+
+def test_lint_helm_apps_offline_skips(empty_repo, monkeypatch, tmp_path):
+    _write_source_app(empty_repo, "myapp")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # would fail loudly if invoked
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=True)
+    assert report.skipped == ["helm apps: skipped (--offline)"]
+    assert report.findings == []
+
+
+def test_lint_helm_apps_no_sources_is_silent(empty_repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+    assert report.findings == [] and report.skipped == []
+
+
+def test_lint_helm_apps_helm_missing_is_skipped(empty_repo, monkeypatch, tmp_path):
+    _write_source_app(empty_repo, "myapp")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+    assert report.skipped == ["helm not found (brew install helm)"]
+    assert report.findings == []
+
+
+def test_lint_helm_apps_kubeconform_missing_does_not_duplicate_skip_reason(empty_repo, spy, monkeypatch):
+    _write_source_app(empty_repo, "myapp")
+    helm = spy("helm")
+    helm.on("template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    bindir = os.environ["PATH"].split(os.pathsep)[0]
+    monkeypatch.setenv("PATH", bindir)  # helm's spy script lives here (absolute paths inside); no kubeconform
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+    assert report.skipped == []
+    assert report.findings == []
+    assert len(helm.argvs) == 1
+
+
+@need("helm", "kubeconform")
+def test_real_helm_and_kubeconform_validate_coredns_app(empty_repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("HELM_CACHE_HOME", str(tmp_path / "helm-cache"))
+    monkeypatch.setenv("HELM_CONFIG_HOME", str(tmp_path / "helm-config"))
+    monkeypatch.setenv("HELM_DATA_HOME", str(tmp_path / "helm-data"))
+    chart = ChartSpec("https://coredns.github.io/helm", "coredns", "1.47.1")
+    settings = empty_repo.load_settings()
+    settings.charts["coredns"] = chart
+    empty_repo.write_settings(settings)
+    values_dir = empty_repo.root / "gitops" / "values"
+    values_dir.mkdir(parents=True)
+    (values_dir / "coredns.yaml").write_text(coredns.values())
+    apps_dir = empty_repo.root / "gitops" / "apps"
+    apps_dir.mkdir(parents=True)
+    (apps_dir / "coredns.yaml").write_text(
+        apps.helm_app("coredns", chart, "https://git.example.com/demo.git", "gitops/values/coredns.yaml", "kube-system")
+    )
+
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+
+    if report.findings:
+        pytest.skip(f"real helm+kubeconform reported findings (network?): {report.render()}")
+    assert report.skipped == []

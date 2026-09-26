@@ -1,7 +1,7 @@
 """`talkub lint`: style/syntax checks for a cluster repo, key-free.
 
-Task 1 covers yamllint; Task 2 adds kubeconform on gitops manifests. Helm rendering is added by a
-later task and calls into the same `LintReport`.
+Task 1 covers yamllint; Task 2 adds kubeconform on gitops manifests; Task 3 renders each Argo CD
+Application's Helm source with `helm template` and validates the result with kubeconform too.
 """
 
 from __future__ import annotations
@@ -9,14 +9,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from yamllint import linter
 from yamllint.config import YamlLintConfig
 
+from talkub import bootstrap, yamlio
 from talkub.context import Context
-from talkub.repo import Repo
+from talkub.ephemeral import private_tempdir
+from talkub.repo import ChartSpec, Repo
 
 # CRD schemas not covered by the default (Kubernetes-owned) schema location.
 DATREE_LOCATION = (
@@ -223,6 +226,47 @@ def _cache_populated(cache: Path) -> bool:
     return cache.is_dir() and any(cache.rglob("*"))
 
 
+def _kubeconform_with_fallback(
+    ctx: Context,
+    version: str,
+    args: list[str],
+    *,
+    offline: bool,
+    input: bytes | None = None,
+    prefix: str | None = None,
+) -> tuple[list[Finding], list[str]]:
+    """Run kubeconform over `args` (repo-relative files, or `["-"]` with `input` on stdin),
+    retrying with `-kubernetes-version master` if `version`'s own schemas seem to be missing
+    entirely. Shared by manifest linting (Task 2) and Helm-rendered app linting (Task 3)."""
+    repo = ctx.repo
+    result = ctx.runner.run(kubeconform_argv(version) + args, cwd=repo.root, check=False, input=input)
+    stdout = result.stdout.decode()
+
+    if _needs_master_fallback(stdout):
+        # A CRD's validity doesn't depend on -kubernetes-version: keep those findings from this
+        # run rather than losing them when we discard the rest for the master rerun below.
+        carried = [
+            res
+            for res in (_try_resources(stdout) or [])
+            if res.get("status") == "statusInvalid" and not _is_core_group(res.get("version", ""))
+        ]
+        result = ctx.runner.run(kubeconform_argv("master") + args, cwd=repo.root, check=False, input=input)
+        stdout = result.stdout.decode()
+        master_resources = _try_resources(stdout) or []
+        seen = {_resource_key(res) for res in master_resources}
+        merged = master_resources + [res for res in carried if _resource_key(res) not in seen]
+        findings, skipped = _parse_resources(merged, prefix, offline=offline)
+        findings.append(
+            Finding(
+                "warning", "kubeconform",
+                f"kubernetes schemas for {version} not available; validated against master",
+            )
+        )
+        return findings, skipped
+
+    return parse_kubeconform(stdout, prefix, offline=offline)
+
+
 def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
     repo = ctx.repo
     files = manifest_files(repo)
@@ -240,40 +284,154 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
 
     version = repo.load_settings().kubernetes_version.lstrip("v")
     rel_files = [repo.rel(path) for path in files]
-    result = ctx.runner.run(kubeconform_argv(version) + rel_files, cwd=repo.root, check=False)
-    stdout = result.stdout.decode()
-
-    if _needs_master_fallback(stdout):
-        # A CRD's validity doesn't depend on -kubernetes-version: keep those findings from this
-        # run rather than losing them when we discard the rest for the master rerun below.
-        carried = [
-            res
-            for res in (_try_resources(stdout) or [])
-            if res.get("status") == "statusInvalid" and not _is_core_group(res.get("version", ""))
-        ]
-        result = ctx.runner.run(kubeconform_argv("master") + rel_files, cwd=repo.root, check=False)
-        stdout = result.stdout.decode()
-        master_resources = _try_resources(stdout) or []
-        seen = {_resource_key(res) for res in master_resources}
-        merged = master_resources + [res for res in carried if _resource_key(res) not in seen]
-        findings, skipped = _parse_resources(merged, None, offline=offline)
-        report.findings.extend(findings)
-        report.skipped.extend(skipped)
-        report.findings.append(
-            Finding(
-                "warning", "kubeconform",
-                f"kubernetes schemas for {version} not available; validated against master",
-            )
-        )
-        return
-
-    findings, skipped = parse_kubeconform(stdout, offline=offline)
+    findings, skipped = _kubeconform_with_fallback(ctx, version, rel_files, offline=offline)
     report.findings.extend(findings)
     report.skipped.extend(skipped)
+
+
+_VALUES_PREFIX = "$values/"
+
+
+@dataclass(frozen=True)
+class HelmSource:
+    app: str
+    release: str
+    namespace: str
+    repo: str
+    chart: str
+    version: str
+    value_files: tuple[Path, ...] = ()
+    inline_values: str | None = None
+
+
+def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
+    """Every Helm source (a `chart` entry) of every Argo CD Application under `gitops/apps/*.yaml`.
+
+    Non-Application documents and sources without `chart` (git-values sources, plain directory
+    apps) are skipped. `helm.valueFiles` entries prefixed `$values/` resolve to a repo-local path
+    (an error finding if missing); other entries are unsupported (a warning finding, skipped)."""
+    sources: list[HelmSource] = []
+    findings: list[Finding] = []
+    apps_dir = repo.gitops_dir / "apps"
+    if not apps_dir.is_dir():
+        return sources, findings
+
+    for path in sorted(apps_dir.glob("*.yaml")):
+        for doc in yamlio.load_all(path.read_text()):
+            if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
+                continue
+            name = str((doc.get("metadata") or {}).get("name", path.stem))
+            spec = doc.get("spec") or {}
+            namespace = ((spec.get("destination") or {}).get("namespace")) or "default"
+
+            raw_sources = spec.get("sources")
+            if raw_sources is None:
+                single = spec.get("source")
+                raw_sources = [single] if single else []
+
+            for source in raw_sources:
+                if not isinstance(source, Mapping) or "chart" not in source:
+                    continue
+                helm = source.get("helm") or {}
+                release = helm.get("releaseName") or name
+
+                value_files: list[Path] = []
+                for entry in helm.get("valueFiles") or []:
+                    if not isinstance(entry, str):
+                        continue
+                    if entry.startswith(_VALUES_PREFIX):
+                        candidate = repo.root / entry[len(_VALUES_PREFIX):]
+                        if candidate.is_file():
+                            value_files.append(candidate)
+                        else:
+                            findings.append(
+                                Finding("error", f"app {name}", f"values file {repo.rel(candidate)} not found")
+                            )
+                    else:
+                        findings.append(
+                            Finding("warning", f"app {name}", f"valueFiles entry {entry!r} is unsupported, skipped")
+                        )
+
+                inline_values: str | None = None
+                if "valuesObject" in helm:
+                    inline_values = yamlio.dump(helm["valuesObject"])
+                elif "values" in helm:
+                    inline_values = helm["values"]
+
+                sources.append(
+                    HelmSource(
+                        app=name,
+                        release=release,
+                        namespace=namespace,
+                        repo=source.get("repoURL", ""),
+                        chart=source["chart"],
+                        version=source.get("targetRevision", ""),
+                        value_files=tuple(value_files),
+                        inline_values=inline_values,
+                    )
+                )
+    return sources, findings
+
+
+def _render_helm(ctx: Context, source: HelmSource, tmp: Path, index: int, report: LintReport) -> bytes | None:
+    """`helm template` one `HelmSource`; `None` (plus a Finding) on failure."""
+    chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
+    argv = [
+        "helm", "template", source.release, *bootstrap.chart_ref(chart),
+        "--version", source.version, "-n", source.namespace,
+    ]
+    for value_file in source.value_files:
+        argv += ["-f", str(value_file)]
+    if source.inline_values is not None:
+        inline_path = tmp / f"{index}-values.yaml"
+        inline_path.write_text(source.inline_values)
+        argv += ["-f", str(inline_path)]
+
+    result = ctx.runner.run(argv, check=False)
+    if result.returncode != 0:
+        stderr_lines = result.stderr.decode(errors="replace").splitlines()[:5]
+        report.findings.append(
+            Finding("error", f"app {source.app}", "helm template failed: " + "; ".join(stderr_lines))
+        )
+        return None
+    return result.stdout
+
+
+def lint_helm_apps(ctx: Context, report: LintReport, *, offline: bool) -> None:
+    if offline:
+        report.skipped.append("helm apps: skipped (--offline)")
+        return
+
+    repo = ctx.repo
+    sources, findings = helm_sources(repo)
+    report.findings.extend(findings)
+    if not sources:
+        return
+    if shutil.which("helm") is None:
+        report.skipped.append("helm not found (brew install helm)")
+        return
+
+    # kubeconform missing is already reported as a skip reason by lint_manifests; don't duplicate it.
+    kubeconform_available = shutil.which("kubeconform") is not None
+    version = repo.load_settings().kubernetes_version.lstrip("v")
+    if kubeconform_available:
+        cache_dir().mkdir(parents=True, exist_ok=True)
+
+    with private_tempdir() as tmp:
+        for index, source in enumerate(sources):
+            manifest = _render_helm(ctx, source, tmp, index, report)
+            if manifest is None or not kubeconform_available:
+                continue
+            findings, skipped = _kubeconform_with_fallback(
+                ctx, version, ["-"], offline=False, input=manifest, prefix=f"app {source.app}: "
+            )
+            report.findings.extend(findings)
+            report.skipped.extend(skipped)
 
 
 def run(ctx: Context, *, offline: bool) -> LintReport:
     report = LintReport()
     lint_yaml(ctx.repo, report)
     lint_manifests(ctx, report, offline=offline)
+    lint_helm_apps(ctx, report, offline=offline)
     return report
