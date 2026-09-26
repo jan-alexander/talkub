@@ -16,6 +16,7 @@ from talkub.cli import coredns as coredns_cli
 from talkub.cli import hooks as hooks_cli
 from talkub.cli import lifecycle as lifecycle_cli
 from talkub.cli import nodes as nodes_cli
+from talkub.cli import renovate as renovate_cli
 from talkub.cli import repo as repo_cli
 from talkub.cli import rotate as rotate_cli
 from talkub.cli import sops as sops_cli
@@ -71,6 +72,7 @@ app.command("status")(status_cli.status)
 app.add_typer(versions_cli.app, name="versions")
 app.add_typer(tailscale_cli.app, name="tailscale")
 app.add_typer(repo_cli.app, name="repo")
+app.add_typer(renovate_cli.app, name="renovate")
 app.add_typer(coredns_cli.app, name="coredns")
 app.command("rotate-ca")(rotate_cli.rotate_ca)
 

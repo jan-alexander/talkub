@@ -127,6 +127,35 @@ Chart versions live only in the Argo CD apps (`gitops/apps/<chart>.yaml`: `repoU
 exactly what those files say. An old `charts` block in `.talkub.yaml` is ignored and dropped on the
 next write.
 
+## Versions and updates
+
+    talkub versions                            # target vs. running vs. latest: Talos, Kubernetes, every chart app
+    talkub versions --offline                  # skip the latest-version lookups (no network)
+    talkub versions set talos v1.15.0          # then: talkub upgrade talos
+    talkub versions set kubernetes 1.38.0      # then: talkub upgrade k8s
+    talkub chart upgrade coredns                # bump one chart app to its latest version
+    talkub chart upgrade coredns --version 1.2.3 --yes
+    talkub chart upgrade --all                  # every chart app
+
+The Argo CD app files (`gitops/apps/*.yaml`) are the single source of chart versions — `versions`
+reads `targetRevision` from them and shows it next to what is actually running (via `kubectl get
+application`) and the latest release upstream. `*` marks a row whose latest differs from its
+target. `chart upgrade` writes the new `targetRevision`, shows a diff of the rendered manifests and
+the chart's `appVersion`, and asks for confirmation unless `--yes`; after it, commit and push
+`gitops/` so Argo CD picks it up. `versions set` only updates the target in `.talkub.yaml` — run
+`talkub upgrade talos`/`talkub upgrade k8s` afterwards to actually change the nodes.
+
+    talkub renovate init          # writes renovate.json in the repo root
+    talkub renovate init --force  # overwrite an existing one
+
+Generates a Renovate config that opens PRs for chart bumps (via the `argocd` manager, matching
+`gitops/apps/*.yaml`) and for Talos/Kubernetes bumps (via two custom regex managers, matching
+`.talkub.yaml`). After writing it, commit `renovate.json` and enable the Renovate GitHub app for
+this repo: <https://github.com/apps/renovate>. Argo CD rolls out a merged chart PR as soon as it
+merges, so run `talkub lint` on the PR branch *before* merging it; a merged Talos/Kubernetes PR
+only updates `.talkub.yaml` — run `talkub upgrade talos` or `talkub upgrade k8s` afterwards to
+apply it to the nodes.
+
 ## Sealed Secrets
 
     talkub secret seal db -n app --from-literal password=… -o gitops/manifests/app/db.sealed.yaml
