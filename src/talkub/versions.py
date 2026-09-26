@@ -11,12 +11,9 @@ import os
 import re
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
 from dataclasses import dataclass
 
-from ruamel.yaml.error import YAMLError
-
-from talkub import argoapps, charts, yamlio
+from talkub import argoapps, charts
 from talkub.argoapps import HelmSource
 from talkub.context import Context
 from talkub.errors import TalkubError, ValidationError
@@ -77,7 +74,7 @@ def _kubernetes_latest() -> str | None:
     text = _get_text(_k8s_release_url())
     if text is None:
         return None
-    stripped = text.strip().lstrip("v")
+    stripped = text.strip().removeprefix("v")
     return stripped or None
 
 
@@ -145,30 +142,6 @@ def _kubernetes_row(ctx: Context, settings: Settings, *, offline: bool) -> Row:
     return Row("kubernetes", settings.kubernetes_version, running, latest, note)
 
 
-def _source_indices(repo: Repo, app: str) -> list[int | None]:
-    """For each chart source of `app`, in the same order `argoapps.helm_sources` returns them
-    for that app: its absolute position in `spec.sources` (multi-source app; used to pick
-    `status.sync.revisions[i]`), or `None` for the singular `spec.source` (`status.sync.revision`).
-    Empty if the app file cannot be read."""
-    path = repo.gitops_dir / "apps" / f"{app}.yaml"
-    try:
-        docs = yamlio.load_all(path.read_text())
-    except (OSError, YAMLError):
-        return []
-    for doc in docs:
-        if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
-            continue
-        spec = doc.get("spec") if isinstance(doc.get("spec"), Mapping) else {}
-        raw_sources = spec.get("sources")
-        if isinstance(raw_sources, list):
-            return [i for i, s in enumerate(raw_sources) if isinstance(s, Mapping) and "chart" in s]
-        single = spec.get("source")
-        if isinstance(single, Mapping) and "chart" in single:
-            return [None]
-        return []
-    return []
-
-
 def _chart_running(ctx: Context, source: HelmSource, source_index: int | None) -> str:
     try:
         with kube_session(ctx) as kube:
@@ -216,7 +189,7 @@ def _chart_rows(ctx: Context, *, offline: bool) -> list[Row]:
     for source in sources:
         position = occurrence.get(source.app, 0)
         occurrence[source.app] = position + 1
-        indices = indices_by_app.setdefault(source.app, _source_indices(ctx.repo, source.app))
+        indices = indices_by_app.setdefault(source.app, argoapps.chart_source_indices(ctx.repo, source.app))
         source_index = indices[position] if position < len(indices) else None
         rows.append(_chart_row(ctx, source, source_index, offline=offline))
     return rows
@@ -263,7 +236,7 @@ def set_version(repo: Repo, component: str, version: str) -> str:
             raise ValidationError(
                 f"not a Kubernetes version: {version!r}", hint="expected MAJOR.MINOR.PATCH, e.g. 1.37.0"
             )
-        settings.kubernetes_version = version.lstrip("v")
+        settings.kubernetes_version = version.removeprefix("v")
         hint = "run `talkub upgrade k8s`"
     else:
         raise ValidationError(f"unknown component: {component!r}", hint="use one of: talos, kubernetes")

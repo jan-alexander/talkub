@@ -218,6 +218,33 @@ def test_chart_row_latest_is_question_mark_on_helm_failure(repo_with_configs, sp
     assert argocd.note == ""
 
 
+def test_singular_source_app_running_uses_sync_revision(repo_with_configs, spy, version_http_stub):
+    """An app with `spec.source` (not `spec.sources`) has no multi-source revision index:
+    running comes from `status.sync.revision`, not `status.sync.revisions[i]`."""
+    apps_dir = repo_with_configs.gitops_dir / "apps"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    (apps_dir / "argocd.yaml").write_text(
+        "apiVersion: argoproj.io/v1alpha1\n"
+        "kind: Application\n"
+        "metadata:\n"
+        "  name: argocd\n"
+        "spec:\n"
+        "  source:\n"
+        "    repoURL: https://argoproj.github.io/argo-helm\n"
+        "    chart: argo-cd\n"
+        "    targetRevision: 10.9.2\n"
+        "  destination:\n"
+        "    namespace: argocd\n"
+    )
+    _spy_talos_kube(spy)
+    kubectl = spy("kubectl")
+    kubectl.on("get", "application", "argocd", stdout='{"status": {"sync": {"revision": "10.9.2"}}}')
+    spy("helm").on("show", "chart", stdout=CHART_OLD)
+    rows = versions.collect(Context.open(repo_with_configs))
+    argocd = next(r for r in rows if r.component == "argocd")
+    assert argocd.running == "10.9.2"
+
+
 def test_chart_row_offline_is_dash_and_makes_no_helm_call(repo_with_configs, spy):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)

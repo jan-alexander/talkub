@@ -43,15 +43,18 @@ class HelmSource:
     inline_values: str | None = None
 
 
-def _chart_sources(spec: Mapping) -> list[Mapping]:
-    """Every entry of `spec.sources` (or the single `spec.source`) that has a `chart` key."""
+def _chart_sources(spec: Mapping) -> list[tuple[int | None, Mapping]]:
+    """Every entry of `spec.sources` (or the single `spec.source`) that has a `chart` key, paired
+    with its absolute position in `spec.sources` (`None` for the singular `spec.source`) — the
+    single predicate for what counts as a chart source, and the only place that knows the index
+    used to pick `status.sync.revisions[i]` for a multi-source app (see `chart_source_indices`)."""
     raw_sources = spec.get("sources")
     if raw_sources is None:
         single = spec.get("source")
-        raw_sources = [single] if single else []
+        return [(None, single)] if isinstance(single, Mapping) and "chart" in single else []
     if not isinstance(raw_sources, list):
-        raw_sources = []
-    return [source for source in raw_sources if isinstance(source, Mapping) and "chart" in source]
+        return []
+    return [(index, source) for index, source in enumerate(raw_sources) if isinstance(source, Mapping) and "chart" in source]
 
 
 def _build_helm_source(repo: Repo, name: str, namespace: str, source: Mapping) -> tuple[HelmSource, list[Finding]]:
@@ -122,11 +125,30 @@ def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
             destination = _as_mapping(spec.get("destination"))
             namespace = destination.get("namespace") or "default"
 
-            for source in _chart_sources(spec):
+            for _index, source in _chart_sources(spec):
                 helm_source, source_findings = _build_helm_source(repo, name, namespace, source)
                 sources.append(helm_source)
                 findings.extend(source_findings)
     return sources, findings
+
+
+def chart_source_indices(repo: Repo, app: str) -> list[int | None]:
+    """For `gitops/apps/<app>.yaml`'s Application, the absolute `spec.sources` position of each
+    chart source, in the same order `helm_sources` returns them for that app (`None` for the
+    singular `spec.source`) — for picking `status.sync.revisions[i]` vs. `status.sync.revision`
+    of the running Argo CD Application. Empty if the app file is missing, invalid YAML, or has no
+    Application document."""
+    path = repo.gitops_dir / "apps" / f"{app}.yaml"
+    try:
+        docs = yamlio.load_all(path.read_text())
+    except (OSError, YAMLError):
+        return []
+    for doc in docs:
+        if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
+            continue
+        spec = _as_mapping(doc.get("spec"))
+        return [index for index, _source in _chart_sources(spec)]
+    return []
 
 
 def _locate_single_chart_source(repo: Repo, key: str) -> tuple[list, Mapping]:
@@ -152,7 +174,7 @@ def _locate_single_chart_source(repo: Repo, key: str) -> tuple[list, Mapping]:
     chart_sources = _chart_sources(spec)
     if len(chart_sources) != 1:
         raise error
-    return docs, chart_sources[0]
+    return docs, chart_sources[0][1]
 
 
 def app_source(repo: Repo, key: str) -> HelmSource:

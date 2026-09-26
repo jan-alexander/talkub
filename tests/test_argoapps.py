@@ -8,7 +8,7 @@ from string import Template
 import pytest
 
 from talkub import apps, coredns, yamlio
-from talkub.argoapps import HelmSource, app_source, helm_sources, set_target_revision
+from talkub.argoapps import HelmSource, app_source, chart_source_indices, helm_sources, set_target_revision
 from talkub.errors import ValidationError
 from talkub.findings import Finding
 from talkub.repo import ChartSpec
@@ -249,6 +249,37 @@ def test_app_source_missing_values_file_is_a_validation_error(empty_repo):
     _write_app_doc(empty_repo, "myapp", doc)
     with pytest.raises(ValidationError, match="values file gitops/values/missing.yaml not found"):
         app_source(empty_repo, "myapp")
+
+
+# --- chart_source_indices ---
+
+
+def test_chart_source_indices_singular_source_is_none(empty_repo):
+    doc = _app_doc("myapp", source={"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"})
+    _write_app_doc(empty_repo, "myapp", doc)
+    assert chart_source_indices(empty_repo, "myapp") == [None]
+
+
+def test_chart_source_indices_multi_source_is_absolute_position(empty_repo):
+    doc = _app_doc("myapp", sources=[
+        {"repoURL": "r", "targetRevision": "HEAD", "ref": "values"},
+        {"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"},
+    ])
+    _write_app_doc(empty_repo, "myapp", doc)
+    assert chart_source_indices(empty_repo, "myapp") == [1]
+
+
+def test_chart_source_indices_non_list_sources_does_not_fall_back_to_source(empty_repo):
+    """`sources` present but not a list is invalid (matches `_chart_sources`/`app_source`): a
+    `source` present alongside it must not be used as a fallback."""
+    doc = _app_doc("myapp", source={"repoURL": "r", "chart": "c", "targetRevision": "1.0.0"})
+    doc["spec"]["sources"] = "oops"
+    _write_app_doc(empty_repo, "myapp", doc)
+    assert chart_source_indices(empty_repo, "myapp") == []
+
+
+def test_chart_source_indices_missing_file_is_empty(empty_repo):
+    assert chart_source_indices(empty_repo, "nope") == []
 
 
 # --- set_target_revision ---
