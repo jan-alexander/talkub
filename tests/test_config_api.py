@@ -1,9 +1,23 @@
-import talkub.config as config
+from talkub import config
 
-PUBLIC = (
-    "MARKER ROLES PLATFORMS ARCHES DNS_LABEL Repo find_repo Settings NodeSpec ChartSpec "
-    "SchematicSpec TailscaleSpec GitSpec Shortcut valid_label parse_installer_image"
-).split()
+PUBLIC = [
+    "MARKER",
+    "ROLES",
+    "PLATFORMS",
+    "ARCHES",
+    "DNS_LABEL",
+    "Repo",
+    "find_repo",
+    "Settings",
+    "NodeSpec",
+    "ChartSpec",
+    "SchematicSpec",
+    "TailscaleSpec",
+    "GitSpec",
+    "Shortcut",
+    "valid_label",
+    "parse_installer_image",
+]
 
 
 def test_config_package_reexports_public_api():
