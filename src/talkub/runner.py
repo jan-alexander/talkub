@@ -26,6 +26,7 @@ INSTALL_HINTS = {
     "age-plugin-yubikey": "brew install age-plugin-yubikey",
     "git": "brew install git",
     "helm": "brew install helm",
+    "kubeconform": "brew install kubeconform",
     "kubectl": "brew install kubectl",
     "kubeseal": "brew install kubeseal",
     "sops": "brew install sops",

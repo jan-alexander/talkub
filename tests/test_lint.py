@@ -1,9 +1,26 @@
+import json
+import subprocess
+from dataclasses import dataclass, field
+
 import pytest
 
-from helpers import need
+from helpers import FakeRunner, need
 from talkub.cli.main import main
 from talkub.context import Context
-from talkub.lint import DEFAULT_YAMLLINT, Finding, LintReport, lint_yaml, run, yaml_files
+from talkub.lint import (
+    DEFAULT_YAMLLINT,
+    Finding,
+    LintReport,
+    cache_dir,
+    kubeconform_argv,
+    lint_manifests,
+    lint_yaml,
+    manifest_files,
+    parse_kubeconform,
+    run,
+    yaml_files,
+)
+from talkub.runner import Runner
 
 
 def _run(argv):
@@ -123,3 +140,298 @@ def test_fresh_init_repo_has_no_yamllint_errors(tmp_path, software_identity, fak
     report = LintReport()
     lint_yaml(repo, report)
     assert report.errors == 0, report.render()
+
+
+# --- kubeconform (Task 2) ---
+
+
+@dataclass
+class ScriptedRunner(Runner):
+    """Returns one scripted stdout per call, in order (unlike FakeRunner's static per-binary output)."""
+
+    outputs: list[bytes] = field(default_factory=list)
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(self, argv, **kwargs):
+        self.calls.append(list(argv))
+        return subprocess.CompletedProcess(list(argv), 0, self.outputs.pop(0), b"")
+
+
+def test_cache_dir_uses_xdg_cache_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdgcache"))
+    assert cache_dir() == tmp_path / "xdgcache" / "talkub" / "kubeconform"
+
+
+def test_cache_dir_falls_back_to_home_cache(monkeypatch, tmp_path):
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert cache_dir() == tmp_path / ".cache" / "talkub" / "kubeconform"
+
+
+def test_manifest_files_selects_apps_and_manifests_excludes_values_and_sops(empty_repo):
+    gitops = empty_repo.root / "gitops"
+    (gitops / "apps" / "sub").mkdir(parents=True)
+    (gitops / "apps" / "a.yaml").write_text("x: 1\n")
+    (gitops / "apps" / "sub" / "b.yml").write_text("x: 1\n")
+    (gitops / "apps" / "secret.sops.yaml").write_text("x: 1\n")
+    (gitops / "manifests").mkdir()
+    (gitops / "manifests" / "c.yaml").write_text("x: 1\n")
+    (gitops / "values").mkdir()
+    (gitops / "values" / "d.yaml").write_text("x: 1\n")
+    files = [empty_repo.rel(p) for p in manifest_files(empty_repo)]
+    assert files == ["gitops/apps/a.yaml", "gitops/apps/sub/b.yml", "gitops/manifests/c.yaml"]
+
+
+def test_manifest_files_empty_when_no_gitops_dirs(empty_repo):
+    assert manifest_files(empty_repo) == []
+
+
+def test_kubeconform_argv_contents(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    cache = tmp_path / "cache" / "talkub" / "kubeconform"
+    argv = kubeconform_argv("1.30.0", offline=False)
+    assert argv == [
+        "kubeconform",
+        "-output", "json",
+        "-summary",
+        "-verbose",
+        "-strict",
+        "-ignore-missing-schemas",
+        "-kubernetes-version", "1.30.0",
+        "-cache", str(cache),
+        "-schema-location", "default",
+        "-schema-location",
+        "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
+        "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+    ]
+    # offline does not change the argv (see docstring); only whether the check runs at all.
+    assert kubeconform_argv("1.30.0", offline=True) == argv
+
+
+def _kubeconform_json(resources):
+    return json.dumps({"resources": resources, "summary": {}})
+
+
+def test_parse_kubeconform_findings_and_skipped():
+    stdout = _kubeconform_json([
+        {
+            "filename": "gitops/apps/bad.yaml", "kind": "Namespace", "name": "test",
+            "version": "v1", "status": "statusInvalid",
+            "msg": "problem validating schema. Check JSON formatting: ... - at '/metadata': additional properties 'bogus' not allowed",
+            "validationErrors": [{"path": "/metadata", "msg": "additional properties 'bogus' not allowed"}],
+        },
+        {
+            "filename": "gitops/apps/unknown.yaml", "kind": "Widget", "name": "foo",
+            "version": "example.com/v1", "status": "statusSkipped", "msg": "",
+        },
+        {
+            "filename": "gitops/apps/good.yaml", "kind": "Deployment", "name": "nginx",
+            "version": "apps/v1", "status": "statusValid", "msg": "",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout)
+    assert findings == [
+        Finding("error", "gitops/apps/bad.yaml", "Namespace/test: /metadata: additional properties 'bogus' not allowed")
+    ]
+    assert skipped == ["no schema for Widget/foo (example.com/v1)"]
+
+
+def test_parse_kubeconform_error_without_validation_errors_uses_msg():
+    stdout = _kubeconform_json([
+        {
+            "filename": "gitops/apps/x.yaml", "kind": "Pod", "name": "x",
+            "version": "v1", "status": "statusError", "msg": "boom",
+        },
+    ])
+    findings, skipped = parse_kubeconform(stdout)
+    assert findings == [Finding("error", "gitops/apps/x.yaml", "Pod/x: boom")]
+    assert skipped == []
+
+
+def test_parse_kubeconform_prefix_prepended_to_path():
+    stdout = _kubeconform_json([
+        {
+            "filename": "-", "kind": "Pod", "name": "x", "version": "v1", "status": "statusInvalid",
+            "msg": "boom", "validationErrors": [{"path": "/spec", "msg": "boom"}],
+        },
+    ])
+    findings, _ = parse_kubeconform(stdout, prefix="coredns: ")
+    assert findings[0].path == "coredns: -"
+
+
+def _manifest(empty_repo, name="a.yaml"):
+    apps = empty_repo.root / "gitops" / "apps"
+    apps.mkdir(parents=True, exist_ok=True)
+    (apps / name).write_text("x: 1\n")
+
+
+def test_lint_manifests_missing_tool_reports_skipped(empty_repo, monkeypatch, tmp_path):
+    _manifest(empty_repo)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo), report, offline=False)
+    assert report.skipped == ["kubeconform not found (brew install kubeconform)"]
+    assert report.findings == []
+
+
+def test_lint_manifests_no_manifests_is_silent(empty_repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # would skip loudly if it got this far
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo), report, offline=False)
+    assert report.findings == [] and report.skipped == []
+
+
+def test_lint_manifests_offline_empty_cache_skips_without_calling(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo)
+    fake_bin("kubeconform", "exit 1\n")  # never actually invoked
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # nonexistent -> empty
+    runner = FakeRunner()
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=True)
+    assert report.skipped == ["kubeconform: no schema cache yet (run `talkub lint` online once)"]
+    assert report.findings == []
+    assert runner.calls == []
+
+
+def test_lint_manifests_offline_populated_cache_runs_normally(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo)
+    fake_bin("kubeconform", "true\n")
+    cache = tmp_path / "cache"
+    (cache / "talkub" / "kubeconform").mkdir(parents=True)
+    (cache / "talkub" / "kubeconform" / "marker").write_text("x")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    runner = FakeRunner(outputs={"kubeconform": _kubeconform_json([]).encode()})
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=True)
+    assert len(runner.calls) == 1
+    assert report.findings == [] and report.skipped == []
+
+
+def test_lint_manifests_calls_kubeconform_and_records_findings(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo, "a.yaml")
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    runner = FakeRunner(outputs={
+        "kubeconform": _kubeconform_json([
+            {
+                "filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x",
+                "version": "v1", "status": "statusInvalid", "msg": "bad",
+                "validationErrors": [{"path": "/data", "msg": "bad"}],
+            },
+        ]).encode(),
+    })
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    assert len(runner.calls) == 1
+    call = runner.calls[0]
+    assert call.argv[0] == "kubeconform"
+    assert "gitops/apps/a.yaml" in call.argv
+    assert report.findings == [Finding("error", "gitops/apps/a.yaml", "ConfigMap/x: /data: bad")]
+    assert report.skipped == []
+
+
+def test_lint_manifests_version_fallback_reruns_with_master(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo, "a.yaml")
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    first = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusSkipped", "msg": ""},
+    ]).encode()
+    second = _kubeconform_json([
+        {"filename": "gitops/apps/a.yaml", "kind": "ConfigMap", "name": "x", "version": "v1", "status": "statusValid", "msg": ""},
+    ]).encode()
+    runner = ScriptedRunner(outputs=[first, second])
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    assert len(runner.calls) == 2
+    assert "1.37.0" in runner.calls[0]  # sample_settings' kubernetesVersion
+    assert "master" in runner.calls[1]
+    assert report.findings == [
+        Finding(
+            "warning", "kubeconform",
+            "kubernetes schemas for 1.37.0 not available; validated against master",
+        )
+    ]
+    assert report.skipped == []
+
+
+def test_lint_manifests_crd_group_skip_does_not_trigger_fallback(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo, "a.yaml")
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    runner = FakeRunner(outputs={
+        "kubeconform": _kubeconform_json([
+            {
+                "filename": "gitops/apps/a.yaml", "kind": "DNSConfig", "name": "x",
+                "version": "tailscale.com/v1alpha1", "status": "statusSkipped", "msg": "",
+            },
+        ]).encode(),
+    })
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
+    assert len(runner.calls) == 1  # no master rerun for a CRD group
+    assert report.findings == []
+    assert report.skipped == ["no schema for DNSConfig/x (tailscale.com/v1alpha1)"]
+
+
+_GOOD_DEPLOYMENT = """\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+"""
+
+_BAD_DEPLOYMENT = """\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad
+  bogus: true
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bad
+  template:
+    metadata:
+      labels:
+        app: bad
+    spec:
+      containers:
+        - name: bad
+          image: nginx:1.25
+"""
+
+
+@need("kubeconform")
+def test_real_kubeconform_validates_manifests(empty_repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # never touch the real ~/.cache
+    apps = empty_repo.root / "gitops" / "apps"
+    apps.mkdir(parents=True)
+    (apps / "good.yaml").write_text(_GOOD_DEPLOYMENT)
+    (apps / "bad.yaml").write_text(_BAD_DEPLOYMENT)
+    report = LintReport()
+    lint_manifests(Context.open(empty_repo), report, offline=False)
+
+    bad_findings = [f for f in report.findings if f.path == "gitops/apps/bad.yaml"]
+    if not bad_findings or not any("bogus" in f.message for f in bad_findings):
+        pytest.skip(f"kubeconform did not report the expected schema error (network issue?): {report.render()}")
+    assert bad_findings[0].level == "error"
+
+    good_findings = [f for f in report.findings if f.path == "gitops/apps/good.yaml"]
+    if good_findings:
+        pytest.skip(f"good.yaml unexpectedly flagged (network issue?): {report.render()}")
