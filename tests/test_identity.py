@@ -105,7 +105,7 @@ def test_create_yubikey_identity_uses_plugin(tmp_path):
             "age-plugin-yubikey": b"#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"
         }
     )
-    path, public = create_identity(runner, "yubikey", tmp_path)
+    _path, public = create_identity(runner, "yubikey", tmp_path)
     assert public == "age1yubikey1xyz"
     assert [c.argv for c in runner.calls] == [
         ["age-plugin-yubikey", "--generate"],

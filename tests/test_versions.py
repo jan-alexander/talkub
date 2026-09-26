@@ -130,7 +130,7 @@ def test_multiple_distinct_talos_versions_are_comma_joined(
         node_patch_path(repo_with_configs, "w-01"), render_node_patch("w-01").encode()
     )
 
-    talosctl = (
+    (
         spy("talosctl")
         .on("-n", "10.0.0.11", "version", stdout="Server:\n\tNODE: y\n\tTag: v1.13.9\n")
         .on("version", stdout=VERSION_OUT)

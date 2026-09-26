@@ -16,7 +16,9 @@ def _version(tag):
 
 
 def _extensions(schematic):
-    return '{"spec": {"metadata": {"name": "schematic", "version": "%s"}}}' % schematic
+    return (
+        f'{{"spec": {{"metadata": {{"name": "schematic", "version": "{schematic}"}}}}}}'
+    )
 
 
 def _talosctl(spy, tag="v1.13.0", schematic=DEFAULT_SCHEMATIC_ID):

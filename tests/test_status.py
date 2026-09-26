@@ -13,10 +13,7 @@ from talkub.repo import NodeSpec
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
 
 VERSION = "Client:\n\tTag: v1.14.0\nServer:\n\tNODE: x\n\tTag: v1.14.0\n"
-EXT = (
-    '{"spec": {"metadata": {"name": "schematic", "version": "%s"}}}'
-    % DEFAULT_SCHEMATIC_ID
-)
+EXT = f'{{"spec": {{"metadata": {{"name": "schematic", "version": "{DEFAULT_SCHEMATIC_ID}"}}}}}}'
 NODES = '{"items": [{"metadata": {"name": "cp-01"}, "status": {"nodeInfo": {"kubeletVersion": "v1.37.0"}}}]}'
 APPS = '{"items": [{"status": {"sync": {"status": "Synced"}, "health": {"status": "Healthy"}}}]}'
 

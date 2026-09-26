@@ -111,7 +111,7 @@ def test_seal_falls_back_to_stored_cert(keyed_repo, sealing_cert, capfd):
         Context.open(keyed_repo),
         sealing.secret_manifest("db", "app", ["password=hunter2"], []),
     )
-    doc = [d for d in yamlio.load_all(sealed.decode()) if d][0]
+    doc = next(d for d in yamlio.load_all(sealed.decode()) if d)
     assert doc["kind"] == "SealedSecret"
     assert doc["metadata"]["namespace"] == "app"
     assert b"hunter2" not in sealed

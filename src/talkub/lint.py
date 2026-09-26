@@ -173,9 +173,7 @@ def _try_resources(stdout: str) -> list[dict] | None:
 def _is_download_error(res: dict) -> bool:
     """True for a schema-fetch failure (e.g. an unreachable host); unrelated to the k8s version."""
     msg = str(res.get("msg", ""))
-    return msg.startswith(_DOWNLOAD_ERROR_PREFIX) or msg.startswith(
-        _DOWNLOAD_ERROR_PREFIX_ALT
-    )
+    return msg.startswith((_DOWNLOAD_ERROR_PREFIX, _DOWNLOAD_ERROR_PREFIX_ALT))
 
 
 # kubeconform has no schema for this *kind* in any -kubernetes-version (unlike a CRD-defined kind,

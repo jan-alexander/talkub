@@ -174,8 +174,10 @@ def test_add_node_new_platform_copies_cluster_schematic(empty_repo):
         NodeOptions(),
     )
     assert warnings == [
-        "platform 'hcloud' is new: copied extensions from 'metal' (siderolabs/intel-ucode); "
-        "adjust with talkub image add/remove --platform hcloud"
+        (
+            "platform 'hcloud' is new: copied extensions from 'metal' (siderolabs/intel-ucode); "
+            "adjust with talkub image add/remove --platform hcloud"
+        )
     ]
     hcloud = empty_repo.load_settings().schematics["hcloud"]
     assert hcloud == SchematicSpec(
@@ -198,8 +200,10 @@ def test_add_node_new_platform_without_extensions_says_none(empty_repo):
         empty_repo, "h-01", NodeSpec(ip="10.0.0.20", platform="hcloud"), NodeOptions()
     )
     assert warnings == [
-        "platform 'hcloud' is new: copied extensions from 'metal' (none); "
-        "adjust with talkub image add/remove --platform hcloud"
+        (
+            "platform 'hcloud' is new: copied extensions from 'metal' (none); "
+            "adjust with talkub image add/remove --platform hcloud"
+        )
     ]
 
 

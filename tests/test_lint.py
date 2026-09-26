@@ -247,8 +247,10 @@ def test_kubeconform_argv_contents(monkeypatch, tmp_path):
         "-schema-location",
         "default",
         "-schema-location",
-        "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
-        "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+        (
+            "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
+            "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+        ),
     ]
 
 
