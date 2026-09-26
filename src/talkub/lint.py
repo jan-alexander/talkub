@@ -327,6 +327,39 @@ def _render_helm(ctx: Context, source: HelmSource, tmp: Path, index: int, report
     return result.stdout
 
 
+def lint_helm_app(ctx: Context, report: LintReport, source: HelmSource, *, offline: bool = False) -> None:
+    """Render one Argo CD app's Helm chart source with `helm template` and validate the result
+    with kubeconform: the per-source half of `lint_helm_apps` (Task 3), factored out so `chart
+    upgrade` (Task 4) can lint just the one app whose `targetRevision` it changed, without
+    touching every other app's chart.
+    """
+    if offline:
+        report.skipped.append("helm apps: skipped (--offline)")
+        return
+    if shutil.which("helm") is None:
+        report.skipped.append("helm not found (brew install helm)")
+        return
+
+    # kubeconform missing is already reported as a skip reason by lint_manifests; don't duplicate it.
+    kubeconform_available = shutil.which("kubeconform") is not None
+    version_raw = ctx.repo.load_settings().kubernetes_version.lstrip("v")
+    if kubeconform_available:
+        cache_dir().mkdir(parents=True, exist_ok=True)
+
+    with private_tempdir() as tmp:
+        manifest = _render_helm(ctx, source, tmp, 0, report)
+        if manifest is None or not kubeconform_available:
+            return
+        # Probed lazily (only once we actually have something to validate), not up front: no
+        # point asking kubeconform anything when the source failed to render.
+        version = _probe_version(ctx, report, version_raw)
+        findings, skipped = _run_kubeconform(
+            ctx, version, ["-"], offline=False, input=manifest, prefix=f"app {source.app}: "
+        )
+        report.findings.extend(findings)
+        report.skipped.extend(skipped)
+
+
 def lint_helm_apps(ctx: Context, report: LintReport, *, offline: bool) -> None:
     if offline:
         report.skipped.append("helm apps: skipped (--offline)")
@@ -341,25 +374,8 @@ def lint_helm_apps(ctx: Context, report: LintReport, *, offline: bool) -> None:
         report.skipped.append("helm not found (brew install helm)")
         return
 
-    # kubeconform missing is already reported as a skip reason by lint_manifests; don't duplicate it.
-    kubeconform_available = shutil.which("kubeconform") is not None
-    version_raw = repo.load_settings().kubernetes_version.lstrip("v")
-    if kubeconform_available:
-        cache_dir().mkdir(parents=True, exist_ok=True)
-
-    with private_tempdir() as tmp:
-        for index, source in enumerate(sources):
-            manifest = _render_helm(ctx, source, tmp, index, report)
-            if manifest is None or not kubeconform_available:
-                continue
-            # Probed lazily (only once we actually have something to validate), not up front: no
-            # point asking kubeconform anything when every source failed to render.
-            version = _probe_version(ctx, report, version_raw)
-            findings, skipped = _run_kubeconform(
-                ctx, version, ["-"], offline=False, input=manifest, prefix=f"app {source.app}: "
-            )
-            report.findings.extend(findings)
-            report.skipped.extend(skipped)
+    for source in sources:
+        lint_helm_app(ctx, report, source)
 
 
 def run(ctx: Context, *, offline: bool) -> LintReport:

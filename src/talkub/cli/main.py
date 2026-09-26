@@ -11,6 +11,7 @@ import typer
 from talkub import __version__, access, shortcuts
 from talkub.cli import admin, check, image, keys, lint, secret, session, setup
 from talkub.cli import bootstrap as bootstrap_cli
+from talkub.cli import chart as chart_cli
 from talkub.cli import coredns as coredns_cli
 from talkub.cli import hooks as hooks_cli
 from talkub.cli import lifecycle as lifecycle_cli
@@ -65,6 +66,7 @@ app.command("plan")(lifecycle_cli.plan)
 app.command("apply")(lifecycle_cli.apply)
 app.command("bootstrap")(bootstrap_cli.bootstrap)
 app.add_typer(upgrade_cli.app, name="upgrade")
+app.add_typer(chart_cli.app, name="chart")
 app.command("status")(status_cli.status)
 app.add_typer(versions_cli.app, name="versions")
 app.add_typer(tailscale_cli.app, name="tailscale")
