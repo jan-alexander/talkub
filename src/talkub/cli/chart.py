@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import chart_upgrade
+from talkub.gitops import chart_upgrade
 
 app = typer.Typer(
     help="Manage the Helm charts behind gitops/apps/*.yaml.", no_args_is_help=True

@@ -1,6 +1,6 @@
 from helpers import FakeRunner
 
-from talkub import charts
+from talkub.helm import charts
 
 CHART_YAML = b"apiVersion: v2\nname: argo-cd\nversion: 10.9.2\nappVersion: v3.5.3\n"
 

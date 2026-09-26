@@ -1,4 +1,5 @@
-"""Tailscale operator (egress via ExternalName services; its API server proxy stays disabled):
+"""The Tailscale Kubernetes operator, in-cluster (Tailscale on the hosts is
+talkub.talos.tailscale). Egress via ExternalName services (its API server proxy stays disabled):
 Helm values, Argo CD apps, the DNSConfig that points CoreDNS' tailnet stub at the
 operator's nameserver, and the SealedSecret for its OAuth client.
 
@@ -11,12 +12,14 @@ from __future__ import annotations
 import ipaddress
 from pathlib import Path
 
-from talkub import apps, charts, coredns
+from talkub.argocd import apps
 from talkub.config import ChartSpec, Repo, Settings, valid_label
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
+from talkub.gitops import coredns
+from talkub.helm import charts
 from talkub.kube import sealing
 
 NAMESPACE = "tailscale"

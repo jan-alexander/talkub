@@ -1,8 +1,8 @@
 from helpers import need
 
-from talkub.checks import run_checks
 from talkub.context import Context
 from talkub.core.runner import Runner
+from talkub.quality.checks import run_checks
 from talkub.secrets import age
 from talkub.secrets.keyring import Keyring
 from talkub.secrets.recipients import Recipient
@@ -93,7 +93,7 @@ def test_interrupted_rotation_warned(repo_with_configs):
 
 
 def test_plaintext_repo_secret_in_bootstrap_is_an_error(repo_with_configs):
-    from talkub import gitrepo
+    from talkub.gitops import gitrepo
 
     target = repo_with_configs.root / "bootstrap" / "repo.yaml"
     target.parent.mkdir(exist_ok=True)

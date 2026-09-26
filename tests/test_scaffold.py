@@ -103,7 +103,7 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
 
     assert settings.git == GitSpec(url="https://git.example.com/demo.git")
 
-    from talkub.lint import DEFAULT_YAMLLINT
+    from talkub.quality.lint import DEFAULT_YAMLLINT
 
     assert (repo.root / ".yamllint").read_text() == DEFAULT_YAMLLINT
 

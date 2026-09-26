@@ -8,11 +8,12 @@ import os
 import pytest
 from helpers import FakeRunner, write_chart_app
 
-from talkub import argoapps, chart_upgrade
+from talkub.argocd import app_files
 from talkub.cli.main import main
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import CommandFailed, ToolMissing, ValidationError
+from talkub.gitops import chart_upgrade
 
 CHART_OLD = b"apiVersion: v2\nname: mychart\nversion: 1.0.0\nappVersion: v1.0\n"
 CHART_NEW = b"apiVersion: v2\nname: mychart\nversion: 2.0.0\nappVersion: v2.0\n"
@@ -73,7 +74,7 @@ def test_upgrade_happy_path_shows_diff_and_sets_revision(empty_repo, spy, capsys
     )
 
     assert code == 0
-    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "myapp").version == "2.0.0"
     out = capsys.readouterr().out
     assert "1.0.0 → 2.0.0" in out
     assert "v1.0 → v2.0" in out
@@ -101,7 +102,7 @@ def test_upgrade_already_current_prints_note_and_does_nothing(empty_repo, spy, c
 
     assert code == 0
     assert "already at 1.0.0" in capsys.readouterr().out
-    assert argoapps.app_source(empty_repo, "myapp").version == "1.0.0"
+    assert app_files.app_source(empty_repo, "myapp").version == "1.0.0"
     assert not any("template" in argv for argv in helm.argvs)
 
 
@@ -128,7 +129,7 @@ def test_upgrade_without_version_skips_when_current_is_newer_than_latest(
 
     assert code == 0
     assert "2.0.0 is newer than latest 1.0.0" in capsys.readouterr().out
-    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"  # untouched
+    assert app_files.app_source(empty_repo, "myapp").version == "2.0.0"  # untouched
     assert not any("template" in argv for argv in helm.argvs)
 
 
@@ -145,7 +146,7 @@ def test_upgrade_decline_leaves_file_unchanged(empty_repo, spy, capsys):
     )
 
     assert code == 1
-    assert argoapps.app_source(empty_repo, "myapp").version == "1.0.0"
+    assert app_files.app_source(empty_repo, "myapp").version == "1.0.0"
     assert "aborted" in capsys.readouterr().out
     assert kubeconform.calls == []  # never got to lint
 
@@ -164,7 +165,7 @@ def test_upgrade_lint_failure_keeps_file_changed_and_exits_1(empty_repo, spy, ca
 
     assert code == 1
     # the file stays changed even though lint failed
-    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "myapp").version == "2.0.0"
     out = capsys.readouterr().out
     assert "fix the values or revert the change" in out
     assert kubeconform.calls == []
@@ -201,9 +202,9 @@ def test_upgrade_all_apps_continues_after_one_failure(empty_repo, spy, capsys):
     )
 
     assert code == 1
-    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "app-a").version == "2.0.0"
     assert (
-        argoapps.app_source(empty_repo, "app-b").version == "2.0.0"
+        app_files.app_source(empty_repo, "app-b").version == "2.0.0"
     )  # still changed despite the lint failure
     out = capsys.readouterr().out
     assert "1/2 succeeded" in out
@@ -243,7 +244,7 @@ def test_upgrade_app_and_all_together_is_an_error(empty_repo):
 
 
 def _write_two_source_app(repo, key):
-    """An Application with two Helm chart sources: `argoapps.app_source` (which assumes exactly
+    """An Application with two Helm chart sources: `app_files.app_source` (which assumes exactly
     one) raises `ValidationError` for it."""
     doc = {
         "apiVersion": "argoproj.io/v1alpha1",
@@ -304,9 +305,9 @@ def test_upgrade_all_apps_isolates_a_hard_command_failure(empty_repo, spy, capsy
 
     assert code == 1
     assert (
-        argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+        app_files.app_source(empty_repo, "app-a").version == "2.0.0"
     )  # not aborted by app-b's failure
-    assert argoapps.app_source(empty_repo, "app-b").version == "1.0.0"  # untouched
+    assert app_files.app_source(empty_repo, "app-b").version == "1.0.0"  # untouched
     out = capsys.readouterr().out
     assert "app-b: helm exited with 1" in out
     assert "1/2 succeeded" in out
@@ -344,7 +345,7 @@ def test_upgrade_all_apps_skips_a_multi_chart_app_without_failing(
     )
 
     assert code == 0
-    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "app-a").version == "2.0.0"
     out = capsys.readouterr().out
     assert "app-c: skipped (not a single-chart app)" in out
     assert "1/1 succeeded" in out
@@ -384,7 +385,7 @@ def test_upgrade_all_apps_addresses_a_file_by_stem_not_metadata_name(
     )
 
     assert code == 0
-    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "app-a").version == "2.0.0"
     out = capsys.readouterr().out
     assert "1/1 succeeded" in out
 
@@ -417,7 +418,7 @@ def test_upgrade_single_app_addresses_a_file_by_stem_not_metadata_name(empty_rep
     )
 
     assert code == 0
-    assert argoapps.app_source(empty_repo, "app-a").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "app-a").version == "2.0.0"
 
 
 def test_upgrade_single_app_hard_failure_still_raises(empty_repo, spy):
@@ -455,7 +456,7 @@ def test_upgrade_kubeconform_missing_notes_and_still_succeeds(
     )
 
     assert code == 0
-    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "myapp").version == "2.0.0"
     out = capsys.readouterr().out
     assert "kubeconform not found" in out
 
@@ -485,7 +486,7 @@ def test_upgrade_helm_missing_is_a_failure_and_does_not_write(
         )
 
     assert (
-        argoapps.app_source(empty_repo, "myapp").version == "1.0.0"
+        app_files.app_source(empty_repo, "myapp").version == "1.0.0"
     )  # nothing was written
 
 
@@ -499,5 +500,5 @@ def test_cli_chart_upgrade_wiring(empty_repo, spy, monkeypatch, capfd):
         main(["chart", "upgrade", "myapp", "--version", "2.0.0", "--yes"])
 
     assert exc.value.code == 0
-    assert argoapps.app_source(empty_repo, "myapp").version == "2.0.0"
+    assert app_files.app_source(empty_repo, "myapp").version == "2.0.0"
     assert "commit and push" in capfd.readouterr().out

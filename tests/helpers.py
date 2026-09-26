@@ -192,7 +192,7 @@ def write_chart_app(
     repo, key: str, repo_url: str, chart: str, version: str, namespace: str
 ) -> None:
     """`gitops/apps/<key>.yaml` (as talkub renders it) plus an empty `gitops/values/<key>.yaml`."""
-    from talkub import apps
+    from talkub.argocd import apps
     from talkub.config import ChartSpec
     from talkub.core.fsutil import atomic_write
 

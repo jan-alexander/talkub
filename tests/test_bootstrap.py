@@ -3,10 +3,10 @@ from pathlib import Path
 import pytest
 from helpers import need, write_chart_app
 
-from talkub import bootstrap
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
+from talkub.gitops import bootstrap
 from talkub.kube import sealing
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
@@ -389,7 +389,7 @@ def test_commit_reminder_right_after_key_backup(cluster, capfd):
 
 
 def test_bootstrap_applies_repo_credentials_before_root(cluster):
-    from talkub import gitrepo
+    from talkub.gitops import gitrepo
 
     repo, spies = cluster
     ctx = Context.open(repo)

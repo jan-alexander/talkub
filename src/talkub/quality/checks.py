@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ruamel.yaml.error import YAMLError
 
-from talkub.argoapps import SECRET_TYPE_LABEL
+from talkub.argocd.app_files import SECRET_TYPE_LABEL
 from talkub.config import Repo
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError

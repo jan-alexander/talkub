@@ -1,4 +1,4 @@
-"""`talkub.argoapps`: shared Argo CD Application parser (moved out of `talkub.lint`, Task 1)."""
+"""`talkub.argocd.app_files`: shared Argo CD Application parser."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from string import Template
 
 import pytest
 
-from talkub import apps, coredns
-from talkub.argoapps import (
+from talkub.argocd import apps
+from talkub.argocd.app_files import (
     HelmSource,
     app_chart_sources,
     app_source,
@@ -22,6 +22,7 @@ from talkub.config import ChartSpec
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.findings import Finding
+from talkub.gitops import coredns
 
 
 def _write_app_doc(repo, name, doc):

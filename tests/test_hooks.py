@@ -10,11 +10,11 @@ import sys
 import pytest
 from helpers import need
 
-from talkub import hooks
 from talkub.config import Repo
 from talkub.core.errors import ValidationError
 from talkub.core.runner import Runner
-from talkub.lint import DEFAULT_YAMLLINT
+from talkub.quality import hooks
+from talkub.quality.lint import DEFAULT_YAMLLINT
 
 pytestmark = need("git")
 

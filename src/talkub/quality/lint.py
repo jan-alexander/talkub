@@ -15,7 +15,7 @@ from pathlib import Path
 from yamllint import linter
 from yamllint.config import YamlLintConfig, YamlLintConfigError
 
-from talkub.argoapps import HelmSource, helm_sources
+from talkub.argocd.app_files import HelmSource, helm_sources
 from talkub.config import ChartSpec, Repo
 from talkub.context import Context
 from talkub.core.ephemeral import private_tempdir

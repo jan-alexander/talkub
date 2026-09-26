@@ -5,9 +5,9 @@ from string import Template
 import pytest
 from helpers import need, write_chart_app
 
-from talkub import gitrepo
 from talkub.cli.main import main
 from talkub.core.fsutil import atomic_write
+from talkub.gitops import gitrepo
 from talkub.scaffold import TEMPLATES
 
 pytestmark = need("age", "age-keygen", "sops", "ssh-keygen")

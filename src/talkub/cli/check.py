@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub.checks import run_checks
+from talkub.quality.checks import run_checks
 
 
 def check(ctx: typer.Context) -> None:

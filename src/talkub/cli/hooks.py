@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import typer
 
-from talkub import hooks
 from talkub.cli.output import print_notes
 from talkub.core.runner import Runner
+from talkub.quality import hooks
 
 app = typer.Typer(
     help="Manage the pre-commit hook (talkub check && talkub lint --offline).",

@@ -15,7 +15,7 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from talkub.argoapps import SECRET_TYPE_LABEL
+from talkub.argocd.app_files import SECRET_TYPE_LABEL
 from talkub.config import GitSpec, Repo
 from talkub.context import Context
 from talkub.core import yamlio

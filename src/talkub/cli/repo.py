@@ -7,9 +7,9 @@ from pathlib import Path
 
 import typer
 
-from talkub import bootstrap, gitrepo
 from talkub.cli.prompts import read_secret
 from talkub.core.errors import ValidationError
+from talkub.gitops import bootstrap, gitrepo
 from talkub.kube.session import kube_session
 
 app = typer.Typer(

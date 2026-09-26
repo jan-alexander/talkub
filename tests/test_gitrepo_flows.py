@@ -3,12 +3,12 @@ from string import Template
 import pytest
 from helpers import need
 
-from talkub import gitrepo
 from talkub.config import GitSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
+from talkub.gitops import gitrepo
 from talkub.kube.session import kube_session
 from talkub.scaffold import TEMPLATES
 

@@ -1,4 +1,4 @@
-from talkub import apps
+from talkub.argocd import apps
 from talkub.config import ChartSpec
 from talkub.core import yamlio
 

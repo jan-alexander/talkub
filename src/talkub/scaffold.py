@@ -10,7 +10,6 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from string import Template
 
-from talkub import charts, coredns
 from talkub.config import (
     PLATFORMS,
     ChartSpec,
@@ -26,8 +25,10 @@ from talkub.core.ephemeral import private_tempdir
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner
-from talkub.gitrepo import classify_url
-from talkub.lint import DEFAULT_YAMLLINT
+from talkub.gitops import coredns
+from talkub.gitops.gitrepo import classify_url
+from talkub.helm import charts
+from talkub.quality.lint import DEFAULT_YAMLLINT
 from talkub.secrets.keyring import Keyring
 from talkub.secrets.recipients import Recipient
 from talkub.secrets.sops import Sops, render_sops_config

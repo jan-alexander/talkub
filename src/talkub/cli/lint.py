@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from talkub.context import Context
-from talkub.lint import run
+from talkub.quality.lint import run
 
 
 def lint(

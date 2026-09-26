@@ -62,7 +62,7 @@ def test_init_then_admin_and_check(
         )
         assert remote.stdout.strip() == "https://git.example.com/demo.git"
 
-        from talkub.hooks import MARKER
+        from talkub.quality.hooks import MARKER
 
         hook = tmp_path / "demo" / ".git" / "hooks" / "pre-commit"
         assert hook.is_file()

@@ -7,14 +7,15 @@ from pathlib import Path
 import pytest
 from helpers import FakeRunner, need
 
-from talkub import apps, coredns
+from talkub.argocd import apps
 from talkub.cli.main import main
 from talkub.config import ChartSpec
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.runner import Runner
-from talkub.lint import (
+from talkub.gitops import coredns
+from talkub.quality.lint import (
     _DOWNLOAD_ERROR_PREFIX,
     DEFAULT_YAMLLINT,
     Finding,

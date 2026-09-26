@@ -3,12 +3,12 @@ import subprocess
 
 import pytest
 
-from talkub import gitrepo
 from talkub.config import Repo
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner
-from talkub.gitrepo import GitUrl, classify_url
+from talkub.gitops import gitrepo
+from talkub.gitops.gitrepo import GitUrl, classify_url
 from talkub.scaffold import TEMPLATES
 
 
@@ -120,7 +120,7 @@ def _gitops(tmp_path) -> Repo:
     """root.yaml + the two app templates rendered with OLD, as `init` writes them."""
     from string import Template
 
-    from talkub.charts import CATALOG
+    from talkub.helm.charts import CATALOG
 
     repo = Repo(tmp_path)
     values = {"git_url": OLD, "name": "test"}

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from talkub import gitrepo
-from talkub.argoapps import HelmSource, app_source
+from talkub.argocd.app_files import HelmSource, app_source
 from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.ephemeral import decrypted
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import require_tool
+from talkub.gitops import gitrepo
 from talkub.helm.install import helm_install
 from talkub.kube import sealing
 from talkub.kube.session import KubeSession, kube_session

@@ -17,13 +17,14 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from talkub import apps, argoapps, charts
+from talkub.argocd import app_files, apps
 from talkub.config import ChartSpec, Repo, Settings
 from talkub.context import Context
 from talkub.core import yamlio
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import require_tool
+from talkub.helm import charts
 from talkub.helm.install import chart_ref, helm_install
 from talkub.kube.session import KubeSession, kube_session
 from talkub.talos import lifecycle
@@ -237,7 +238,7 @@ def takeover(
         drifting = _controlplanes(
             settings
         )  # the new patch applies to control planes only
-    source = argoapps.app_source(repo, "coredns")
+    source = app_files.app_source(repo, "coredns")
     if source.release != RELEASE or source.namespace != NAMESPACE:
         raise ValidationError(
             f"gitops/apps/coredns.yaml has release {source.release!r}/namespace {source.namespace!r}, "

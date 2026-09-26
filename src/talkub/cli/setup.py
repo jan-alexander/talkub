@@ -8,7 +8,6 @@ from pathlib import Path
 
 import typer
 
-from talkub import gitrepo, hooks
 from talkub.cli.nodes import (
     DISK,
     DNS,
@@ -25,6 +24,8 @@ from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.core.runner import Runner
+from talkub.gitops import gitrepo
+from talkub.quality import hooks
 from talkub.scaffold import InitRequest, init_cluster
 from talkub.secrets.identity import create_identity, identities_dir, own_recipients
 from talkub.talos import tailscale

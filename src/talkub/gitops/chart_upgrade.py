@@ -12,13 +12,14 @@ import difflib
 import shutil
 from collections.abc import Callable
 
-from talkub import argoapps, charts
+from talkub.argocd import app_files
 from talkub.config import ChartSpec
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.core.runner import require_tool
+from talkub.helm import charts
 from talkub.helm.install import chart_ref
-from talkub.lint import LintReport, lint_helm_app
+from talkub.quality.lint import LintReport, lint_helm_app
 
 Confirm = Callable[[str], bool]
 
@@ -35,8 +36,8 @@ def chart_apps(ctx: Context) -> list[str]:
     them by name instead of silently dropping them."""
     return [
         stem
-        for stem in argoapps.chart_app_stems(ctx.repo)
-        if argoapps.is_single_chart_app(ctx.repo, stem)
+        for stem in app_files.chart_app_stems(ctx.repo)
+        if app_files.is_single_chart_app(ctx.repo, stem)
     ]
 
 
@@ -44,7 +45,7 @@ def _skipped_chart_apps(ctx: Context) -> list[str]:
     """File stems `chart_apps` leaves out because they're not a single-chart app (as opposed to
     not a chart app at all, which `chart_app_stems` already excludes)."""
     apps = set(chart_apps(ctx))
-    return [stem for stem in argoapps.chart_app_stems(ctx.repo) if stem not in apps]
+    return [stem for stem in app_files.chart_app_stems(ctx.repo) if stem not in apps]
 
 
 def _show_values(ctx: Context, chart: ChartSpec) -> str:
@@ -107,7 +108,7 @@ def _is_downgrade(current: str, latest: str) -> bool:
 def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) -> bool:
     """Upgrade one app's chart. True on success (including "already at X" and "newer than
     latest"), False if the user declined or the post-upgrade lint found an error."""
-    source = argoapps.app_source(ctx.repo, app)
+    source = app_files.app_source(ctx.repo, app)
     if version is None:
         target = charts.latest_version(ctx.runner, source.repo, source.chart)
         if _is_downgrade(source.version, target):
@@ -153,10 +154,10 @@ def _upgrade_one(ctx: Context, app: str, version: str | None, confirm: Confirm) 
     # missing helm is a clean failure (with the standard brew hint) instead of a changed file that
     # `lint_helm_app` can only silently skip.
     require_tool("helm")
-    argoapps.set_target_revision(ctx.repo, app, target)
+    app_files.set_target_revision(ctx.repo, app, target)
 
     report = LintReport()
-    lint_helm_app(ctx, report, argoapps.app_source(ctx.repo, app))
+    lint_helm_app(ctx, report, app_files.app_source(ctx.repo, app))
     if report.errors:
         for line in report.render():
             print(f"   {line}")

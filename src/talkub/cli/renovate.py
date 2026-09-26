@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import renovate
+from talkub.gitops import renovate
 
 app = typer.Typer(
     help="Generate a Renovate config for chart, Talos and Kubernetes update PRs.",

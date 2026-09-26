@@ -13,11 +13,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from talkub import argoapps, charts
-from talkub.argoapps import HelmSource
+from talkub.argocd import app_files
+from talkub.argocd.app_files import HelmSource
 from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
+from talkub.helm import charts
 from talkub.kube.session import kube_session
 from talkub.talos import inspect
 from talkub.talos.client import talos_session
@@ -223,13 +224,13 @@ def _chart_rows(ctx: Context, *, offline: bool) -> list[Row]:
     malformed/multi-Application file) — never one row per `metadata.name`, which could differ
     from the file stem `chart upgrade` and `--all` actually address."""
     rows: list[Row] = []
-    for stem in argoapps.chart_app_stems(ctx.repo):
-        if not argoapps.is_single_chart_app(ctx.repo, stem):
+    for stem in app_files.chart_app_stems(ctx.repo):
+        if not app_files.is_single_chart_app(ctx.repo, stem):
             rows.append(Row(stem, "?", "?", "?", "not a single-chart app"))
             continue
-        sources, _findings = argoapps.app_chart_sources(ctx.repo, stem)
+        sources, _findings = app_files.app_chart_sources(ctx.repo, stem)
         source = sources[0]
-        indices = argoapps.chart_source_indices(ctx.repo, stem)
+        indices = app_files.chart_source_indices(ctx.repo, stem)
         source_index = indices[0] if indices else None
         rows.append(_chart_row(ctx, stem, source, source_index, offline=offline))
     return rows

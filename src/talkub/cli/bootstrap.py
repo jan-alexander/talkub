@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from talkub import bootstrap as bootstrap_flow
+from talkub.gitops import bootstrap as bootstrap_flow
 
 
 def bootstrap(ctx: typer.Context) -> None:

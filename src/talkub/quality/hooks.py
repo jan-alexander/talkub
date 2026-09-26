@@ -12,7 +12,7 @@ from talkub.config import Repo
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner
-from talkub.lint import DEFAULT_YAMLLINT
+from talkub.quality.lint import DEFAULT_YAMLLINT
 
 MARKER = "talkub pre-commit hook"
 
