@@ -9,18 +9,18 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ruamel.yaml.error import YAMLError
 from yamllint import linter
 from yamllint.config import YamlLintConfig, YamlLintConfigError
 
-from talkub import bootstrap, yamlio
+from talkub import bootstrap
+from talkub.argoapps import HelmSource, helm_sources
 from talkub.context import Context
 from talkub.ephemeral import private_tempdir
 from talkub.errors import ValidationError
+from talkub.findings import Finding  # moved to findings.py; kept importable from here too
 from talkub.repo import ChartSpec, Repo
 
 # CRD schemas not covered by the default (Kubernetes-owned) schema location.
@@ -37,14 +37,6 @@ ignore: |
 rules:
   line-length: disable
 """
-
-
-@dataclass(frozen=True)
-class Finding:
-    level: str  # "error" | "warning"
-    path: str  # repo-relative, or an app name prefix like "app coredns"
-    message: str
-    line: int | None = None
 
 
 @dataclass
@@ -309,107 +301,6 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
     findings, skipped = _run_kubeconform(ctx, version, rel_files, offline=offline)
     report.findings.extend(findings)
     report.skipped.extend(skipped)
-
-
-_VALUES_PREFIX = "$values/"
-
-
-def _as_mapping(value: object) -> Mapping:
-    """`value` if it's a mapping, else `{}` — Application YAML is untrusted repo content, and a
-    `spec`/`destination`/`helm`/`metadata` that turns out to be a string or a list must be skipped,
-    not crash `talkub lint` with an AttributeError."""
-    return value if isinstance(value, Mapping) else {}
-
-
-@dataclass(frozen=True)
-class HelmSource:
-    app: str
-    release: str
-    namespace: str
-    repo: str
-    chart: str
-    version: str
-    value_files: tuple[Path, ...] = ()
-    inline_values: str | None = None
-
-
-def helm_sources(repo: Repo) -> tuple[list[HelmSource], list[Finding]]:
-    """Every Helm source (a `chart` entry) of every Argo CD Application under `gitops/apps/*.yaml`.
-
-    Non-Application documents and sources without `chart` (git-values sources, plain directory
-    apps) are skipped. `helm.valueFiles` entries prefixed `$values/` resolve to a repo-local path
-    (an error finding if missing); other entries are unsupported (a warning finding, skipped)."""
-    sources: list[HelmSource] = []
-    findings: list[Finding] = []
-    apps_dir = repo.gitops_dir / "apps"
-    if not apps_dir.is_dir():
-        return sources, findings
-
-    for path in sorted(apps_dir.glob("*.yaml")):
-        if path.name.endswith(".sops.yaml"):
-            continue
-        try:
-            docs = yamlio.load_all(path.read_text())
-        except YAMLError:
-            continue  # yamllint already reports the syntax error as a finding
-        for doc in docs:
-            if not isinstance(doc, Mapping) or doc.get("kind") != "Application":
-                continue
-            metadata = _as_mapping(doc.get("metadata"))
-            name = str(metadata.get("name", path.stem))
-            spec = _as_mapping(doc.get("spec"))
-            destination = _as_mapping(spec.get("destination"))
-            namespace = destination.get("namespace") or "default"
-
-            raw_sources = spec.get("sources")
-            if raw_sources is None:
-                single = spec.get("source")
-                raw_sources = [single] if single else []
-            if not isinstance(raw_sources, list):
-                raw_sources = []
-
-            for source in raw_sources:
-                if not isinstance(source, Mapping) or "chart" not in source:
-                    continue
-                helm = _as_mapping(source.get("helm"))
-                release = helm.get("releaseName") or name
-
-                value_files: list[Path] = []
-                for entry in helm.get("valueFiles") or []:
-                    if not isinstance(entry, str):
-                        continue
-                    if entry.startswith(_VALUES_PREFIX):
-                        candidate = repo.root / entry[len(_VALUES_PREFIX):]
-                        if candidate.is_file():
-                            value_files.append(candidate)
-                        else:
-                            findings.append(
-                                Finding("error", f"app {name}", f"values file {repo.rel(candidate)} not found")
-                            )
-                    else:
-                        findings.append(
-                            Finding("warning", f"app {name}", f"valueFiles entry {entry!r} is unsupported, skipped")
-                        )
-
-                inline_values: str | None = None
-                if "valuesObject" in helm:
-                    inline_values = yamlio.dump(helm["valuesObject"])
-                elif "values" in helm:
-                    inline_values = helm["values"]
-
-                sources.append(
-                    HelmSource(
-                        app=name,
-                        release=release,
-                        namespace=namespace,
-                        repo=source.get("repoURL", ""),
-                        chart=source["chart"],
-                        version=source.get("targetRevision", ""),
-                        value_files=tuple(value_files),
-                        inline_values=inline_values,
-                    )
-                )
-    return sources, findings
 
 
 def _render_helm(ctx: Context, source: HelmSource, tmp: Path, index: int, report: LintReport) -> bytes | None:
