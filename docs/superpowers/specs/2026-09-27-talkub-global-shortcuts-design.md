@@ -43,8 +43,10 @@ Neues Modul `src/talkub/config/user.py`:
 - `user_config_dir() -> Path`: XDG-Auflösung wie oben, `…/talkub`.
 - `global_shortcuts_file() -> Path`: `user_config_dir() / "shortcuts.yaml"`.
 - `load_global_shortcuts() -> dict[str, Shortcut]`.
-- `write_global_shortcuts(shortcuts: dict[str, Shortcut]) -> None`: legt das Verzeichnis an, schreibt
-  atomar (`atomic_write`), Einträge nach Namen sortiert; leerer Pool → `shortcuts: {}`.
+- `save_global_shortcut(shortcut: Shortcut, *, force: bool = False) -> Path`: validiert zuerst die ganze
+  Datei (kaputt → Fehler, nichts wird geschrieben), Konflikt ohne `force` → Fehler; fügt den Eintrag in das
+  Round-trip-Dokument ein (Kommentare und übrige Einträge bleiben erhalten), legt das Verzeichnis an,
+  schreibt atomar (`atomic_write`).
 
 Die Feld-Helfer (`config/fields.py`) setzen `MARKER` fest in ihre Meldungen. `load_global_shortcuts` fängt
 deshalb den `ValidationError` aus `shortcut_from_dict` ab und ersetzt das führende `.talkub.yaml: ` durch
