@@ -108,6 +108,13 @@ check `talosctl health` once before the first change (and change nothing if the 
 unhealthy), then wait for health after each node before moving on. Health always runs through a
 control plane (another one than the node just changed, if there is one). After `apply` talkub first
 waits 30 seconds so the node's reboot has started (`TALKUB_APPLY_SETTLE_SECONDS` overrides this).
+`upgrade talos` installs with `talosctl upgrade --no-reboot`, triggers the reboot with
+`talosctl reboot --wait=false` and polls until the node runs the target version and schematic
+(10 minutes; `reboot --wait` breaks when the node stops its Tailscale extension, which the
+connection goes through). With more than one node it first drains the node itself with the repo
+kubeconfig (`kubectl drain`, 5 minutes timeout) and uncordons it once the cluster is healthy again;
+talosctl's own drain (part of its reboot) is not used because it goes through the cluster endpoint,
+which `talkub tailscale lockdown` firewalls.
 Before `talkub bootstrap`, apply nodes one at a time. If `apply` fails, the error lists the nodes
 already applied in this run. The rolling behavior is only tested against a fake `talosctl`; verify
 it on a real cluster before relying on it.

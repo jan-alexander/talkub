@@ -28,6 +28,10 @@ class KubeSession:
     ) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(["kubectl", *args], input=input, env=self.env, check=check)
 
+    def kubectl_call(self, args: Sequence[str]) -> int:
+        """Like `kubectl`, but interactive (output straight to the terminal); returns the exit code."""
+        return self.runner.call(["kubectl", *args], env=self.env)
+
     def helm(self, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(["helm", *args], env=self.env, check=check)
 
