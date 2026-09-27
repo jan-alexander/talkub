@@ -25,6 +25,30 @@ def test_disk_table():
     assert "readonly, cdrom" in lines[3]
 
 
+def test_inventory_content():
+    """Test Inventory.content() returns disk's discovered entry and partitions."""
+    top_entry = Discovered("/dev/sda", "disk", HDD.size, name="gpt")
+    partition = Discovered("/dev/sda1", "partition", GiB, name="ext4", parent_dev_path="/dev/sda", label="data")
+    inventory = Inventory((NVME, HDD, CD), (top_entry, partition), None, False)
+
+    # HDD has discovered entry and partition
+    top, parts = inventory.content(HDD)
+    assert top == top_entry
+    assert parts == [partition]
+
+    # NVME has no discovered entry
+    top, parts = inventory.content(NVME)
+    assert top is None
+    assert parts == []
+
+    # CD has no partitions (only disks in discovered)
+    cd_entry = Discovered("/dev/sr0", "disk", GiB, name="iso9660")
+    inventory2 = Inventory((NVME, HDD, CD), (cd_entry,), None, False)
+    top, parts = inventory2.content(CD)
+    assert top == cd_entry
+    assert parts == []
+
+
 def test_plan_text():
     plan = Plan(
         allocations=[

@@ -51,6 +51,12 @@ class Inventory:
     system_disk: str | None  # disk id; None before installation
     installed: bool
 
+    def content(self, disk: Disk) -> tuple[Discovered | None, list[Discovered]]:
+        """(the disk's own discovered entry, its partitions) from `discovered`."""
+        top = next((d for d in self.discovered if d.dev_path == disk.dev_path), None)
+        parts = [d for d in self.discovered if d.type == "partition" and d.parent_dev_path == disk.dev_path]
+        return top, parts
+
 
 class SizeKind(Enum):
     BYTES = "bytes"

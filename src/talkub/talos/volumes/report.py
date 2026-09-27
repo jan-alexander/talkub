@@ -11,8 +11,7 @@ def _content(disk: Disk, inventory: Inventory, system_disk: str | None) -> str:
     notes = [flag for flag in ("readonly", "cdrom") if getattr(disk, flag)]
     if disk.id == system_disk:
         notes.append("system")
-    top = next((d for d in inventory.discovered if d.dev_path == disk.dev_path), None)
-    parts = [d for d in inventory.discovered if d.type == "partition" and d.parent_dev_path == disk.dev_path]
+    top, parts = inventory.content(disk)
     if top is not None and top.name:
         described = ", ".join(f"{p.label or p.dev_path}" + (f" ({p.name})" if p.name else "") for p in parts)
         notes.append(f"{top.name}: {described}" if described else top.name)

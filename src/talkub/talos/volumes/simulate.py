@@ -92,9 +92,8 @@ def _initial(inventory: Inventory, install_disk: str | None, plan: Plan) -> dict
             plan.reserved[disk.id] = SYSTEM_LAYOUT
             states[disk.id] = _DiskState([(start + SYSTEM_LAYOUT, end)], blank=False)
             continue
-        top = next((d for d in inventory.discovered if d.dev_path == disk.dev_path), None)
+        top, parts = inventory.content(disk)
         fmt = top.name if top is not None else ""
-        parts = [d for d in inventory.discovered if d.type == "partition" and d.parent_dev_path == disk.dev_path]
         if fmt and fmt != "gpt":
             states[disk.id] = _DiskState([], format=fmt, blank=False)
             continue
