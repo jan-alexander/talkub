@@ -15,6 +15,7 @@ from ruamel.yaml.error import YAMLError
 
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
+from talkub.talos.volumes.model import Discovered, Disk
 
 _SERVER_TAG = re.compile(r"^Server:\s*$.*?^\s*Tag:\s*(\S+)", re.MULTILINE | re.DOTALL)
 _TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
@@ -332,3 +333,73 @@ def application_summary(text: str) -> dict[str, int] | None:
         health_status = health.get("status") or "Unknown"
         counts[f"{sync_status}/{health_status}"] += 1
     return dict(counts)
+
+
+def _int(value: object) -> int | None:
+    """An integer JSON value; bools are not sizes."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _str(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def disks(text: str) -> list[Disk]:
+    """`talosctl get disks -o json`, sorted by id. talosctl omits empty/false fields (omitempty);
+    they default to "" / False. Entries without an id or a positive size are skipped."""
+    result: list[Disk] = []
+    for doc in json_documents(text):
+        if not isinstance(doc, dict):
+            continue
+        disk_id = _dict(doc.get("metadata")).get("id")
+        spec = _dict(doc.get("spec"))
+        size = _int(spec.get("size"))
+        if not isinstance(disk_id, str) or size is None or size <= 0:
+            continue
+        result.append(
+            Disk(
+                id=disk_id,
+                dev_path=_str(spec.get("dev_path")) or f"/dev/{disk_id}",
+                size=size,
+                transport=_str(spec.get("transport")),
+                rotational=spec.get("rotational") is True,
+                readonly=spec.get("readonly") is True,
+                cdrom=spec.get("cdrom") is True,
+                model=_str(spec.get("model")),
+                serial=_str(spec.get("serial")),
+                wwid=_str(spec.get("wwid")),
+            )
+        )
+    return sorted(result, key=lambda disk: disk.id)
+
+
+def system_disk(text: str) -> str | None:
+    """Disk id from `talosctl get systemdisk -o json`; None before installation."""
+    for doc in json_documents(text):
+        disk_id = _dict(_dict(doc).get("spec")).get("diskID")
+        if isinstance(disk_id, str) and disk_id:
+            return disk_id
+    return None
+
+
+def discovered_volumes(text: str) -> list[Discovered]:
+    """`talosctl get discoveredvolumes -o json`: what is on each disk and partition."""
+    result: list[Discovered] = []
+    for doc in json_documents(text):
+        spec = _dict(_dict(doc).get("spec"))
+        size = _int(spec.get("size"))
+        dev_path = _str(spec.get("dev_path"))
+        if not dev_path or size is None:
+            continue
+        result.append(
+            Discovered(
+                dev_path=dev_path,
+                type=_str(spec.get("type")),
+                size=size,
+                name=_str(spec.get("name")),
+                parent_dev_path=_str(spec.get("parent_dev_path")),
+                offset=_int(spec.get("offset")),
+                label=_str(spec.get("partition_label")),
+            )
+        )
+    return result
