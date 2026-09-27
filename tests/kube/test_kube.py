@@ -37,7 +37,6 @@ def test_kube_session_exposes_kubeconfig_only_during_session(repo_with_configs, 
 @need("age", "age-keygen", "sops")
 def test_kube_session_without_kubeconfig(keyed_repo, spy):
     spy("kubectl")
-    with pytest.raises(ValidationError) as exc:
-        with kube_session(Context.open(keyed_repo)):
-            pass
+    with pytest.raises(ValidationError) as exc, kube_session(Context.open(keyed_repo)):
+        pass
     assert "bootstrap" in exc.value.hint

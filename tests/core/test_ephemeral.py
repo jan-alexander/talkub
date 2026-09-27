@@ -23,20 +23,24 @@ def test_decrypted_files_are_private_and_removed(tmp_path):
 
 
 def test_removed_when_body_raises(tmp_path):
-    with pytest.raises(RuntimeError):
-        with decrypted(FakeSops(), {"kubeconfig": tmp_path / "k.sops.yaml"}) as paths:
-            target = paths["kubeconfig"]
-            raise RuntimeError("boom")
+    with (
+        pytest.raises(RuntimeError),
+        decrypted(FakeSops(), {"kubeconfig": tmp_path / "k.sops.yaml"}) as paths,
+    ):
+        target = paths["kubeconfig"]
+        raise RuntimeError("boom")
     assert not target.exists()
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
 def test_removed_on_termination_signal(tmp_path, signum):
     previous = signal.getsignal(signum)
-    with pytest.raises(SystemExit) as exc:
-        with decrypted(FakeSops(), {"talosconfig": tmp_path / "t.sops.yaml"}) as paths:
-            target = paths["talosconfig"]
-            os.kill(os.getpid(), signum)
+    with (
+        pytest.raises(SystemExit) as exc,
+        decrypted(FakeSops(), {"talosconfig": tmp_path / "t.sops.yaml"}) as paths,
+    ):
+        target = paths["talosconfig"]
+        os.kill(os.getpid(), signum)
     assert exc.value.code == 128 + signum
     assert not target.exists()
     assert signal.getsignal(signum) == previous

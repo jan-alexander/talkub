@@ -143,6 +143,7 @@ def test_generated_patches_validate_with_talosctl(
             ["talosctl", "validate", "--config", str(out), "--mode", "metal"],
             capture_output=True,
             text=True,
+            check=False,
         )
         rendered = out.read_text()
     assert result.returncode == 0, result.stdout + result.stderr

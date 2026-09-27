@@ -10,5 +10,8 @@ uv run --quiet lint-imports >/dev/null || {
     exit 1
 }
 
+echo "pre-commit: ruff check"
+uv run --quiet ruff check src tests
+
 echo "pre-commit: ruff format --check"
 uv run --quiet ruff format --check src tests

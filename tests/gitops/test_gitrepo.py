@@ -208,12 +208,14 @@ def test_git_init_creates_repo_and_origin(tmp_path):
         ["git", "-C", str(tmp_path), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
+        check=True,
     )
     assert remote.stdout.strip() == NEW
     branch = subprocess.run(
         ["git", "-C", str(tmp_path), "symbolic-ref", "--short", "HEAD"],
         capture_output=True,
         text=True,
+        check=True,
     )
     assert branch.stdout.strip() == "main"
     assert (
@@ -223,6 +225,7 @@ def test_git_init_creates_repo_and_origin(tmp_path):
         ["git", "-C", str(tmp_path), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
+        check=True,
     )
     assert remote.stdout.strip() == NEW
 

@@ -272,6 +272,7 @@ def test_real_commit_is_blocked_then_allowed_by_installed_hook(tmp_path, monkeyp
         ],
         cwd=repo.root,
         capture_output=True,
+        check=False,
     )
     assert blocked.returncode != 0
 
@@ -289,6 +290,7 @@ def test_real_commit_is_blocked_then_allowed_by_installed_hook(tmp_path, monkeyp
         ],
         cwd=repo.root,
         capture_output=True,
+        check=False,
     )
     assert allowed.returncode == 0, allowed.stdout + allowed.stderr
 
@@ -319,6 +321,7 @@ def test_real_commit_reports_missing_talkub_when_stored_path_and_path_both_lack_
         cwd=repo.root,
         capture_output=True,
         env=env,
+        check=False,
     )
     assert result.returncode != 0
     assert (

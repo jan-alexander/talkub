@@ -146,6 +146,7 @@ def test_patches_validate_with_talosctl(tmp_path, talos_secrets, options):
         ["talosctl", "validate", "--config", str(out), "--mode", "metal"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "hostname: cp-01" in out.read_text()

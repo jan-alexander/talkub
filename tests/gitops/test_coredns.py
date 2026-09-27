@@ -117,7 +117,7 @@ def test_real_chart_renders_expected_shape(tmp_path):
         str(values_path),
     ]
     try:
-        result = subprocess.run(argv, capture_output=True, timeout=30)
+        result = subprocess.run(argv, capture_output=True, timeout=30, check=False)
     except (subprocess.TimeoutExpired, OSError) as err:
         pytest.skip(f"helm template failed (network?): {err}")
     if result.returncode != 0:
@@ -160,7 +160,7 @@ def test_real_chart_renders_stub_forward(tmp_path):
         str(values_path),
     ]
     try:
-        result = subprocess.run(argv, capture_output=True, timeout=30)
+        result = subprocess.run(argv, capture_output=True, timeout=30, check=False)
     except (subprocess.TimeoutExpired, OSError) as err:
         pytest.skip(f"helm template failed (network?): {err}")
     if result.returncode != 0:

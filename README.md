@@ -346,7 +346,7 @@ it automatically. Bypass it once with `git commit --no-verify`.
     uv run ruff check src tests
     uv run lint-imports
 
-Enable the pre-commit hook (import layers, ruff format) once per clone:
+Enable the pre-commit hook (import layers, ruff check, ruff format) once per clone:
 
     git config core.hooksPath .githooks
 
