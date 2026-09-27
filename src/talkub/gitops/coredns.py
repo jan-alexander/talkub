@@ -324,7 +324,8 @@ def _write_repo_files(ctx: Context) -> None:
     chart = charts.resolve(ctx.runner, "coredns")
     operator_app = repo.gitops_dir / "apps" / "tailscale-operator.yaml"
     tailnet = settings.tailscale.tailnet if settings.tailscale and operator_app.exists() else None
-    write_files(repo, chart, settings.git.url, tailnet)
+    git_url = settings.git.url if settings.git else "<git-url>"
+    write_files(repo, chart, git_url, tailnet)
 
 
 def _rendered_ports(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dict]:
