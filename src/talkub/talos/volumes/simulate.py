@@ -19,7 +19,8 @@ from talkub.talos.volumes.sizes import format_bytes
 SYSTEM_LAYOUT = 2202 * MiB
 ALIGN = MiB
 GPT_HEAD = MiB
-GPT_TAIL = MiB
+# secondary GPT header (1 sector) + 128-entry partition array (32 sectors) at 512 bytes/sector (gpt.go).
+GPT_TAIL = 33 * 512
 DEFAULT_MIN = 100 * MiB
 EPHEMERAL_MIN = 2 * GiB
 
@@ -54,6 +55,11 @@ class _DiskState:
 
     def largest(self) -> tuple[int, int] | None:
         return max(self.regions, key=lambda r: r[1] - r[0], default=None)
+
+    def best_fit(self, size: int) -> tuple[int, int] | None:
+        """Smallest free region that still holds `size` (gpt.go `AllocatePartition`); ties go to the lowest start."""
+        candidates = [r for r in self.regions if r[1] - r[0] >= size]
+        return min(candidates, key=lambda r: (r[1] - r[0], r[0]), default=None)
 
 
 def _align_up(value: int) -> int:
@@ -106,15 +112,24 @@ def _initial(inventory: Inventory, install_disk: str | None, plan: Plan) -> dict
 
 def _order(volume: VolumeSpec) -> tuple[int, bool, float, str]:
     wave = -1 if volume.kind is Kind.EPHEMERAL else 0
-    maximum = volume.max_size.value if volume.max_size and volume.max_size.kind is SizeKind.BYTES else math.inf
-    return wave, volume.grow, maximum, volume.volume_id
+    # Talos always sets Grow=true for whole-disk volumes (t_uv.go); everything else keeps its own flag.
+    grow = True if volume.kind is Kind.DISK else volume.grow
+    # CompareVolumeConfigs orders by the raw MaxSize field: unset (no max) and percent (RelativeMaxSize)
+    # both leave MaxSize at zero, which Go's cmp.Or turns into +inf; a negative max keeps its absolute
+    # value in that same field, so it orders like a fixed byte size, not like "no max".
+    if volume.max_size is None or volume.max_size.kind is SizeKind.PERCENT:
+        maximum = math.inf
+    else:
+        maximum = volume.max_size.value
+    return wave, grow, maximum, volume.volume_id
 
 
-def _existing(inventory: Inventory, volume: VolumeSpec) -> Allocation | None:
+def _existing(inventory: Inventory, volume: VolumeSpec, install_dev_path: str | None) -> Allocation | None:
     for part in inventory.discovered:
-        if part.label and part.label == volume.volume_id:
-            disk = next((d for d in inventory.disks if d.dev_path == part.parent_dev_path), None)
-            return Allocation(volume.volume_id, disk.id if disk else part.parent_dev_path, part.size, existing=True)
+        if part.label != volume.volume_id or part.parent_dev_path == install_dev_path:
+            continue  # the install disk is wiped, so nothing already on it survives
+        disk = next((d for d in inventory.disks if d.dev_path == part.parent_dev_path), None)
+        return Allocation(volume.volume_id, disk.id if disk else part.parent_dev_path, part.size, existing=True)
     return None
 
 
@@ -144,12 +159,18 @@ def simulate(
 ) -> Plan:
     plan = Plan()
     states = _initial(inventory, install_disk, plan)
+    install_dev_path = next((d.dev_path for d in inventory.disks if d.id == install_disk), None)
     ephemeral_unlimited = any(v.kind is Kind.EPHEMERAL and v.max_size is None for v in volumes)
     for volume in sorted(volumes, key=_order):
         vid = volume.volume_id
-        found = _existing(inventory, volume) if inventory.installed else None
+        found = _existing(inventory, volume, install_dev_path)
         if found is not None:
             plan.allocations.append(found)
+            continue
+        # LocateAndProvision only provisions once the previous wave is fully provisioned; if EPHEMERAL
+        # (wave -1) cannot be placed, every wave-0 volume is stuck waiting for it forever.
+        if volume.kind is not Kind.EPHEMERAL and "EPHEMERAL" in plan.errors:
+            plan.errors[vid] = "waits for EPHEMERAL, which cannot be provisioned"
             continue
         if volume.selector is not None and not volume.selector.verifiable:
             plan.warnings.append(f"{vid}: custom selector, not simulated")
@@ -164,7 +185,13 @@ def simulate(
                 continue
             disk, state = candidates[0], states[candidates[0].id]
             if not state.blank:
-                plan.errors[vid] = f"disk {disk.id} is not empty"
+                # Talos' DiskMatch locator finds any existing content on the matched disk; we can only
+                # tell "our" volume apart from someone else's data by its filesystem (or luks) signature.
+                expected = "luks" if volume.encrypted else volume.filesystem
+                if state.format == expected:
+                    plan.allocations.append(Allocation(vid, disk.id, disk.size, existing=True))
+                else:
+                    plan.errors[vid] = f"disk {disk.id} is not empty"
                 continue
             state.regions, state.blank = [], False
             plan.allocations.append(Allocation(vid, disk.id, disk.size))
@@ -182,6 +209,7 @@ def simulate(
             state = states[disk.id]
             if state.format:
                 reasons.append(f"{disk.id}: not GPT ({state.format})")
+                plan.warnings.append(f"{vid}: {disk.id} has {state.format} content and is skipped")
                 continue
             region = state.largest()
             available = region[1] - region[0] if region else 0
@@ -194,9 +222,13 @@ def simulate(
             if size <= 0:
                 reasons.append(f"{disk.id}: size would be {format_bytes(max(size, 0))}")
                 continue
-            state.regions.remove(region)
-            if region[1] - (region[0] + size) >= ALIGN:
-                state.regions.append((region[0] + size, region[1]))
+            # CreatePartitionResult uses LargestContiguousAllocatable to size the partition, but
+            # AllocatePartition then carves it from the smallest free region that still fits (best fit).
+            target = state.best_fit(size)
+            assert target is not None  # the largest region already fits `size`, so some region does
+            state.regions.remove(target)
+            if target[1] - (target[0] + size) >= ALIGN:
+                state.regions.append((target[0] + size, target[1]))
             state.blank = False
             plan.allocations.append(Allocation(vid, disk.id, size))
             break
