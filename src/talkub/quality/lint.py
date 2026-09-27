@@ -261,7 +261,7 @@ def _probe_version(ctx: Context, report: LintReport, version: str) -> str:
     if cache_key in memo:
         return memo[cache_key]
 
-    result = ctx.runner.run(kubeconform_argv(version) + ["-"], input=_PROBE_MANIFEST, check=False)
+    result = ctx.runner.run([*kubeconform_argv(version), "-"], input=_PROBE_MANIFEST, check=False)
     resources = _try_resources(result.stdout.decode()) or []
     status = resources[0].get("status") if resources else None
 

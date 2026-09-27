@@ -344,7 +344,9 @@ def test_finish_refuses_a_talosconfig_that_does_not_work(rotating, tmp_path):
     new = tmp_path / "stale-talosconfig"
     new.write_text(NEW_TALOSCONFIG)
 
-    with pytest.raises(ValidationError, match="does not work against 10.0.0.10; nothing was changed") as info:
+    with pytest.raises(
+        ValidationError, match=re.escape("does not work against 10.0.0.10; nothing was changed")
+    ) as info:
         rotation.finish(Context.open(repo), talosconfig=new)
 
     assert "SECRETSTDERR" not in str(info.value) + str(info.value.hint)

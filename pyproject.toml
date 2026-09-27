@@ -23,16 +23,16 @@ dev = ["import-linter>=2.15", "pytest>=8", "ruff>=0.16.9"]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B"]
-
-# "E",   # pycodestyle (Fehler)
-# "W",   # pycodestyle (Warnungen)
-# "F",   # Pyflakes (Logikfehler, ungenutzte Imports)
-# "I",   # isort (automatische Import-Sortierung)
-# "B",   # flake8-bugbear (findet echte Bugs und schlechte Praktiken)
-# "UP",  # pyupgrade (modernisiert alten Python-Code)
-# "C4",  # flake8-comprehensions (bessere Listen/Dict-Comprehensions)
-# "RUF", # Ruff-spezifische Regeln
+select = [
+  "E",   # pycodestyle (Fehler)
+  "W",   # pycodestyle (Warnungen)
+  "F",   # Pyflakes (Logikfehler, ungenutzte Imports)
+  "I",   # isort (automatische Import-Sortierung)
+  "B",   # flake8-bugbear (findet echte Bugs und schlechte Praktiken)
+  "UP",  # pyupgrade (modernisiert alten Python-Code)
+  "C4",  # flake8-comprehensions (bessere Listen/Dict-Comprehensions)
+  "RUF", # Ruff-spezifische Regeln
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Fixtures reproduce real CLI output (aligned tables, long error messages) verbatim.
