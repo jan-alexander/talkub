@@ -7,8 +7,9 @@ Only `talkub run` reads this file, so a broken pool never blocks other commands.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from ruamel.yaml.error import YAMLError
 
@@ -85,7 +86,7 @@ def save_global_shortcut(shortcut: Shortcut, *, force: bool = False) -> Path:
             f"global shortcut {shortcut.name!r} already exists in {where}",
             hint="--force replaces it",
         )
-    root: MutableMapping = data if isinstance(data, MutableMapping) else {}
+    root: dict[str, Any] = data if isinstance(data, dict) else {}  # ruamel's CommentedMap is a dict
     if root.get("shortcuts") is None:
         root["shortcuts"] = {}
     root["shortcuts"][shortcut.name] = shortcut_to_dict(shortcut)
