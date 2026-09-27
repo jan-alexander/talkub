@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 from helpers import DEFAULT_SCHEMATIC_ID, need, sample_settings
 
@@ -5,7 +7,7 @@ from talkub.config import NodeSpec
 from talkub.context import Context
 from talkub.core.errors import CommandFailed
 from talkub.core.fsutil import atomic_write
-from talkub.talos import upgrade
+from talkub.talos import tailscale, upgrade
 from talkub.talos.nodes import node_patch_path, render_node_patch
 
 pytestmark = need("age", "age-keygen", "sops", "talosctl")
@@ -145,6 +147,19 @@ def test_k8s_dry_run_then_upgrade(talos_repo, spy):
         ["upgrade-k8s", "--to", "1.37.0", "--dry-run"],
         ["upgrade-k8s", "--to", "1.37.0"],
     ]
+
+
+def test_k8s_after_lockdown_uses_the_mgmt_endpoint(talos_repo, spy):
+    """The node's kubeconfig points at the cluster endpoint, firewalled from the workstation."""
+    settings = talos_repo.load_settings()
+    settings.nodes["cp-01"] = dataclasses.replace(settings.nodes["cp-01"], mgmt="cp-01.t.ts.net")
+    talos_repo.write_settings(settings)
+    tailscale.firewall_patch_path(talos_repo).parent.mkdir(parents=True, exist_ok=True)
+    tailscale.firewall_patch_path(talos_repo).write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
+    talosctl = spy("talosctl")
+    assert upgrade.k8s(Context.open(talos_repo), confirm=lambda q: True) is True
+    for call in talosctl.argvs:
+        assert call[call.index("--endpoint") + 1] == "https://cp-01.t.ts.net:6443"
 
 
 def test_k8s_dry_run_redacts_secrets(talos_repo, spy, capfd):
