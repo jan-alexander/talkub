@@ -129,7 +129,10 @@ def egress_add(
         help="Namespace for the Service (must already exist if not 'tailscale').",
     ),
 ) -> None:
-    """Write a Service that lets pods reach a tailnet host or address by name (`<name>.<namespace>.svc.cluster.local`)."""
+    """Write a Service that lets pods reach a tailnet host or address by name.
+
+    The Service resolves as `<name>.<namespace>.svc.cluster.local`.
+    """
     context = ctx.obj.context()
     tailscale_operator.egress_add(context, name, fqdn=fqdn, ip=ip, namespace=namespace)
     print(f"note: {tailscale_operator.EGRESS_COMMIT_NOTE}")

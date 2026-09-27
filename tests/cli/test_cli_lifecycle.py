@@ -18,7 +18,7 @@ def _run(argv):
 
 def _calls(log):
     return (
-        [l for l in log.read_text().splitlines() if l.startswith("call ")]
+        [line for line in log.read_text().splitlines() if line.startswith("call ")]
         if log.exists()
         else []
     )

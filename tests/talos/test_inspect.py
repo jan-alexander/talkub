@@ -1,3 +1,5 @@
+import base64
+
 from talkub.talos import inspect
 
 VERSION = """Client:
@@ -315,8 +317,6 @@ def test_redact_diff_env_value_forms():
     assert "crt: cert-value" in result  # certificates stay
     assert "key: <redacted>" in result  # nested inside the flow mapping
 
-
-import base64
 
 CRT = base64.b64encode(
     b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"

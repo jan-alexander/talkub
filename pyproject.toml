@@ -4,11 +4,7 @@ version = "0.1.0"
 description = "Admin CLI for Talos Linux clusters managed with ArgoCD, SOPS/age and Sealed Secrets"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "typer>=0.27",
-    "ruamel.yaml>=0.18",
-    "yamllint>=1.38.0",
-]
+dependencies = ["typer>=0.27", "ruamel.yaml>=0.18", "yamllint>=1.38.0"]
 
 [project.scripts]
 talkub = "talkub.cli.main:main"
@@ -21,15 +17,34 @@ build-backend = "hatchling.build"
 packages = ["src/talkub"]
 
 [dependency-groups]
-dev = [
-    "import-linter>=2.15",
-    "pytest>=8",
-    "ruff>=0.16.9",
-]
+dev = ["import-linter>=2.15", "pytest>=8", "ruff>=0.16.9"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E"]
+
+# "E",   # pycodestyle (Fehler)
+# "W",   # pycodestyle (Warnungen)
+# "F",   # Pyflakes (Logikfehler, ungenutzte Imports)
+# "I",   # isort (automatische Import-Sortierung)
+# "B",   # flake8-bugbear (findet echte Bugs und schlechte Praktiken)
+# "UP",  # pyupgrade (modernisiert alten Python-Code)
+# "C4",  # flake8-comprehensions (bessere Listen/Dict-Comprehensions)
+# "RUF", # Ruff-spezifische Regeln
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures reproduce real CLI output (aligned tables, long error messages) verbatim.
+"tests/**" = ["E501"]
 
 [tool.ruff.lint.flake8-bugbear]
 # Typer declares CLI parameters as call defaults; NodeOptions is a frozen dataclass.
-extend-immutable-calls = ["typer.Argument", "typer.Option", "talkub.talos.nodes.NodeOptions"]
+extend-immutable-calls = [
+  "typer.Argument",
+  "typer.Option",
+  "talkub.talos.nodes.NodeOptions",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -45,15 +60,15 @@ name = "Domain layers"
 type = "layers"
 containers = ["talkub"]
 layers = [
-    "cli",
-    "scaffold | overview",
-    "gitops | workstation",
-    "quality",
-    "helm | talos",
-    "argocd",
-    "kube",
-    "context",
-    "secrets",
-    "config",
-    "core",
+  "cli",
+  "scaffold | overview",
+  "gitops | workstation",
+  "quality",
+  "helm | talos",
+  "argocd",
+  "kube",
+  "context",
+  "secrets",
+  "config",
+  "core",
 ]
