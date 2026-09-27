@@ -185,9 +185,7 @@ from talkub.runner import Runner
 def need(*tools: str) -> pytest.MarkDecorator:
     """Skip a test when one of the external binaries is not installed."""
     missing = [tool for tool in tools if shutil.which(tool) is None]
-    return pytest.mark.skipif(
-        bool(missing), reason=f"missing tools: {', '.join(missing)}"
-    )
+    return pytest.mark.skipif(bool(missing), reason=f"missing tools: {', '.join(missing)}")
 
 
 @dataclass
@@ -220,9 +218,7 @@ class FakeRunner(Runner):
         self.calls.append(Call(list(argv), dict(env or {}), input, passthrough_stderr))
         if self.on_run is not None:
             self.on_run(list(argv))
-        return subprocess.CompletedProcess(
-            list(argv), 0, self.outputs.get(argv[0], b""), b""
-        )
+        return subprocess.CompletedProcess(list(argv), 0, self.outputs.get(argv[0], b""), b"")
 
     def call(self, argv, *, env=None, cwd=None):
         self.calls.append(Call(list(argv), dict(env or {})))
@@ -342,9 +338,7 @@ def repo_with_configs(keyed_repo):
         (keyed_repo.talosconfig, b"talos: marker\n"),
         (keyed_repo.kubeconfig, b"kube: marker\n"),
     ):
-        atomic_write(
-            path, ctx.sops.encrypt(text, filename=path.name, public_key=public)
-        )
+        atomic_write(path, ctx.sops.encrypt(text, filename=path.name, public_key=public))
     return keyed_repo
 ```
 
@@ -398,12 +392,7 @@ def test_run_raises_with_stderr_as_hint():
 
 
 def test_run_without_check_returns_returncode():
-    assert (
-        Runner()
-        .run([sys.executable, "-c", "raise SystemExit(4)"], check=False)
-        .returncode
-        == 4
-    )
+    assert Runner().run([sys.executable, "-c", "raise SystemExit(4)"], check=False).returncode == 4
 
 
 def test_run_child_does_not_inherit_key(monkeypatch):
@@ -506,9 +495,7 @@ def child_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
 def require_tool(name: str) -> str:
     path = shutil.which(name)
     if path is None:
-        raise ToolMissing(
-            f"required tool '{name}' not found in PATH", hint=INSTALL_HINTS.get(name)
-        )
+        raise ToolMissing(f"required tool '{name}' not found in PATH", hint=INSTALL_HINTS.get(name))
     return path
 
 
@@ -645,9 +632,7 @@ from talkub.repo import MARKER, ChartSpec, NodeSpec, Repo, Settings, find_repo
 
 def test_settings_roundtrip(tmp_path):
     settings = sample_settings()
-    settings.charts["argocd"] = ChartSpec(
-        "https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2"
-    )
+    settings.charts["argocd"] = ChartSpec("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2")
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert repo.load_settings() == settings
@@ -839,12 +824,9 @@ class Settings:
             "talosVersion": self.talos_version,
             "kubernetesVersion": self.kubernetes_version,
             "installImage": self.install_image,
-            "nodes": {
-                name: {"ip": n.ip, "role": n.role} for name, n in self.nodes.items()
-            },
+            "nodes": {name: {"ip": n.ip, "role": n.role} for name, n in self.nodes.items()},
             "charts": {
-                name: {"repo": c.repo, "chart": c.chart, "version": c.version}
-                for name, c in self.charts.items()
+                name: {"repo": c.repo, "chart": c.chart, "version": c.version} for name, c in self.charts.items()
             },
         }
 
@@ -892,9 +874,7 @@ class Settings:
                     version=str(spec["version"]),
                 )
             except (KeyError, TypeError):
-                raise ValidationError(
-                    f"{MARKER}: chart '{name}' needs repo, chart and version"
-                ) from None
+                raise ValidationError(f"{MARKER}: chart '{name}' needs repo, chart and version") from None
 
         return cls(
             name=text("name"),
@@ -979,8 +959,7 @@ class Repo:
         return sorted(
             path
             for path in self.root.rglob("*.sops.yaml")
-            if path.name != ".sops.yaml"
-            and ".git" not in path.relative_to(self.root).parts
+            if path.name != ".sops.yaml" and ".git" not in path.relative_to(self.root).parts
         )
 
 
@@ -1098,10 +1077,7 @@ SECRET = "AGE-SECRET-KEY-133FP6CADJCE6M9H6AUXY3NLXNX73NSSLQS0CHGVLPSVZKK87V80SPY
 
 
 def test_identities_dir_uses_xdg(tmp_path):
-    assert (
-        identities_dir({"XDG_CONFIG_HOME": str(tmp_path)})
-        == tmp_path / "talkub" / "identities"
-    )
+    assert identities_dir({"XDG_CONFIG_HOME": str(tmp_path)}) == tmp_path / "talkub" / "identities"
 
 
 def test_master_key_from_env_direct():
@@ -1144,18 +1120,14 @@ def test_identity_files_default_dir_skips_hidden(tmp_path):
     directory.mkdir(parents=True)
     (directory / "yubikey.txt").write_text("x")
     (directory / ".DS_Store").write_text("x")
-    assert identity_files({"XDG_CONFIG_HOME": str(tmp_path)}) == [
-        directory / "yubikey.txt"
-    ]
+    assert identity_files({"XDG_CONFIG_HOME": str(tmp_path)}) == [directory / "yubikey.txt"]
 
 
 def test_recipient_of_formats(tmp_path):
     keygen = tmp_path / "sw.txt"
     keygen.write_text("# created: x\n# public key: age1abc\nAGE-SECRET-KEY-1X\n")
     yubikey = tmp_path / "yk.txt"
-    yubikey.write_text(
-        "#       Serial: 1, Slot: 1\n#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"
-    )
+    yubikey.write_text("#       Serial: 1, Slot: 1\n#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n")
     assert recipient_of(keygen) == "age1abc"
     assert recipient_of(yubikey) == "age1yubikey1xyz"
 
@@ -1170,11 +1142,7 @@ def test_create_software_identity(tmp_path):
 
 
 def test_create_yubikey_identity_uses_plugin(tmp_path):
-    runner = FakeRunner(
-        outputs={
-            "age-plugin-yubikey": b"#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"
-        }
-    )
+    runner = FakeRunner(outputs={"age-plugin-yubikey": b"#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"})
     path, public = create_identity(runner, "yubikey", tmp_path)
     assert public == "age1yubikey1xyz"
     assert [c.argv for c in runner.calls] == [
@@ -1206,9 +1174,7 @@ def test_own_recipients_names_by_user_and_file(tmp_path):
     directory.mkdir(parents=True)
     (directory / "yubikey.txt").write_text("#    Recipient: age1yubikey1xyz\n")
     result = own_recipients({"XDG_CONFIG_HOME": str(tmp_path)}, user="jan.mock")
-    assert [(r.name, r.key) for r in result] == [
-        ("jan.mock-yubikey", "age1yubikey1xyz")
-    ]
+    assert [(r.name, r.key) for r in result] == [("jan.mock-yubikey", "age1yubikey1xyz")]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1252,9 +1218,7 @@ class Recipient:
 def validate_key(key: str) -> str:
     key = key.strip()
     if not _KEY.fullmatch(key):
-        raise ValidationError(
-            f"not an age recipient: {key!r}", hint="age public keys start with 'age1'"
-        )
+        raise ValidationError(f"not an age recipient: {key!r}", hint="age public keys start with 'age1'")
     return key
 
 
@@ -1332,13 +1296,9 @@ def master_key_from_env(env: Mapping[str, str]) -> str | None:
         return _first_secret(value, "SOPS_AGE_KEY")
     if path := env.get("SOPS_AGE_KEY_FILE"):
         try:
-            return _first_secret(
-                Path(path).expanduser().read_text(), "SOPS_AGE_KEY_FILE"
-            )
+            return _first_secret(Path(path).expanduser().read_text(), "SOPS_AGE_KEY_FILE")
         except OSError as err:
-            raise NoIdentity(
-                f"cannot read SOPS_AGE_KEY_FILE {path}: {err.strerror}"
-            ) from err
+            raise NoIdentity(f"cannot read SOPS_AGE_KEY_FILE {path}: {err.strerror}") from err
     return None
 
 
@@ -1348,16 +1308,12 @@ def identity_files(env: Mapping[str, str]) -> list[Path]:
         files = [Path(part).expanduser() for part in raw.split(os.pathsep) if part]
         missing = [str(f) for f in files if not f.is_file()]
         if missing:
-            raise NoIdentity(
-                f"TALKUB_IDENTITY points to missing file(s): {', '.join(missing)}"
-            )
+            raise NoIdentity(f"TALKUB_IDENTITY points to missing file(s): {', '.join(missing)}")
         return files
     directory = identities_dir(env)
     if not directory.is_dir():
         return []
-    return sorted(
-        p for p in directory.iterdir() if p.is_file() and not p.name.startswith(".")
-    )
+    return sorted(p for p in directory.iterdir() if p.is_file() and not p.name.startswith("."))
 
 
 def recipient_of(path: Path) -> str | None:
@@ -1368,20 +1324,14 @@ def recipient_of(path: Path) -> str | None:
     return None
 
 
-def create_identity(
-    runner: Runner, kind: str, directory: Path, name: str | None = None
-) -> tuple[Path, str]:
+def create_identity(runner: Runner, kind: str, directory: Path, name: str | None = None) -> tuple[Path, str]:
     if kind not in KINDS:
-        raise ValidationError(
-            f"unknown identity kind {kind!r}", hint=f"use one of: {', '.join(KINDS)}"
-        )
+        raise ValidationError(f"unknown identity kind {kind!r}", hint=f"use one of: {', '.join(KINDS)}")
     directory.mkdir(parents=True, exist_ok=True)
     os.chmod(directory, 0o700)
     path = directory / f"{name or kind}.txt"
     if path.exists():
-        raise ValidationError(
-            f"identity {path} already exists", hint="choose another --name"
-        )
+        raise ValidationError(f"identity {path} already exists", hint="choose another --name")
 
     if kind == "software":
         runner.run(["age-keygen", "-o", str(path)])
@@ -1389,9 +1339,7 @@ def create_identity(
         # Interactive: the plugin asks for slot, PIN and touch policy on the terminal.
         if runner.call(["age-plugin-yubikey", "--generate"]) != 0:
             raise CommandFailed("age-plugin-yubikey --generate failed")
-        atomic_write(
-            path, runner.run(["age-plugin-yubikey", "--identity"]).stdout, mode=0o600
-        )
+        atomic_write(path, runner.run(["age-plugin-yubikey", "--identity"]).stdout, mode=0o600)
     else:
         runner.run(
             [
@@ -1553,18 +1501,12 @@ class KeyPair:
 
 def generate(runner: Runner) -> KeyPair:
     output = runner.run(["age-keygen"]).stdout.decode()
-    secret = next(
-        line for line in output.splitlines() if line.startswith("AGE-SECRET-KEY-")
-    )
+    secret = next(line for line in output.splitlines() if line.startswith("AGE-SECRET-KEY-"))
     return KeyPair(secret=secret, public=public_key(runner, secret))
 
 
 def public_key(runner: Runner, secret: str) -> str:
-    return (
-        runner.run(["age-keygen", "-y"], input=(secret + "\n").encode())
-        .stdout.decode()
-        .strip()
-    )
+    return runner.run(["age-keygen", "-y"], input=(secret + "\n").encode()).stdout.decode().strip()
 
 
 def encrypt(runner: Runner, plaintext: bytes, recipients: Sequence[str]) -> bytes:
@@ -1648,12 +1590,8 @@ def _other_identity(tmp_path, name):
 
 
 def test_create_writes_key_files(empty_repo, software_identity):
-    secret = Keyring(empty_repo, Runner()).create(
-        [Recipient("me", software_identity[1])]
-    )
-    assert empty_repo.master_age.read_bytes().startswith(
-        b"-----BEGIN AGE ENCRYPTED FILE-----"
-    )
+    secret = Keyring(empty_repo, Runner()).create([Recipient("me", software_identity[1])])
+    assert empty_repo.master_age.read_bytes().startswith(b"-----BEGIN AGE ENCRYPTED FILE-----")
     assert empty_repo.master_pub.read_text().strip() == age.public_key(Runner(), secret)
     assert "# name: me" in empty_repo.recipients_file.read_text()
 
@@ -1672,25 +1610,18 @@ def test_create_twice_rejected(keyed_repo, software_identity):
 def test_env_master_key_wins_without_touching_master_age(keyed_repo):
     secret = Keyring(keyed_repo, Runner()).master_key()
     keyed_repo.master_age.unlink()
-    assert (
-        Keyring(keyed_repo, Runner(), env={"SOPS_AGE_KEY": secret}).master_key()
-        == secret
-    )
+    assert Keyring(keyed_repo, Runner(), env={"SOPS_AGE_KEY": secret}).master_key() == secret
 
 
 def test_talkub_identity_not_a_recipient(keyed_repo, tmp_path):
     stranger, _ = _other_identity(tmp_path, "stranger")
     with pytest.raises(DecryptFailed):
-        Keyring(
-            keyed_repo, Runner(), env={"TALKUB_IDENTITY": str(stranger)}
-        ).master_key()
+        Keyring(keyed_repo, Runner(), env={"TALKUB_IDENTITY": str(stranger)}).master_key()
 
 
 def test_no_identity(keyed_repo, tmp_path):
     with pytest.raises(NoIdentity):
-        Keyring(
-            keyed_repo, Runner(), env={"XDG_CONFIG_HOME": str(tmp_path / "empty")}
-        ).master_key()
+        Keyring(keyed_repo, Runner(), env={"XDG_CONFIG_HOME": str(tmp_path / "empty")}).master_key()
 
 
 def test_add_lets_new_admin_decrypt(keyed_repo, tmp_path):
@@ -1704,11 +1635,7 @@ def test_add_lets_new_admin_decrypt(keyed_repo, tmp_path):
 def test_add_duplicate_rejected(keyed_repo, software_identity):
     keyring = Keyring(keyed_repo, Runner())
     with pytest.raises(ValidationError):
-        keyring.add(
-            Recipient(
-                "me", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"
-            )
-        )
+        keyring.add(Recipient("me", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"))
     with pytest.raises(ValidationError):
         keyring.add(Recipient("other", software_identity[1]))
 
@@ -1767,9 +1694,7 @@ from talkub.runner import Runner
 
 
 class Keyring:
-    def __init__(
-        self, repo: Repo, runner: Runner, env: Mapping[str, str] | None = None
-    ) -> None:
+    def __init__(self, repo: Repo, runner: Runner, env: Mapping[str, str] | None = None) -> None:
         self.repo = repo
         self.runner = runner
         self.env = dict(os.environ if env is None else env)
@@ -1805,9 +1730,7 @@ class Keyring:
 
     def create(self, recipients: Sequence[Recipient]) -> str:
         if self.repo.master_age.exists():
-            raise ValidationError(
-                f"{self.repo.rel(self.repo.master_age)} already exists"
-            )
+            raise ValidationError(f"{self.repo.rel(self.repo.master_age)} already exists")
         if not recipients:
             raise ValidationError("at least one recipient is required")
         pair = age.generate(self.runner)
@@ -1822,9 +1745,7 @@ class Keyring:
             if existing.name == recipient.name:
                 raise ValidationError(f"recipient '{recipient.name}' already exists")
             if existing.key == recipient.key:
-                raise ValidationError(
-                    f"this key is already registered as '{existing.name}'"
-                )
+                raise ValidationError(f"this key is already registered as '{existing.name}'")
         self._write(self.master_key(), [*current, recipient])
 
     def remove(self, name: str) -> None:
@@ -1833,21 +1754,15 @@ class Keyring:
         if len(remaining) == len(current):
             raise ValidationError(f"no recipient named '{name}'")
         if not remaining:
-            raise ValidationError(
-                "refusing to remove the last recipient", hint="add another admin first"
-            )
+            raise ValidationError("refusing to remove the last recipient", hint="add another admin first")
         self._write(self.master_key(), remaining)
 
     def _write(self, secret: str, recipients: list[Recipient]) -> None:
-        ciphertext = age.encrypt(
-            self.runner, (secret + "\n").encode(), [r.key for r in recipients]
-        )
+        ciphertext = age.encrypt(self.runner, (secret + "\n").encode(), [r.key for r in recipients])
         # master.age first: if we stop in between, recipients.txt is merely stale
         # and re-running the same command fixes it.
         atomic_write(self.repo.master_age, ciphertext)
-        atomic_write(
-            self.repo.recipients_file, recipients_file.render(recipients).encode()
-        )
+        atomic_write(self.repo.recipients_file, recipients_file.render(recipients).encode())
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -1917,19 +1832,13 @@ def test_encrypt_needs_no_private_key(keyed_repo):
         raise AssertionError("encrypt must not resolve the master key")
 
     public = Context.open(keyed_repo).keyring.public_key()
-    assert Sops(Runner(), no_key).encrypt(
-        b"a: 1\n", filename="x.sops.yaml", public_key=public
-    )
+    assert Sops(Runner(), no_key).encrypt(b"a: 1\n", filename="x.sops.yaml", public_key=public)
 
 
 def test_decrypt_with_wrong_key(keyed_repo, tmp_path):
     ctx = Context.open(keyed_repo)
     path = tmp_path / "x.sops.yaml"
-    path.write_bytes(
-        ctx.sops.encrypt(
-            b"a: 1\n", filename=path.name, public_key=ctx.keyring.public_key()
-        )
-    )
+    path.write_bytes(ctx.sops.encrypt(b"a: 1\n", filename=path.name, public_key=ctx.keyring.public_key()))
     wrong = "AGE-SECRET-KEY-133FP6CADJCE6M9H6AUXY3NLXNX73NSSLQS0CHGVLPSVZKK87V80SPY0R56"
     with pytest.raises(DecryptFailed):
         Sops(Runner(), lambda: wrong).decrypt(path)
@@ -1937,9 +1846,7 @@ def test_decrypt_with_wrong_key(keyed_repo, tmp_path):
 
 def test_render_sops_config():
     text = render_sops_config("age1abc")
-    assert yamlio.load(text) == {
-        "creation_rules": [{"path_regex": r"\.sops\.yaml$", "age": "age1abc"}]
-    }
+    assert yamlio.load(text) == {"creation_rules": [{"path_regex": r"\.sops\.yaml$", "age": "age1abc"}]}
 ```
 
 `tests/test_ephemeral.py`:
@@ -2038,13 +1945,9 @@ class Sops:
 
     def decrypt(self, path: Path) -> bytes:
         try:
-            return self.runner.run(
-                ["sops", "decrypt", str(path)], env=self._key_env()
-            ).stdout
+            return self.runner.run(["sops", "decrypt", str(path)], env=self._key_env()).stdout
         except CommandFailed as err:
-            raise DecryptFailed(
-                f"sops could not decrypt {path}", hint=err.hint
-            ) from err
+            raise DecryptFailed(f"sops could not decrypt {path}", hint=err.hint) from err
 
     def encrypt(self, plaintext: bytes, *, filename: str, public_key: str) -> bytes:
         argv = [
@@ -2063,9 +1966,7 @@ class Sops:
         return self.runner.run(argv, input=plaintext).stdout
 
     def edit(self, path: Path, cwd: Path) -> int:
-        return self.runner.call(
-            ["sops", "edit", str(path)], env=self._key_env(), cwd=cwd
-        )
+        return self.runner.call(["sops", "edit", str(path)], env=self._key_env(), cwd=cwd)
 ```
 
 `src/talkub/ephemeral.py`:
@@ -2233,9 +2134,7 @@ def test_talosctl_gets_decrypted_config_and_verbatim_args(
     fake_bin("talosctl", REPORT)
     # Used by talkub to decrypt, but must not be visible to talosctl.
     monkeypatch.setenv("TALKUB_IDENTITY", str(software_identity[0]))
-    code = access.talosctl(
-        Context.open(repo_with_configs), ["get", "members", "--", "-x"]
-    )
+    code = access.talosctl(Context.open(repo_with_configs), ["get", "members", "--", "-x"])
     out = capfd.readouterr().out
     assert code == 5
     assert "args:get members -- -x" in out
@@ -2321,24 +2220,18 @@ def _existing(ctx: Context, path: Path, hint: str) -> Path:
 def talosctl(ctx: Context, args: Sequence[str]) -> int:
     source = _existing(ctx, ctx.repo.talosconfig, TALOSCONFIG_HINT)
     with decrypted(ctx.sops, {"talosconfig": source}) as paths:
-        return ctx.runner.call(
-            ["talosctl", *args], env={"TALOSCONFIG": str(paths["talosconfig"])}
-        )
+        return ctx.runner.call(["talosctl", *args], env={"TALOSCONFIG": str(paths["talosconfig"])})
 
 
 def kubectl(ctx: Context, args: Sequence[str]) -> int:
     source = _existing(ctx, ctx.repo.kubeconfig, KUBECONFIG_HINT)
     with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
-        return ctx.runner.call(
-            ["kubectl", *args], env={"KUBECONFIG": str(paths["kubeconfig"])}
-        )
+        return ctx.runner.call(["kubectl", *args], env={"KUBECONFIG": str(paths["kubeconfig"])})
 
 
 def shell(ctx: Context, program: str | None = None) -> int:
     if active := os.environ.get("TALKUB_SESSION"):
-        raise ValidationError(
-            f"already inside a talkub shell for '{active}'", hint="exit it first"
-        )
+        raise ValidationError(f"already inside a talkub shell for '{active}'", hint="exit it first")
     name = ctx.repo.load_settings().name
     files = {"talosconfig": _existing(ctx, ctx.repo.talosconfig, TALOSCONFIG_HINT)}
     if ctx.repo.kubeconfig.is_file():
@@ -2356,9 +2249,7 @@ def shell(ctx: Context, program: str | None = None) -> int:
             f"talkub: shell for '{name}' - credentials are removed on exit",
             file=sys.stderr,
         )
-        code = ctx.runner.call(
-            [program or os.environ.get("SHELL") or "/bin/sh"], env=env
-        )
+        code = ctx.runner.call([program or os.environ.get("SHELL") or "/bin/sh"], env=env)
     print("talkub: credentials removed", file=sys.stderr)
     return code
 ```
@@ -2444,9 +2335,7 @@ def test_parse_defaults_multidoc():
 
 
 def test_parse_defaults_legacy_v1alpha1():
-    assert gen.parse_defaults(LEGACY) == gen.Defaults(
-        "v1.9.0", "1.32.0", "ghcr.io/siderolabs/installer"
-    )
+    assert gen.parse_defaults(LEGACY) == gen.Defaults("v1.9.0", "1.32.0", "ghcr.io/siderolabs/installer")
 
 
 def test_parse_defaults_unknown_layout():
@@ -2486,10 +2375,7 @@ CHART_YAML = b"apiVersion: v2\nname: argo-cd\nversion: 10.9.2\nappVersion: v3.5.
 
 def test_latest_version_http_repo():
     runner = FakeRunner(outputs={"helm": CHART_YAML})
-    assert (
-        charts.latest_version(runner, "https://argoproj.github.io/argo-helm", "argo-cd")
-        == "10.9.2"
-    )
+    assert charts.latest_version(runner, "https://argoproj.github.io/argo-helm", "argo-cd") == "10.9.2"
     assert runner.calls[0].argv == [
         "helm",
         "show",
@@ -2574,9 +2460,7 @@ def parse_defaults(text: str) -> Defaults:
             installer = (doc.get("installer") or {}).get("image")
         elif kind == "KubeletConfig":
             kubelet = doc.get("image")
-        elif doc.get("version") == "v1alpha1" and isinstance(
-            doc.get("machine"), Mapping
-        ):
+        elif doc.get("version") == "v1alpha1" and isinstance(doc.get("machine"), Mapping):
             machine = doc["machine"]
             installer = installer or (machine.get("install") or {}).get("image")
             kubelet = kubelet or (machine.get("kubelet") or {}).get("image")
@@ -2594,9 +2478,7 @@ def parse_defaults(text: str) -> Defaults:
     )
 
 
-def detect_defaults(
-    runner: Runner, name: str, endpoint: str, secrets: Path
-) -> Defaults:
+def detect_defaults(runner: Runner, name: str, endpoint: str, secrets: Path) -> Defaults:
     argv = [
         "talosctl",
         "gen",
@@ -2641,9 +2523,7 @@ def gen_talosconfig(
             str(path),
         ]
     )
-    runner.run(
-        ["talosctl", "--talosconfig", str(path), "config", "endpoint", *endpoints]
-    )
+    runner.run(["talosctl", "--talosconfig", str(path), "config", "endpoint", *endpoints])
     runner.run(["talosctl", "--talosconfig", str(path), "config", "node", node])
     return path
 ```
@@ -2675,9 +2555,7 @@ def latest_version(runner: Runner, repo: str, chart: str) -> str:
 
 def resolve_defaults(runner: Runner) -> dict[str, ChartSpec]:
     return {
-        key: ChartSpec(
-            repo=repo, chart=chart, version=latest_version(runner, repo, chart)
-        )
+        key: ChartSpec(repo=repo, chart=chart, version=latest_version(runner, repo, chart))
         for key, (repo, chart) in DEFAULT_CHARTS.items()
     }
 ```
@@ -2781,18 +2659,14 @@ def test_init_creates_complete_repo(tmp_path, software_identity, fake_bin):
     assert root_app["spec"]["source"]["repoURL"] == "https://git.example.com/demo.git"
     argocd_app = yamlio.load((repo.root / "gitops/apps/argocd.yaml").read_text())
     assert argocd_app["spec"]["sources"][0]["targetRevision"] == "1.2.3"
-    assert argocd_app["spec"]["sources"][0]["helm"]["valueFiles"] == [
-        "$values/gitops/values/argocd.yaml"
-    ]
+    assert argocd_app["spec"]["sources"][0]["helm"]["valueFiles"] == ["$values/gitops/values/argocd.yaml"]
 
     ctx = Context.open(repo)
     talosconfig = yamlio.load(ctx.sops.decrypt(repo.talosconfig).decode())
     assert list(talosconfig["contexts"]["demo"]["endpoints"]) == ["10.0.0.10"]
 
 
-def test_generated_patches_validate_with_talosctl(
-    tmp_path, software_identity, fake_bin
-):
+def test_generated_patches_validate_with_talosctl(tmp_path, software_identity, fake_bin):
     fake_bin("helm", HELM)
     repo = init_cluster(_request(tmp_path / "demo", software_identity[1]), Runner())
     ctx = Context.open(repo)
@@ -2856,9 +2730,7 @@ def test_failed_helm_lookup_writes_nothing(tmp_path, software_identity, fake_bin
     assert not target.exists()
 
 
-def test_failure_after_writing_cleans_up_and_can_be_retried(
-    tmp_path, software_identity, fake_bin
-):
+def test_failure_after_writing_cleans_up_and_can_be_retried(tmp_path, software_identity, fake_bin):
     fake_bin("helm", HELM)
     # Fails after keys/ has been written, so cleanup is really exercised.
     broken_talosctl = fake_bin("talosctl", "echo 'boom' >&2; exit 1\n")
@@ -3100,9 +2972,7 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
     target = request.target
     existed = target.exists()
     if existed and {p.name for p in target.iterdir()} - ALLOWED_EXISTING:
-        raise ValidationError(
-            f"{target} is not empty", hint="use a new directory or a fresh git clone"
-        )
+        raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
 
     # Network lookups first: nothing is written if they fail.
     chart_specs = charts.resolve_defaults(runner)
@@ -3121,9 +2991,7 @@ def _validate(request: InitRequest) -> None:
             hint="lowercase letters, digits and '-'",
         )
     if not request.endpoint.startswith("https://"):
-        raise ValidationError(
-            "endpoint must start with https://", hint="e.g. https://10.0.0.10:6443"
-        )
+        raise ValidationError("endpoint must start with https://", hint="e.g. https://10.0.0.10:6443")
     if not any(n.role == "controlplane" for n in request.nodes.values()):
         raise ValidationError("at least one controlplane node is required")
     if not request.recipients:
@@ -3150,9 +3018,7 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
     sops = Sops(runner, keyring.master_key)
     atomic_write(repo.sops_config, render_sops_config(public).encode())
 
-    controlplane_ips = [
-        n.ip for n in request.nodes.values() if n.role == "controlplane"
-    ]
+    controlplane_ips = [n.ip for n in request.nodes.values() if n.role == "controlplane"]
     with private_tempdir() as work:
         secrets = gen.gen_secrets(runner, work)
         defaults = gen.detect_defaults(runner, request.name, request.endpoint, secrets)
@@ -3171,9 +3037,7 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
         ):
             atomic_write(
                 target,
-                sops.encrypt(
-                    source.read_bytes(), filename=target.name, public_key=public
-                ),
+                sops.encrypt(source.read_bytes(), filename=target.name, public_key=public),
             )
 
     settings = Settings(
@@ -3186,13 +3050,9 @@ def _populate(repo: Repo, request: InitRequest, chart_specs, runner: Runner) -> 
         charts=chart_specs,
     )
     repo.write_settings(settings)
-    _write_tree(
-        TEMPLATES / "repo", repo.root, _template_values(settings, request.git_url)
-    )
+    _write_tree(TEMPLATES / "repo", repo.root, _template_values(settings, request.git_url))
     for node in request.nodes:
-        atomic_write(
-            repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node).encode()
-        )
+        atomic_write(repo.talos_dir / "nodes" / f"{node}.yaml", render_node_patch(node).encode())
     return repo
 
 
@@ -3316,30 +3176,21 @@ def test_clean_repo_has_only_single_recipient_warning(repo_with_configs):
 
 def test_two_recipients_no_warning(repo_with_configs):
     Keyring(repo_with_configs, Runner()).add(
-        Recipient(
-            "backup", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq"
-        )
+        Recipient("backup", "age1qk2vu7xxezxcfhyhasnx8c7z5j479xwevu5tqq8tc2fjqjzdegjqvepymq")
     )
     assert _messages(repo_with_configs, "warning") == []
 
 
 def test_unencrypted_sops_file(repo_with_configs):
-    (repo_with_configs.root / "talos" / "extra.sops.yaml").write_text(
-        "password: hunter2\n"
-    )
+    (repo_with_configs.root / "talos" / "extra.sops.yaml").write_text("password: hunter2\n")
     assert any("extra.sops.yaml" in m for m in _messages(repo_with_configs, "error"))
 
 
 def test_plain_secret_in_gitops(repo_with_configs):
     path = repo_with_configs.gitops_dir / "manifests" / "app" / "secret.yaml"
     path.parent.mkdir(parents=True)
-    path.write_text(
-        "apiVersion: v1\nkind: ConfigMap\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: x\n"
-    )
-    assert any(
-        "secret.yaml" in m and "Secret" in m
-        for m in _messages(repo_with_configs, "error")
-    )
+    path.write_text("apiVersion: v1\nkind: ConfigMap\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: x\n")
+    assert any("secret.yaml" in m and "Secret" in m for m in _messages(repo_with_configs, "error"))
 
 
 def test_age_secret_key_anywhere(repo_with_configs):
@@ -3349,9 +3200,7 @@ def test_age_secret_key_anywhere(repo_with_configs):
 
 def test_known_plaintext_names(repo_with_configs):
     (repo_with_configs.root / "kubernetes" / "kubeconfig").write_text("x")
-    assert any(
-        "kubernetes/kubeconfig" in m for m in _messages(repo_with_configs, "error")
-    )
+    assert any("kubernetes/kubeconfig" in m for m in _messages(repo_with_configs, "error"))
 
 
 def test_interrupted_rotation_warned(repo_with_configs):
@@ -3396,14 +3245,10 @@ def rotate(self, sops: Sops) -> None:
 
     atomic_write(
         pending,
-        age.encrypt(
-            self.runner, (new.secret + "\n").encode(), [r.key for r in recipients]
-        ),
+        age.encrypt(self.runner, (new.secret + "\n").encode(), [r.key for r in recipients]),
     )
     for path, plaintext in plaintexts.items():
-        atomic_write(
-            path, sops.encrypt(plaintext, filename=path.name, public_key=new.public)
-        )
+        atomic_write(path, sops.encrypt(plaintext, filename=path.name, public_key=new.public))
     atomic_write(self.repo.master_pub, (new.public + "\n").encode())
     atomic_write(self.repo.sops_config, render_sops_config(new.public).encode())
     os.replace(pending, self.repo.master_age)
@@ -3440,11 +3285,7 @@ class Finding:
 
 
 def _repo_files(repo: Repo) -> list[Path]:
-    return [
-        path
-        for path in repo.root.rglob("*")
-        if path.is_file() and ".git" not in path.relative_to(repo.root).parts
-    ]
+    return [path for path in repo.root.rglob("*") if path.is_file() and ".git" not in path.relative_to(repo.root).parts]
 
 
 def run_checks(repo: Repo) -> list[Finding]:
@@ -3477,15 +3318,11 @@ def run_checks(repo: Repo) -> list[Finding]:
 
     for path in _repo_files(repo):
         if b"AGE-SECRET-KEY-" in path.read_bytes():
-            findings.append(
-                Finding("error", f"{repo.rel(path)} contains an age private key")
-            )
+            findings.append(Finding("error", f"{repo.rel(path)} contains an age private key"))
 
     for rel in PLAINTEXT_NAMES:
         if (repo.root / rel).exists():
-            findings.append(
-                Finding("error", f"{rel} is plaintext and must not be in the repo")
-            )
+            findings.append(Finding("error", f"{rel} is plaintext and must not be in the repo"))
 
     try:
         count = len(recipients_file.parse(repo.recipients_file.read_text()))
@@ -3501,11 +3338,7 @@ def run_checks(repo: Repo) -> list[Finding]:
             )
 
     if repo.master_next_age.exists():
-        findings.append(
-            Finding(
-                "warning", "keys/master.next.age exists: a key rotation was interrupted"
-            )
-        )
+        findings.append(Finding("warning", "keys/master.next.age exists: a key rotation was interrupted"))
 
     return findings
 ```
@@ -3567,13 +3400,9 @@ def test_split_globals():
 
 
 @pytest.mark.parametrize("alias", ["t", "talosctl"])
-def test_talosctl_alias_passes_everything_verbatim(
-    repo_with_configs, fake_bin, capfd, alias
-):
+def test_talosctl_alias_passes_everything_verbatim(repo_with_configs, fake_bin, capfd, alias):
     fake_bin("talosctl", ECHO_ARGS)
-    code = _run(
-        ["--repo", str(repo_with_configs.root), alias, "--help", "get", "--", "x"]
-    )
+    code = _run(["--repo", str(repo_with_configs.root), alias, "--help", "get", "--", "x"])
     assert code == 3
     assert "args:--help get -- x" in capfd.readouterr().out
 
@@ -3635,12 +3464,7 @@ def test_sops_decrypt_to_stdout(repo_with_configs, capfd):
 
 def test_shell_command(repo_with_configs, fake_bin, capfd):
     program = fake_bin("fakeshell", "printf 'session:%s\\n' \"$TALKUB_SESSION\"\n")
-    assert (
-        _run(
-            ["--repo", str(repo_with_configs.root), "shell", "--program", str(program)]
-        )
-        == 0
-    )
+    assert _run(["--repo", str(repo_with_configs.root), "shell", "--program", str(program)]) == 0
     assert "session:test" in capfd.readouterr().out
 ```
 
@@ -3723,9 +3547,7 @@ def register(app: typer.Typer) -> None:
     @app.command("shell")
     def shell_cmd(
         ctx: typer.Context,
-        program: str = typer.Option(
-            None, "--program", help="Shell to start (default: $SHELL)."
-        ),
+        program: str = typer.Option(None, "--program", help="Shell to start (default: $SHELL)."),
     ) -> None:
         """Start a subshell with TALOSCONFIG and KUBECONFIG set; removed on exit."""
         raise typer.Exit(access.shell(ctx.obj.context(), program))
@@ -3743,9 +3565,7 @@ from pathlib import Path
 
 import typer
 
-app = typer.Typer(
-    help="Edit or decrypt SOPS files with the cluster master key.", no_args_is_help=True
-)
+app = typer.Typer(help="Edit or decrypt SOPS files with the cluster master key.", no_args_is_help=True)
 
 
 @app.command("edit")
@@ -3798,13 +3618,9 @@ def _version(value: bool) -> None:
 @app.callback()
 def _globals(
     ctx: typer.Context,
-    repo: Path = typer.Option(
-        None, "--repo", help="Cluster repo (default: search upwards for .talkub.yaml)."
-    ),
+    repo: Path = typer.Option(None, "--repo", help="Cluster repo (default: search upwards for .talkub.yaml)."),
     debug: bool = typer.Option(False, "--debug", help="Show tracebacks on errors."),
-    version: bool = typer.Option(
-        False, "--version", callback=_version, is_eager=True, help="Show the version."
-    ),
+    version: bool = typer.Option(False, "--version", callback=_version, is_eager=True, help="Show the version."),
 ) -> None:
     ctx.obj = State(repo_path=repo, debug=debug)
 
@@ -3924,9 +3740,7 @@ def test_identity_new_rejects_two_kinds(capfd):
 
 
 @need("age", "age-keygen", "sops", "talosctl")
-def test_init_then_admin_and_check(
-    tmp_path, software_identity, fake_bin, capfd, monkeypatch
-):
+def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd, monkeypatch):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     code = _run(
@@ -4021,35 +3835,21 @@ from talkub.repo import NodeSpec
 from talkub.runner import Runner
 from talkub.scaffold import InitRequest, init_cluster
 
-identity_app = typer.Typer(
-    help="Manage your personal age identities.", no_args_is_help=True
-)
+identity_app = typer.Typer(help="Manage your personal age identities.", no_args_is_help=True)
 
 
 @identity_app.command("new")
 def identity_new(
-    software: bool = typer.Option(
-        False, "--software", help="Plain age key file (default)."
-    ),
-    yubikey: bool = typer.Option(
-        False, "--yubikey", help="YubiKey via age-plugin-yubikey."
-    ),
-    se: bool = typer.Option(
-        False, "--se", help="macOS Secure Enclave via age-plugin-se."
-    ),
+    software: bool = typer.Option(False, "--software", help="Plain age key file (default)."),
+    yubikey: bool = typer.Option(False, "--yubikey", help="YubiKey via age-plugin-yubikey."),
+    se: bool = typer.Option(False, "--se", help="macOS Secure Enclave via age-plugin-se."),
     name: str = typer.Option(None, "--name", help="File name (default: the kind)."),
 ) -> None:
     """Create an identity in ~/.config/talkub/identities and print its public key."""
-    chosen = [
-        kind
-        for kind, flag in (("software", software), ("yubikey", yubikey), ("se", se))
-        if flag
-    ]
+    chosen = [kind for kind, flag in (("software", software), ("yubikey", yubikey), ("se", se)) if flag]
     if len(chosen) > 1:
         raise ValidationError("choose only one of --software, --yubikey, --se")
-    path, public = create_identity(
-        Runner(), (chosen or ["software"])[0], identities_dir(os.environ), name
-    )
+    path, public = create_identity(Runner(), (chosen or ["software"])[0], identities_dir(os.environ), name)
     print(f"identity: {path}")
     print(f"public key: {public}")
     print("Share the public key with an admin: talkub admin add <key> --name <you>")
@@ -4058,26 +3858,16 @@ def identity_new(
 def _parse_node(value: str) -> tuple[str, NodeSpec]:
     name, sep, ip = value.partition("=")
     if not sep or not name or not ip:
-        raise ValidationError(
-            f"invalid --node {value!r}", hint="use name=ip, e.g. cp-01=10.0.0.10"
-        )
+        raise ValidationError(f"invalid --node {value!r}", hint="use name=ip, e.g. cp-01=10.0.0.10")
     return name, NodeSpec(ip=ip)
 
 
 def init(
     name: str = typer.Argument(..., help="Cluster name; also the directory name."),
-    endpoint: str = typer.Option(
-        ..., "--endpoint", help="Kubernetes API endpoint, e.g. https://10.0.0.10:6443"
-    ),
-    node: list[str] = typer.Option(
-        ..., "--node", help="Control plane node as name=ip (repeatable)."
-    ),
-    git_url: str = typer.Option(
-        ..., "--git-url", help="Git URL ArgoCD pulls this repo from."
-    ),
-    directory: Path = typer.Option(
-        None, "--dir", help="Target directory (default: ./<name>)."
-    ),
+    endpoint: str = typer.Option(..., "--endpoint", help="Kubernetes API endpoint, e.g. https://10.0.0.10:6443"),
+    node: list[str] = typer.Option(..., "--node", help="Control plane node as name=ip (repeatable)."),
+    git_url: str = typer.Option(..., "--git-url", help="Git URL ArgoCD pulls this repo from."),
+    directory: Path = typer.Option(None, "--dir", help="Target directory (default: ./<name>)."),
 ) -> None:
     """Create a new cluster repo with keys, Talos secrets and the GitOps skeleton."""
     nodes = dict(_parse_node(value) for value in node)
@@ -4091,9 +3881,7 @@ def init(
     )
     repo = init_cluster(request, Runner())
     print(f"created {repo.root}")
-    print(
-        "next: add a second admin or backup key (talkub admin add), then git add/commit"
-    )
+    print("next: add a second admin or backup key (talkub admin add), then git add/commit")
 ```
 
 `src/talkub/cli/admin.py`:
@@ -4107,9 +3895,7 @@ import typer
 
 from talkub.recipients import Recipient, validate_key, validate_name
 
-app = typer.Typer(
-    help="Manage who can decrypt the cluster master key.", no_args_is_help=True
-)
+app = typer.Typer(help="Manage who can decrypt the cluster master key.", no_args_is_help=True)
 
 
 @app.command("add")
@@ -4125,14 +3911,10 @@ def add(
 
 
 @app.command("remove")
-def remove(
-    ctx: typer.Context, name: str = typer.Argument(..., help="Admin name.")
-) -> None:
+def remove(ctx: typer.Context, name: str = typer.Argument(..., help="Admin name.")) -> None:
     """Remove a recipient and re-encrypt keys/master.age."""
     ctx.obj.context().keyring.remove(name)
-    print(
-        f"removed {name}. They may still know the old master key: run `talkub keys rotate`."
-    )
+    print(f"removed {name}. They may still know the old master key: run `talkub keys rotate`.")
 
 
 @app.command("list")
@@ -4165,9 +3947,7 @@ def rotate(
     """Create a new master key and re-encrypt every *.sops.yaml."""
     context = ctx.obj.context()
     count = len(context.repo.sops_files())
-    if not yes and not typer.confirm(
-        f"Rotate the master key and re-encrypt {count} file(s)?"
-    ):
+    if not yes and not typer.confirm(f"Rotate the master key and re-encrypt {count} file(s)?"):
         raise typer.Exit(1)
     context.keyring.rotate(context.sops)
     print(f"rotated; re-encrypted {count} file(s). Commit all changes together.")
