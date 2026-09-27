@@ -46,7 +46,7 @@ def test_replace_os_ca_against_real_bundle(tmp_path):
     original_lines = original.decode().splitlines()
     out_lines = out.decode().splitlines()
     assert len(original_lines) == len(out_lines)
-    changed = [i for i, (a, b) in enumerate(zip(original_lines, out_lines)) if a != b]
+    changed = [i for i, (a, b) in enumerate(zip(original_lines, out_lines, strict=False)) if a != b]
     assert len(changed) == 2
     assert out_lines[changed[0]].strip() == "crt: NEWCRT"
     assert out_lines[changed[1]].strip() == "key: NEWKEY"

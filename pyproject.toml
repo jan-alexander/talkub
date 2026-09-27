@@ -23,7 +23,7 @@ dev = ["import-linter>=2.15", "pytest>=8", "ruff>=0.16.9"]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "W"]
+select = ["E", "W", "F", "I", "B"]
 
 # "E",   # pycodestyle (Fehler)
 # "W",   # pycodestyle (Warnungen)
