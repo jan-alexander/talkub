@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import io
 import json
@@ -13,7 +14,7 @@ from datetime import UTC, datetime
 import pytest
 from helpers import need
 
-from talkub.config import Shortcut
+from talkub.config import Shortcut, user
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.runner import Runner
@@ -352,7 +353,8 @@ def test_unknown_shortcut_lists_known(ctx):
 def test_unknown_shortcut_without_any_defined(repo_with_configs):
     with pytest.raises(ValidationError) as exc:
         shortcuts.run(Context.open(repo_with_configs), "nope", [])
-    assert exc.value.hint == "define shortcuts in .talkub.yaml"
+    where = user.display_path(user.global_shortcuts_file())
+    assert exc.value.hint == f"define shortcuts in .talkub.yaml or {where}"
 
 
 def test_run_routes_k_to_kubectl_with_extra_args(ctx, spy):
@@ -385,10 +387,10 @@ def test_port_forward_argv(ctx, spy):
 
 
 def test_listing(ctx):
-    lines = shortcuts.listing(ctx.repo.load_settings())
+    lines = shortcuts.listing(shortcuts.available(ctx.repo))
     assert len(lines) == len(SHORTCUTS)
     creds = next(line for line in lines if line.startswith("creds"))
-    assert creds.split() == ["creds", "secret", "db", "password"]
+    assert creds.split() == ["creds", "secret", "db", "password", "project"]
 
 
 def test_secret_counts_characters_not_bytes(ctx, spy, detached, capfd):
@@ -418,3 +420,90 @@ def test_secret_clearer_failure_only_warns(ctx, spy, capfd, monkeypatch):
     out, err = capfd.readouterr()
     assert "warning: the clipboard will not be cleared automatically" in err
     assert "copied creds" in out
+
+
+NODES = Shortcut(name="nodes", kind="run", description="all nodes", argv=("k", "get", "nodes"))
+ALL_PODS = Shortcut(name="pods", kind="run", argv=("k", "get", "pods", "-A"))
+
+
+def test_effective_shortcuts_project_hides_global():
+    project = {"pods": SHORTCUTS["pods"], "creds": SHORTCUTS["creds"]}
+    merged = shortcuts.effective_shortcuts(project, {"pods": ALL_PODS, "nodes": NODES})
+    assert merged == {
+        "pods": (SHORTCUTS["pods"], "project-overrides-global"),
+        "creds": (SHORTCUTS["creds"], "project"),
+        "nodes": (NODES, "global"),
+    }
+
+
+def test_listing_shows_origin():
+    merged = shortcuts.effective_shortcuts({"pods": SHORTCUTS["pods"]}, {"pods": ALL_PODS, "nodes": NODES})
+    assert [line.split() for line in shortcuts.listing(merged)] == [
+        ["nodes", "run", "all", "nodes", "global"],
+        ["pods", "run", "project", "(overrides", "global)"],
+    ]
+    assert shortcuts.listing({}) == []
+
+
+def test_global_shortcut_runs_against_the_project_cluster(ctx, spy):
+    user.save_global_shortcut(NODES)
+    kubectl = spy("kubectl")
+    assert shortcuts.run(ctx, "nodes", ["-o", "wide"]) == 0
+    [call] = kubectl.calls
+    assert call["args"] == ["get", "nodes", "-o", "wide"]
+    assert call["kubeconfig"]
+
+
+def test_project_shortcut_wins_over_global(ctx, spy):
+    user.save_global_shortcut(ALL_PODS)
+    kubectl = spy("kubectl")
+    shortcuts.run(ctx, "pods", [])
+    assert kubectl.argvs == [["get", "pods"]]
+
+
+def test_unknown_shortcut_lists_global_names_too(ctx):
+    user.save_global_shortcut(NODES)
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.run(ctx, "nope", [])
+    assert "nodes" in exc.value.hint and "creds" in exc.value.hint
+
+
+def test_save_global_moves_the_shortcut(ctx):
+    before = ctx.repo.load_settings()
+    path = shortcuts.save_global(ctx.repo, "pods")
+    assert path == user.global_shortcuts_file()
+    assert user.load_global_shortcuts() == {"pods": SHORTCUTS["pods"]}
+    remaining = {name: s for name, s in before.shortcuts.items() if name != "pods"}
+    assert ctx.repo.load_settings() == dataclasses.replace(before, shortcuts=remaining)
+
+
+def test_save_global_unknown_name(ctx):
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.save_global(ctx.repo, "nope")
+    assert str(exc.value) == "no shortcut 'nope' in .talkub.yaml"
+    assert "pods" in exc.value.hint
+
+
+def test_save_global_name_that_is_only_global(ctx):
+    user.save_global_shortcut(NODES)
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.save_global(ctx.repo, "nodes")
+    assert str(exc.value) == "nodes is already a global shortcut"
+
+
+def test_save_global_conflict_without_force_changes_nothing(ctx):
+    user.save_global_shortcut(ALL_PODS)
+    project_before = ctx.repo.settings_file.read_bytes()
+    global_before = user.global_shortcuts_file().read_bytes()
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.save_global(ctx.repo, "pods")
+    assert exc.value.hint == "--force replaces it"
+    assert ctx.repo.settings_file.read_bytes() == project_before
+    assert user.global_shortcuts_file().read_bytes() == global_before
+
+
+def test_save_global_force_replaces(ctx):
+    user.save_global_shortcut(ALL_PODS)
+    shortcuts.save_global(ctx.repo, "pods", force=True)
+    assert user.load_global_shortcuts() == {"pods": SHORTCUTS["pods"]}
+    assert "pods" not in ctx.repo.load_settings().shortcuts

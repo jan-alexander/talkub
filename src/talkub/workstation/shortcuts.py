@@ -1,4 +1,4 @@
-"""Run the shortcuts defined in .talkub.yaml (`talkub run <name>`).
+"""Run the shortcuts defined in .talkub.yaml and in the global pool (`talkub run <name>`).
 
 A secret's value is decoded in memory only: it goes to the clipboard tool on stdin (or to stdout
 with --print) and never into argv, env, the terminal or a file.
@@ -11,10 +11,13 @@ import binascii
 import json
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
 
-from talkub.config import MARKER, Settings, Shortcut
+from talkub.config import MARKER, Repo, Shortcut
+from talkub.config.user import display_path, global_shortcuts_file, load_global_shortcuts, save_global_shortcut
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, TalkubError, ValidationError
 from talkub.kube.session import KubeSession, kube_session
@@ -30,16 +33,61 @@ POD_START_TIMEOUT = 300.0  # until the job's pod exists and is no longer Pending
 JOB_SETTLE_TIMEOUT = 60.0  # after the logs end, until the job reports Complete or Failed
 
 
-def listing(settings: Settings) -> list[str]:
-    """One aligned line per shortcut: name, kind, description."""
-    if not settings.shortcuts:
+Origin = Literal["project", "global", "project-overrides-global"]
+
+_ORIGIN_LABELS: dict[str, str] = {
+    "project": "project",
+    "global": "global",
+    "project-overrides-global": "project (overrides global)",
+}
+
+
+def effective_shortcuts(
+    project: Mapping[str, Shortcut],
+    global_: Mapping[str, Shortcut],
+) -> dict[str, tuple[Shortcut, Origin]]:
+    """All shortcuts by name with where they come from; a project shortcut hides a global one."""
+    merged: dict[str, tuple[Shortcut, Origin]] = {name: (s, "global") for name, s in global_.items()}
+    for name, s in project.items():
+        merged[name] = (s, "project-overrides-global" if name in global_ else "project")
+    return merged
+
+
+def available(repo: Repo) -> dict[str, tuple[Shortcut, Origin]]:
+    return effective_shortcuts(repo.load_settings().shortcuts, load_global_shortcuts())
+
+
+def _sources() -> str:
+    return f"{MARKER} or {display_path(global_shortcuts_file())}"
+
+
+def listing(entries: Mapping[str, tuple[Shortcut, Origin]]) -> list[str]:
+    """One aligned line per shortcut: name, kind, description, origin."""
+    if not entries:
         return []
-    width = max(len(name) for name in settings.shortcuts)
-    kind_width = max(len(s.kind) for s in settings.shortcuts.values())
+    width = max(len(name) for name in entries)
+    kind_width = max(len(s.kind) for s, _ in entries.values())
+    text_width = max(len(s.description or "") for s, _ in entries.values())
     return [
-        f"{name:<{width}}  {s.kind:<{kind_width}}  {s.description or ''}".rstrip()
-        for name, s in sorted(settings.shortcuts.items())
+        f"{name:<{width}}  {s.kind:<{kind_width}}  {s.description or '':<{text_width}}  {_ORIGIN_LABELS[origin]}"
+        for name, (s, origin) in sorted(entries.items())
     ]
+
+
+def save_global(repo: Repo, name: str, *, force: bool = False) -> Path:
+    """Move shortcut `name` from .talkub.yaml into the global pool. The pool is written first, so
+    an interruption leaves the shortcut in both places rather than in neither."""
+    settings = repo.load_settings()
+    shortcut = settings.shortcuts.get(name)
+    if shortcut is None:
+        if name in load_global_shortcuts():
+            raise ValidationError(f"{name} is already a global shortcut")
+        known = ", ".join(sorted(settings.shortcuts)) or "none"
+        raise ValidationError(f"no shortcut {name!r} in {MARKER}", hint=f"project shortcuts: {known}")
+    path = save_global_shortcut(shortcut, force=force)
+    settings.shortcuts = {key: s for key, s in settings.shortcuts.items() if key != name}
+    repo.write_settings(settings)
+    return path
 
 
 def job_name(cronjob: str, now: datetime) -> str:
@@ -102,12 +150,12 @@ def run(
     print_value: bool = False,
     follow: bool = False,
 ) -> int:
-    settings = ctx.repo.load_settings()
-    shortcut = settings.shortcuts.get(name)
-    if shortcut is None:
-        known = ", ".join(sorted(settings.shortcuts))
-        hint = f"known: {known}" if known else f"define shortcuts in {MARKER}"
+    entries = available(ctx.repo)
+    if name not in entries:
+        known = ", ".join(sorted(entries))
+        hint = f"known: {known}" if known else f"define shortcuts in {_sources()}"
         raise ValidationError(f"unknown shortcut {name!r}", hint=hint)
+    shortcut, _ = entries[name]
     if extra and shortcut.kind != "run":
         raise ValidationError(f"shortcut {name} ({shortcut.kind}) takes no extra arguments")
     if print_value and shortcut.kind != "secret":
