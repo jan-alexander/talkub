@@ -19,6 +19,10 @@ packages = ["src/talkub"]
 [dependency-groups]
 dev = ["import-linter>=2.15", "pytest>=8", "ruff>=0.16.9"]
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
 [tool.ruff]
 line-length = 120
 
