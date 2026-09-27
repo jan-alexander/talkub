@@ -76,6 +76,20 @@ def test_spec_from_foreign_documents():
     assert custom is not None and not custom.selector.verifiable
 
 
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {"kind": "UserVolumeConfig", "name": "d", "provisioning": "not-a-mapping"},
+        {"kind": "UserVolumeConfig", "name": "d", "provisioning": {"diskSelector": "not-a-mapping"}},
+        {"kind": "UserVolumeConfig", "name": "d", "filesystem": "xfs"},
+    ],
+)
+def test_spec_from_document_tolerates_malformed_nested_fields(doc):
+    """Node patches are hand-editable; a nested field that is not a mapping must not crash."""
+    spec = spec_from_document(doc)
+    assert spec == VolumeSpec("d", Kind.PARTITION, None, filesystem="xfs")
+
+
 @need("talosctl")
 def test_documents_pass_talosctl_validate(tmp_path):
     import subprocess

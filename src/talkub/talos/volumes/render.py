@@ -58,6 +58,12 @@ def _size(value: object) -> Size | None:
         return None
 
 
+def _mapping(value: object) -> Mapping:
+    """`value` if it is a mapping, else empty: node patches are hand-editable, so a nested field
+    that is not a mapping (e.g. `provisioning: not-a-mapping`) must not crash, just yield defaults."""
+    return value if isinstance(value, Mapping) else {}
+
+
 def spec_from_document(doc: object) -> VolumeSpec | None:
     """VolumeSpec for a volume document already in the patch (to simulate it); None otherwise."""
     if not isinstance(doc, Mapping):
@@ -71,8 +77,8 @@ def spec_from_document(doc: object) -> VolumeSpec | None:
         kind = Kind.DISK if doc.get("volumeType") == "disk" else Kind.PARTITION
     else:
         return None
-    provisioning = doc.get("provisioning") or {}
-    match = (provisioning.get("diskSelector") or {}).get("match")
+    provisioning = _mapping(doc.get("provisioning"))
+    match = _mapping(provisioning.get("diskSelector")).get("match")
     return VolumeSpec(
         name=name,
         kind=kind,
@@ -80,6 +86,6 @@ def spec_from_document(doc: object) -> VolumeSpec | None:
         min_size=_size(provisioning.get("minSize")),
         max_size=_size(provisioning.get("maxSize")),
         grow=provisioning.get("grow") is True,
-        filesystem=str((doc.get("filesystem") or {}).get("type", "xfs")),
+        filesystem=str(_mapping(doc.get("filesystem")).get("type", "xfs")),
         encrypted="encryption" in doc,
     )
