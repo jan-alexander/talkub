@@ -1,0 +1,14 @@
+#!/bin/sh
+# Pre-commit checks for talkub development. Enable once per clone:
+#   git config core.hooksPath .githooks
+# Checks the working tree (not only the staged changes); skip once with `git commit --no-verify`.
+set -e
+
+echo "pre-commit: lint-imports"
+uv run --quiet lint-imports >/dev/null || {
+    uv run --quiet lint-imports
+    exit 1
+}
+
+echo "pre-commit: ruff format --check"
+uv run --quiet ruff format --check src tests

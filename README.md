@@ -346,6 +346,10 @@ it automatically. Bypass it once with `git commit --no-verify`.
     uv run ruff check src tests
     uv run lint-imports
 
+Enable the pre-commit hook (import layers, ruff format) once per clone:
+
+    git config core.hooksPath .githooks
+
 ### Code layout
 
 `src/talkub/` is split by domain. `cli/` holds one thin module per command group and calls into
