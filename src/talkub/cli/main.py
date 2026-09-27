@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from talkub import __version__
-from talkub.cli import admin, check, image, keys, lint, secret, session, setup
+from talkub.cli import admin, check, completion, image, keys, lint, secret, session, setup
 from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import chart as chart_cli
 from talkub.cli import coredns as coredns_cli
@@ -78,6 +78,7 @@ app.add_typer(repo_cli.app, name="repo")
 app.add_typer(renovate_cli.app, name="renovate")
 app.add_typer(coredns_cli.app, name="coredns")
 app.command("rotate-ca")(rotate_cli.rotate_ca)
+app.command("completion")(completion.completion)
 
 RUN_USAGE = """\
 usage: talkub run                                       list the shortcuts (project and global)
@@ -95,7 +96,14 @@ after it are passed on verbatim (run shortcuts only)."""
 
 
 @app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def _run_help() -> None:
+def _run_help(
+    # Declared only for --help and shell completion; run_shortcut() parses the real arguments.
+    name: str = typer.Argument(None, autocompletion=completion.shortcut_names, help="Shortcut to run."),
+    print_value: bool = typer.Option(False, "--print", help="secret: write the value to stdout."),
+    follow: bool = typer.Option(False, "--follow", help="job: stream the logs, exit with the job's result."),
+    save_global: bool = typer.Option(False, "--save-global", help="Move <name> to the global pool."),
+    force: bool = typer.Option(False, "--force", help="With --save-global: replace a global shortcut."),
+) -> None:
     """Run a shortcut from .talkub.yaml or the global pool; without a name, list them."""
     # Never reached via main(), which handles `run` raw (like t/k) so options after the name pass through.
     print(RUN_USAGE)

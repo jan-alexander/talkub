@@ -10,6 +10,14 @@ the cluster repo and is installed with uv.
     # needs: age, sops, talosctl, helm (and kubectl, kubeseal later)
     # optional: age-plugin-yubikey, age-plugin-se
 
+Shell completion (commands, options and shortcut names for `talkub run`):
+
+    eval "$(talkub completion zsh)"     # in ~/.zshrc (after compinit)
+    eval "$(talkub completion bash)"    # in ~/.bashrc
+    talkub completion fish > ~/.config/fish/completions/talkub.fish
+
+Arguments after `talkub t`/`talkub k` and after a shortcut name are not completed.
+
 ## Key model
 
 - Every `*.sops.yaml` is encrypted to one **cluster master key**.
