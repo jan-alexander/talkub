@@ -57,7 +57,9 @@ from talkub.repo import ChartSpec
 
 
 def test_chart_ref_oci_is_a_single_reference():
-    chart = ChartSpec(repo="oci://ghcr.io/argoproj/argo-helm/", chart="argo-cd", version="1")
+    chart = ChartSpec(
+        repo="oci://ghcr.io/argoproj/argo-helm/", chart="argo-cd", version="1"
+    )
     assert chart_ref(chart) == ["oci://ghcr.io/argoproj/argo-helm/argo-cd"]
 
 
@@ -127,7 +129,9 @@ def chart_ref(chart: ChartSpec) -> list[str]:
     return [chart.chart, "--repo", chart.repo]
 
 
-def helm_install(kube: KubeSession, source: HelmSource, *, create_namespace: bool) -> None:
+def helm_install(
+    kube: KubeSession, source: HelmSource, *, create_namespace: bool
+) -> None:
     """`helm upgrade --install` one Argo CD app's chart source as Argo CD would render it."""
     chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
     argv = [
