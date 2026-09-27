@@ -186,7 +186,12 @@ def volumes(
     if inventory.installed:
         print("note: EPHEMERAL is already provisioned; resizing it needs a wipe of EPHEMERAL")
     elif ephemeral is None:
-        ephemeral = _ask_ephemeral(version)
+        while (ephemeral := _ask_ephemeral(version)) is not None:
+            plan = simulate(inventory, [ephemeral, *others], system_disk=system, install_disk=install_disk)
+            if "EPHEMERAL" not in plan.errors:
+                break
+            print(report.plan_text(plan, inventory, system))
+            print("EPHEMERAL limit not used")
         if ephemeral is not None:
             new_docs.append(render.volume_document(ephemeral))
 

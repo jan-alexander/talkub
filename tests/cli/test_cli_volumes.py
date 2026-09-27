@@ -127,6 +127,25 @@ def test_usb_install_disk_warns(node_repo, monkeypatch, capfd):
     assert match == '!disk.readonly && !disk.cdrom && disk.transport == "usb"'
 
 
+def test_ephemeral_limit_that_cannot_be_provisioned_is_asked_again(node_repo, monkeypatch, capfd):
+    _answers(
+        monkeypatch,
+        "1",  # install disk: nvme0n1
+        "1",  # recommended selector
+        "2",  # EPHEMERAL: limit
+        "1",  # fixed size
+        "600GiB",  # larger than the 512 GiB disk
+        "n",  # do not encrypt EPHEMERAL
+        "1",  # asked again: whole system disk
+        "n",  # no volumes
+        "y",  # write
+    )
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 0
+    out = capfd.readouterr().out
+    assert "✗ EPHEMERAL" in out and "EPHEMERAL limit not used" in out
+    assert ("VolumeConfig", "EPHEMERAL") not in _kinds(node_repo)
+
+
 def test_declining_the_write_changes_nothing(node_repo, monkeypatch):
     before = (node_repo.talos_dir / "nodes" / "cp-01.yaml").read_text()
     _answers(monkeypatch, "1", "1", "1", "n", "n")
