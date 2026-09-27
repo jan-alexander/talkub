@@ -40,6 +40,7 @@ def test_node_add_static(empty_repo, capfd):
     assert "warning: no --mac given" in captured.err
     assert "talos/nodes/w-01.yaml" in captured.out
     assert "apply --insecure w-01" in captured.out
+    assert "talkub node volumes w-01" in captured.out
     assert empty_repo.load_settings().nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net")
     assert "kind: LinkConfig" in (empty_repo.talos_dir / "nodes" / "w-01.yaml").read_text()
 

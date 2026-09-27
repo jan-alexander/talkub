@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import ipaddress
+import itertools
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,6 +127,39 @@ def render_node_patch(node: str, options: NodeOptions = NodeOptions()) -> str:
         "# Written by `talkub node add`; edit freely.\n"
     )
     return header + "---\n".join(yamlio.dump(doc) for doc in docs)
+
+
+def _split_header(text: str) -> tuple[str, str]:
+    """(leading comment lines, rest) of a node patch."""
+    lines = text.splitlines(keepends=True)
+    header = "".join(itertools.takewhile(lambda line: line.startswith("#"), lines))
+    return header, text[len(header) :]
+
+
+def read_node_documents(path: Path) -> list[dict]:
+    _, body = _split_header(path.read_text())
+    return [doc for doc in yamlio.load_all(body) if doc]
+
+
+def _doc_key(doc: dict) -> tuple[object, object]:
+    # A node has one UnattendedInstallConfig; every other kind talkub writes is keyed by name.
+    return doc.get("kind"), None if doc.get("kind") == "UnattendedInstallConfig" else doc.get("name")
+
+
+def upsert_documents(path: Path, docs: Sequence[dict]) -> None:
+    """Replace documents with the same (kind, name) in the node patch, append the others; the
+    header comment and all other documents are kept."""
+    header, body = _split_header(path.read_text())
+    existing = [doc for doc in yamlio.load_all(body) if doc]
+    index = {_doc_key(doc): i for i, doc in enumerate(existing)}
+    for doc in docs:
+        key = _doc_key(doc)
+        if key in index:
+            existing[index[key]] = doc
+        else:
+            index[key] = len(existing)
+            existing.append(doc)
+    atomic_write(path, (header + "---\n".join(yamlio.dump(doc) for doc in existing)).encode())
 
 
 def node_patch_path(repo: Repo, node: str) -> Path:

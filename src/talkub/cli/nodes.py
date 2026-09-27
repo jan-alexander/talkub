@@ -77,4 +77,7 @@ def add(
     options = node_options(static, gateway, mac, dns, disk_selector, public_ingress)
     print_warnings(add_node(repo, name, spec, options))
     print(f"added node {name}: {repo.rel(node_patch_path(repo, name))}")
-    print(f"next: boot the node, then `talkub apply --insecure {name}`")
+    print(
+        f"next: boot the node, then optionally `talkub node volumes {name}` (install disk, volumes) "
+        f"and `talkub apply --insecure {name}`"
+    )

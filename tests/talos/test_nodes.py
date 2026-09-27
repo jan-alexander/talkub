@@ -325,3 +325,34 @@ def test_add_node_after_lockdown_warns_outside_the_node_network(empty_repo):
     assert "10.0.0.0/24" in warnings[0] and "firewall.yaml" in warnings[0]
     assert add_node(empty_repo, "w-03", NodeSpec(ip="10.0.0.13", role="worker"), NodeOptions()) == []
     assert add_node(empty_repo, "w-04", NodeSpec(ip="w-04.lan", role="worker"), NodeOptions()) == []
+
+
+def test_upsert_documents_replaces_by_kind_and_name_and_keeps_the_rest(tmp_path):
+    from talkub.talos.nodes import read_node_documents, upsert_documents
+
+    path = tmp_path / "cp-01.yaml"
+    path.write_text(render_node_patch("cp-01", NodeOptions(disk_selector="old", dns=("1.1.1.1",))))
+    upsert_documents(
+        path,
+        [
+            {
+                "apiVersion": "v1alpha1",
+                "kind": "UnattendedInstallConfig",
+                "provisioning": {"diskSelector": {"match": "new"}},
+            },
+            {"apiVersion": "v1alpha1", "kind": "UserVolumeConfig", "name": "data"},
+        ],
+    )
+    text = path.read_text()
+    assert text.startswith("# Talos patch for node cp-01")
+    assert text.count("# Talos patch for node cp-01") == 1
+    docs = read_node_documents(path)
+    assert [d["kind"] for d in docs] == [
+        "HostnameConfig",
+        "ResolverConfig",
+        "UnattendedInstallConfig",
+        "UserVolumeConfig",
+    ]
+    assert docs[2]["provisioning"]["diskSelector"]["match"] == "new"
+    upsert_documents(path, [{"apiVersion": "v1alpha1", "kind": "UserVolumeConfig", "name": "data", "x": 1}])
+    assert [d.get("x") for d in read_node_documents(path) if d["kind"] == "UserVolumeConfig"] == [1]
