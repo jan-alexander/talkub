@@ -40,12 +40,8 @@ def test_node_add_static(empty_repo, capfd):
     assert "warning: no --mac given" in captured.err
     assert "talos/nodes/w-01.yaml" in captured.out
     assert "apply --insecure w-01" in captured.out
-    assert empty_repo.load_settings().nodes["w-01"] == NodeSpec(
-        ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net"
-    )
-    assert (
-        "kind: LinkConfig" in (empty_repo.talos_dir / "nodes" / "w-01.yaml").read_text()
-    )
+    assert empty_repo.load_settings().nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.tail.ts.net")
+    assert "kind: LinkConfig" in (empty_repo.talos_dir / "nodes" / "w-01.yaml").read_text()
 
 
 def test_node_add_rejects_bad_gateway(empty_repo, capfd):
@@ -93,9 +89,7 @@ def test_init_node_options_need_single_node(tmp_path, capfd, monkeypatch):
 
 
 @need("age", "age-keygen", "sops", "talosctl")
-def test_init_with_platform_and_static_node(
-    tmp_path, software_identity, fake_bin, monkeypatch
-):
+def test_init_with_platform_and_static_node(tmp_path, software_identity, fake_bin, monkeypatch):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     code = _run(
@@ -145,9 +139,7 @@ def test_init_rejects_bad_node_address(tmp_path, capfd, monkeypatch, value):
 
 
 @need("age", "age-keygen", "sops", "talosctl")
-def test_init_warns_when_static_address_differs(
-    tmp_path, software_identity, fake_bin, monkeypatch, capfd
-):
+def test_init_warns_when_static_address_differs(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     code = _run(

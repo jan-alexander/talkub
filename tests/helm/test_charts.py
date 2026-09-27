@@ -7,10 +7,7 @@ CHART_YAML = b"apiVersion: v2\nname: argo-cd\nversion: 10.9.2\nappVersion: v3.5.
 
 def test_latest_version_http_repo():
     runner = FakeRunner(outputs={"helm": CHART_YAML})
-    assert (
-        charts.latest_version(runner, "https://argoproj.github.io/argo-helm", "argo-cd")
-        == "10.9.2"
-    )
+    assert charts.latest_version(runner, "https://argoproj.github.io/argo-helm", "argo-cd") == "10.9.2"
     assert runner.calls[0].argv == [
         "helm",
         "show",

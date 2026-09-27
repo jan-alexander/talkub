@@ -28,11 +28,7 @@ def _spies(spy, drift="Dry run summary:\nNo changes.\n"):
         .on("get", "extensions", stdout=EXT)
         .on("--dry-run", stdout=drift)
     )
-    kubectl = (
-        spy("kubectl")
-        .on("get", "nodes", stdout=NODES)
-        .on("get", "applications.argoproj.io", stdout=APPS)
-    )
+    kubectl = spy("kubectl").on("get", "nodes", stdout=NODES).on("get", "applications.argoproj.io", stdout=APPS)
     return talosctl, kubectl
 
 
@@ -66,14 +62,10 @@ def test_unreachable_node_and_unparseable_output(talos_repo, spy):
     settings = talos_repo.load_settings()
     settings.nodes["w-99"] = NodeSpec(ip="10.0.0.99", role="worker")
     talos_repo.write_settings(settings)
-    atomic_write(
-        node_patch_path(talos_repo, "w-99"), render_node_patch("w-99").encode()
-    )
+    atomic_write(node_patch_path(talos_repo, "w-99"), render_node_patch("w-99").encode())
     talosctl, _ = _spies(spy)
     # after the 10.0.0.99 rule (index 2), before the regular version rule
-    talosctl.rules.insert(
-        3, {"match": ["version"], "stdout": "garbage", "stderr": "", "rc": 0}
-    )
+    talosctl.rules.insert(3, {"match": ["version"], "stdout": "garbage", "stderr": "", "rc": 0})
     talosctl._save()
     report = status.collect(Context.open(talos_repo))
     by_name = {n.name: n for n in report.nodes}
@@ -92,13 +84,9 @@ def test_not_bootstrapped(talos_repo, spy):
     assert "not bootstrapped" in status.render(report)
 
 
-def test_outdated_schematic_does_not_touch_factory_or_write_settings(
-    talos_repo, spy, monkeypatch, capfd
-):
+def test_outdated_schematic_does_not_touch_factory_or_write_settings(talos_repo, spy, monkeypatch, capfd):
     """status is read-only and works offline even if a schematic ID is stale."""
-    monkeypatch.setenv(
-        "TALKUB_FACTORY_URL", "http://127.0.0.1:9"
-    )  # nothing listens there
+    monkeypatch.setenv("TALKUB_FACTORY_URL", "http://127.0.0.1:9")  # nothing listens there
     settings = talos_repo.load_settings()
     settings.schematics["metal"].extensions.append("siderolabs/tailscale")
     talos_repo.write_settings(settings)

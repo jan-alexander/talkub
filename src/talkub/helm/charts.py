@@ -22,9 +22,7 @@ CATALOG: dict[str, tuple[str, str]] = {
 DEFAULT_KEYS = ("argocd", "sealed-secrets")
 
 
-def show_chart(
-    runner: Runner, repo: str, chart: str, version: str | None = None
-) -> dict:
+def show_chart(runner: Runner, repo: str, chart: str, version: str | None = None) -> dict:
     """Full `helm show chart` document (`version`, `appVersion`, ...); pinned to `version` if
     given, else the repo's latest."""
     if repo.startswith("oci://"):
@@ -48,6 +46,4 @@ def resolve_defaults(runner: Runner) -> dict[str, ChartSpec]:
 def resolve(runner: Runner, key: str) -> ChartSpec:
     """Latest version for one chart of `CATALOG`."""
     repo, chart = CATALOG[key]
-    return ChartSpec(
-        repo=repo, chart=chart, version=latest_version(runner, repo, chart)
-    )
+    return ChartSpec(repo=repo, chart=chart, version=latest_version(runner, repo, chart))

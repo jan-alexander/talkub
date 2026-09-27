@@ -62,14 +62,8 @@ def collect(ctx: Context) -> StatusReport:
                 reachable=True,
                 talos=inspect.server_version(version.stdout.decode()),
             )
-            extensions = session.run(
-                address, ["get", "extensions", "-o", "json"], check=False
-            )
-            node.schematic = (
-                inspect.schematic_id(extensions.stdout.decode())
-                if extensions.returncode == 0
-                else None
-            )
+            extensions = session.run(address, ["get", "extensions", "-o", "json"], check=False)
+            node.schematic = inspect.schematic_id(extensions.stdout.decode()) if extensions.returncode == 0 else None
             if name in configs:
                 with private_file(f"{name}.yaml", configs[name]) as path:
                     dry_run = session.run(
@@ -78,18 +72,14 @@ def collect(ctx: Context) -> StatusReport:
                         check=False,
                     )
                 if dry_run.returncode == 0:
-                    node.config = inspect.config_drift(
-                        (dry_run.stdout + (dry_run.stderr or b"")).decode()
-                    )
+                    node.config = inspect.config_drift((dry_run.stdout + (dry_run.stderr or b"")).decode())
             nodes.append(node)
 
     if not is_bootstrapped(ctx):
         return StatusReport(settings, nodes, kube="not bootstrapped")
     try:
         with kube_session(ctx) as kube:
-            kubelets = kube.kubectl(
-                ["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False
-            )
+            kubelets = kube.kubectl(["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False)
             apps = kube.kubectl(
                 [
                     "get",
@@ -110,11 +100,7 @@ def collect(ctx: Context) -> StatusReport:
     versions = inspect.kubelet_versions(kubelets.stdout.decode())
     for node in nodes:
         node.kubelet = versions.get(node.name)
-    applications = (
-        inspect.application_summary(apps.stdout.decode())
-        if apps.returncode == 0
-        else None
-    )
+    applications = inspect.application_summary(apps.stdout.decode()) if apps.returncode == 0 else None
     return StatusReport(settings, nodes, kube="ok", applications=applications)
 
 
@@ -144,19 +130,14 @@ def render(report: StatusReport) -> str:
                 _compare(node.talos, settings.talos_version),
                 _compare(node.schematic, wanted.id if wanted else None, width=12),
                 node.config,
-                _compare(node.kubelet, settings.kubernetes_version)
-                if node.kubelet
-                else "-",
+                _compare(node.kubelet, settings.kubernetes_version) if node.kubelet else "-",
             )
         )
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     lines = [
         f"cluster {settings.name}: talos {settings.talos_version}, kubernetes {settings.kubernetes_version}",
         "",
-        *(
-            "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip()
-            for row in rows
-        ),
+        *("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip() for row in rows),
         "",
     ]
     if report.kube != "ok":
@@ -166,8 +147,6 @@ def render(report: StatusReport) -> str:
     elif not report.applications:
         lines.append("argocd: no applications")
     else:
-        summary = ", ".join(
-            f"{count} {state}" for state, count in sorted(report.applications.items())
-        )
+        summary = ", ".join(f"{count} {state}" for state, count in sorted(report.applications.items()))
         lines.append(f"argocd: {summary}")
     return "\n".join(lines)

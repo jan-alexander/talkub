@@ -19,16 +19,11 @@ SECRET2 = "AGE-SECRET-KEY-1LHPX92WHKCJYFAXTHK80Z8AU99RC40TTJWPGPX2QKM37N4XJNAWSJ
 
 
 def test_identities_dir_uses_xdg(tmp_path):
-    assert (
-        identities_dir({"XDG_CONFIG_HOME": str(tmp_path)})
-        == tmp_path / "talkub" / "identities"
-    )
+    assert identities_dir({"XDG_CONFIG_HOME": str(tmp_path)}) == tmp_path / "talkub" / "identities"
 
 
 def test_master_key_from_env_direct():
-    assert master_key_candidates_from_env(
-        {"SOPS_AGE_KEY": f"# comment\n{SECRET}\n"}
-    ) == [SECRET]
+    assert master_key_candidates_from_env({"SOPS_AGE_KEY": f"# comment\n{SECRET}\n"}) == [SECRET]
 
 
 def test_master_key_from_env_returns_every_key():
@@ -39,9 +34,7 @@ def test_master_key_from_env_returns_every_key():
 def test_master_key_from_env_file(tmp_path):
     keyfile = tmp_path / "k.txt"
     keyfile.write_text(f"# created\n{SECRET}\n")
-    assert master_key_candidates_from_env({"SOPS_AGE_KEY_FILE": str(keyfile)}) == [
-        SECRET
-    ]
+    assert master_key_candidates_from_env({"SOPS_AGE_KEY_FILE": str(keyfile)}) == [SECRET]
 
 
 def test_master_key_from_env_file_missing(tmp_path):
@@ -74,18 +67,14 @@ def test_identity_files_default_dir_skips_hidden(tmp_path):
     directory.mkdir(parents=True)
     (directory / "yubikey.txt").write_text("x")
     (directory / ".DS_Store").write_text("x")
-    assert identity_files({"XDG_CONFIG_HOME": str(tmp_path)}) == [
-        directory / "yubikey.txt"
-    ]
+    assert identity_files({"XDG_CONFIG_HOME": str(tmp_path)}) == [directory / "yubikey.txt"]
 
 
 def test_recipient_of_formats(tmp_path):
     keygen = tmp_path / "sw.txt"
     keygen.write_text("# created: x\n# public key: age1abc\nAGE-SECRET-KEY-1X\n")
     yubikey = tmp_path / "yk.txt"
-    yubikey.write_text(
-        "#       Serial: 1, Slot: 1\n#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"
-    )
+    yubikey.write_text("#       Serial: 1, Slot: 1\n#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n")
     assert recipient_of(keygen) == "age1abc"
     assert recipient_of(yubikey) == "age1yubikey1xyz"
 
@@ -100,11 +89,7 @@ def test_create_software_identity(tmp_path):
 
 
 def test_create_yubikey_identity_uses_plugin(tmp_path):
-    runner = FakeRunner(
-        outputs={
-            "age-plugin-yubikey": b"#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"
-        }
-    )
+    runner = FakeRunner(outputs={"age-plugin-yubikey": b"#    Recipient: age1yubikey1xyz\nAGE-PLUGIN-YUBIKEY-1X\n"})
     _path, public = create_identity(runner, "yubikey", tmp_path)
     assert public == "age1yubikey1xyz"
     assert [c.argv for c in runner.calls] == [
@@ -136,6 +121,4 @@ def test_own_recipients_names_by_user_and_file(tmp_path):
     directory.mkdir(parents=True)
     (directory / "yubikey.txt").write_text("#    Recipient: age1yubikey1xyz\n")
     result = own_recipients({"XDG_CONFIG_HOME": str(tmp_path)}, user="jan.mock")
-    assert [(r.name, r.key) for r in result] == [
-        ("jan.mock-yubikey", "age1yubikey1xyz")
-    ]
+    assert [(r.name, r.key) for r in result] == [("jan.mock-yubikey", "age1yubikey1xyz")]

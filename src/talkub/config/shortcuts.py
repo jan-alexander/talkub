@@ -31,9 +31,7 @@ def _valid_port_spec(value: str) -> bool:
     match = _PORT_SPEC.match(value)
     if match is None:
         return False
-    return all(
-        1 <= int(group) <= 65535 for group in match.groups() if group is not None
-    )
+    return all(1 <= int(group) <= 65535 for group in match.groups() if group is not None)
 
 
 @dataclass(frozen=True)
@@ -60,9 +58,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
 
     present = [kind for kind in _SHORTCUT_KINDS if kind in spec]
     if len(present) != 1:
-        raise ValidationError(
-            f"{MARKER}: {where} must have exactly one of: {', '.join(_SHORTCUT_KINDS)}"
-        )
+        raise ValidationError(f"{MARKER}: {where} must have exactly one of: {', '.join(_SHORTCUT_KINDS)}")
     kind = present[0]
     description = optional_text(spec.get("description"), f"{where}.description")
 
@@ -74,9 +70,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
         secret_name = label(raw.get("name"), f"{where}.secret.name")
         key = raw.get("key")
         if not isinstance(key, str) or not key.strip() or not _SECRET_KEY.match(key):
-            raise ValidationError(
-                f"{MARKER}: {where}.secret.key must be a valid secret key"
-            )
+            raise ValidationError(f"{MARKER}: {where}.secret.key must be a valid secret key")
         return Shortcut(
             name=name,
             kind=kind,
@@ -106,18 +100,10 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
 
     if kind == "run":
         raw = spec["run"]
-        if (
-            not isinstance(raw, list)
-            or not raw
-            or not all(isinstance(item, str) for item in raw)
-        ):
-            raise ValidationError(
-                f"{MARKER}: {where}.run must be a non-empty list of strings"
-            )
+        if not isinstance(raw, list) or not raw or not all(isinstance(item, str) for item in raw):
+            raise ValidationError(f"{MARKER}: {where}.run must be a non-empty list of strings")
         if raw[0] not in _RUN_TOOLS:
-            raise ValidationError(
-                f"{MARKER}: {where}.run must start with one of: {', '.join(_RUN_TOOLS)}"
-            )
+            raise ValidationError(f"{MARKER}: {where}.run must start with one of: {', '.join(_RUN_TOOLS)}")
         return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
 
     raw = spec["portForward"]
@@ -126,19 +112,11 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
     namespace = label(raw.get("namespace"), f"{where}.portForward.namespace")
     service = label(raw.get("service"), f"{where}.portForward.service")
     ports = raw.get("ports")
-    if (
-        not isinstance(ports, list)
-        or not ports
-        or not all(isinstance(item, str) for item in ports)
-    ):
-        raise ValidationError(
-            f"{MARKER}: {where}.portForward.ports must be a non-empty list of strings"
-        )
+    if not isinstance(ports, list) or not ports or not all(isinstance(item, str) for item in ports):
+        raise ValidationError(f"{MARKER}: {where}.portForward.ports must be a non-empty list of strings")
     for port in ports:
         if not _valid_port_spec(port):
-            raise ValidationError(
-                f"{MARKER}: {where}.portForward.ports has invalid entry {port!r}"
-            )
+            raise ValidationError(f"{MARKER}: {where}.portForward.ports has invalid entry {port!r}")
     return Shortcut(
         name=name,
         kind=kind,

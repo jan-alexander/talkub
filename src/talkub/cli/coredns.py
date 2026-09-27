@@ -6,9 +6,7 @@ import typer
 
 from talkub.gitops import coredns
 
-app = typer.Typer(
-    help="CoreDNS as a Helm release managed by Argo CD.", no_args_is_help=True
-)
+app = typer.Typer(help="CoreDNS as a Helm release managed by Argo CD.", no_args_is_help=True)
 
 
 @app.command("takeover")

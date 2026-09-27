@@ -79,9 +79,7 @@ def directory_app(
     if skip_dry_run_on_missing:
         sync_options.append("SkipDryRunOnMissingResource=true")
     if ignore_differences:
-        sync_options.append(
-            "RespectIgnoreDifferences=true"
-        )  # selfHeal must not revert those fields
+        sync_options.append("RespectIgnoreDifferences=true")  # selfHeal must not revert those fields
     doc: dict = {
         "apiVersion": "argoproj.io/v1alpha1",
         "kind": "Application",

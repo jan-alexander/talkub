@@ -39,9 +39,7 @@ def test_seal_from_literal(keyed_repo, sealing_cert, tmp_path):
 def test_seal_refuses_manifest_inside_repo(keyed_repo, sealing_cert, capfd):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     manifest = keyed_repo.root / "secret.yaml"
-    manifest.write_text(
-        "apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n"
-    )
+    manifest.write_text("apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n")
     code = _run(
         [
             "--repo",
@@ -108,9 +106,7 @@ def test_seal_refuses_from_file_inside_repo(keyed_repo, sealing_cert, capfd, tmp
 def test_seal_manifest_from_outside(keyed_repo, sealing_cert, tmp_path):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     manifest = tmp_path / "secret.yaml"
-    manifest.write_text(
-        "apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n"
-    )
+    manifest.write_text("apiVersion: v1\nkind: Secret\nmetadata: {name: db, namespace: app}\ndata: {a: Yg==}\n")
     out = tmp_path / "db.sealed.yaml"
     assert (
         _run(
@@ -142,14 +138,10 @@ def test_seal_argument_errors(keyed_repo, sealing_cert, capfd, extra, message):
     assert message in capfd.readouterr().err
 
 
-def test_seal_rejects_invalid_prompt_key_before_asking(
-    keyed_repo, sealing_cert, tmp_path, monkeypatch, capfd
-):
+def test_seal_rejects_invalid_prompt_key_before_asking(keyed_repo, sealing_cert, tmp_path, monkeypatch, capfd):
     atomic_write(sealing.cert_path(keyed_repo), sealing_cert)
     asked = []
-    monkeypatch.setattr(
-        "getpass.getpass", lambda prompt="": asked.append(prompt) or "hunter2"
-    )
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": asked.append(prompt) or "hunter2")
     code = _run(
         [
             "--repo",

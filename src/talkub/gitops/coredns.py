@@ -36,9 +36,7 @@ DEPLOYMENT = "coredns-talkub"
 RELEASE = "coredns"
 NAMESPACE = "kube-system"
 
-_VALUES_HEADER = (
-    "# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n"
-)
+_VALUES_HEADER = "# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n"
 
 TALOS_DEFAULT_PLUGINS = [
     {"name": "errors"},
@@ -130,9 +128,7 @@ def add_stub_zone(values_text: str, tailnet: str) -> tuple[str, bool]:
     return yamlio.dump(doc), True
 
 
-QUESTION = (
-    "Move CoreDNS from Talos to Argo CD now? DNS keeps working during the switch."
-)
+QUESTION = "Move CoreDNS from Talos to Argo CD now? DNS keeps working during the switch."
 # After the old pods are deleted the endpoints controller needs a moment to drop them.
 ENDPOINTS_ATTEMPTS = 15
 ENDPOINTS_INTERVAL = 2.0
@@ -166,26 +162,18 @@ def _failing_step(name: str) -> Iterator[None]:
         yield
     except CommandFailed as err:
         hint = f"{err.hint}; {_RESUME_HINT}" if err.hint else _RESUME_HINT
-        raise CommandFailed(
-            f"takeover step '{name}' failed: {err}", hint=hint
-        ) from None
+        raise CommandFailed(f"takeover step '{name}' failed: {err}", hint=hint) from None
 
 
-def takeover(
-    ctx: Context, *, resume: bool = False, confirm: Callable[[str], bool]
-) -> list[str]:
+def takeover(ctx: Context, *, resume: bool = False, confirm: Callable[[str], bool]) -> list[str]:
     """Move CoreDNS from Talos' bootstrap manifest to the Helm release `coredns` (Argo CD app)."""
     repo = ctx.repo
     require_tool("helm")
     if not lifecycle.is_bootstrapped(ctx):
-        raise ValidationError(
-            "the cluster is not bootstrapped", hint="talkub bootstrap"
-        )
+        raise ValidationError("the cluster is not bootstrapped", hint="talkub bootstrap")
     settings = repo.load_settings()
     if settings.git is None:
-        raise ValidationError(
-            "no git URL in .talkub.yaml", hint="talkub repo set-url <url>"
-        )
+        raise ValidationError("no git URL in .talkub.yaml", hint="talkub repo set-url <url>")
     if app_path(repo).exists() and not resume:
         raise ValidationError(
             "CoreDNS is already managed by talkub",
@@ -213,9 +201,7 @@ def takeover(
     # On --resume the Service may be gone (e.g. pruned); Helm then creates it with the pinned ClusterIP.
     service_missing = result.returncode != 0 and "NotFound" in stderr
     if result.returncode != 0 and not (resume and service_missing):
-        raise ValidationError(
-            f"cannot read the kube-dns Service: {stderr or 'kubectl failed'}"
-        )
+        raise ValidationError(f"cannot read the kube-dns Service: {stderr or 'kubectl failed'}")
     cluster_ip = result.stdout.decode().strip()
     if not service_missing and cluster_ip != CLUSTER_DNS_IP:
         raise ValidationError(
@@ -235,9 +221,7 @@ def takeover(
 
     if not resume:
         _write_repo_files(ctx)
-        drifting = _controlplanes(
-            settings
-        )  # the new patch applies to control planes only
+        drifting = _controlplanes(settings)  # the new patch applies to control planes only
     source = app_files.app_source(repo, "coredns")
     if source.release != RELEASE or source.namespace != NAMESPACE:
         raise ValidationError(
@@ -252,9 +236,7 @@ def takeover(
         with _failing_step("talos apply"):
             # no-reboot: nothing is rolled or health-gated. On resume Talos health would fail anyway
             # while both CoreDNS deployments exist, so the precheck is skipped explicitly as well.
-            applied = lifecycle.apply(
-                ctx, [], mode="no-reboot", confirm=confirm, skip_precheck=resume
-            )
+            applied = lifecycle.apply(ctx, [], mode="no-reboot", confirm=confirm, skip_precheck=resume)
         if missing := [name for name in drifting if name not in applied]:
             raise ValidationError(
                 f"the Talos config was not applied to: {', '.join(missing)}; CoreDNS in the cluster is unchanged",
@@ -295,9 +277,7 @@ def takeover(
         _step("deleting the Talos CoreDNS objects")
         with _failing_step("delete old CoreDNS"):
             for kind in ("deploy", "configmap", "serviceaccount"):
-                cascade = (
-                    ["--cascade=foreground"] if kind == "deploy" else []
-                )  # returns once the old pods are gone
+                cascade = ["--cascade=foreground"] if kind == "deploy" else []  # returns once the old pods are gone
                 kube.kubectl(
                     [
                         "-n",
@@ -319,9 +299,7 @@ def takeover(
     ]
 
 
-def write_files(
-    repo: Repo, chart: ChartSpec, git_url: str, tailnet: str | None = None
-) -> None:
+def write_files(repo: Repo, chart: ChartSpec, git_url: str, tailnet: str | None = None) -> None:
     """Write the Talos patch, Helm values and Argo CD app for CoreDNS. Shared by `init_cluster`
     (a fresh cluster, no stub zone yet) and `takeover` (a running cluster, possibly with the
     Tailscale operator already configured)."""
@@ -329,9 +307,7 @@ def write_files(
     files = {
         patch_path(repo): talos_patch(),
         values_path(repo): values(tailnet),
-        app_path(repo): apps.helm_app(
-            "coredns", chart, git_url, values_file, NAMESPACE
-        ),
+        app_path(repo): apps.helm_app("coredns", chart, git_url, values_file, NAMESPACE),
     }
     for path, text in files.items():
         atomic_write(path, text.encode())
@@ -339,9 +315,7 @@ def write_files(
 
 
 def _controlplanes(settings: Settings) -> list[str]:
-    return [
-        name for name, node in settings.nodes.items() if node.role == "controlplane"
-    ]
+    return [name for name, node in settings.nodes.items() if node.role == "controlplane"]
 
 
 def _write_repo_files(ctx: Context) -> None:
@@ -349,11 +323,7 @@ def _write_repo_files(ctx: Context) -> None:
     settings = repo.load_settings()
     chart = charts.resolve(ctx.runner, "coredns")
     operator_app = repo.gitops_dir / "apps" / "tailscale-operator.yaml"
-    tailnet = (
-        settings.tailscale.tailnet
-        if settings.tailscale and operator_app.exists()
-        else None
-    )
+    tailnet = settings.tailscale.tailnet if settings.tailscale and operator_app.exists() else None
     write_files(repo, chart, settings.git.url, tailnet)
 
 
@@ -389,9 +359,7 @@ def _adopt_service(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dict
         f"meta.helm.sh/release-name={RELEASE}",
         f"meta.helm.sh/release-namespace={NAMESPACE}",
     ]
-    kube.kubectl(
-        ["-n", NAMESPACE, "annotate", "svc", "kube-dns", "--overwrite", *annotations]
-    )
+    kube.kubectl(["-n", NAMESPACE, "annotate", "svc", "kube-dns", "--overwrite", *annotations])
     kube.kubectl(
         [
             "-n",
@@ -405,31 +373,19 @@ def _adopt_service(kube: KubeSession, repo: Repo, chart: ChartSpec) -> list[dict
     )
     ports = _rendered_ports(kube, repo, chart)
     patch = json.dumps([{"op": "replace", "path": "/spec/ports", "value": ports}])
-    kube.kubectl(
-        ["-n", NAMESPACE, "patch", "svc", "kube-dns", "--type=json", "-p", patch]
-    )
+    kube.kubectl(["-n", NAMESPACE, "patch", "svc", "kube-dns", "--type=json", "-p", patch])
     reset = json.dumps({"metadata": {"managedFields": [{}]}})
-    kube.kubectl(
-        ["-n", NAMESPACE, "patch", "svc", "kube-dns", "--type=merge", "-p", reset]
-    )
+    kube.kubectl(["-n", NAMESPACE, "patch", "svc", "kube-dns", "--type=merge", "-p", reset])
     return ports
 
 
 def _port_keys(ports: object) -> list[tuple]:
     entries = ports if isinstance(ports, list) else []
-    return [
-        (p.get("name"), p.get("port"), p.get("protocol"))
-        for p in entries
-        if isinstance(p, dict)
-    ]
+    return [(p.get("name"), p.get("port"), p.get("protocol")) for p in entries if isinstance(p, dict)]
 
 
 def _verify_service(kube: KubeSession, ports: list[dict]) -> None:
-    spec = service_spec(
-        kube.kubectl(
-            ["-n", NAMESPACE, "get", "svc", "kube-dns", "-o", "json"]
-        ).stdout.decode()
-    )
+    spec = service_spec(kube.kubectl(["-n", NAMESPACE, "get", "svc", "kube-dns", "-o", "json"]).stdout.decode())
     live, expected = _port_keys(spec.get("ports")), _port_keys(ports)
     if spec.get("clusterIP") != CLUSTER_DNS_IP or live != expected:
         raise CommandFailed(
@@ -466,9 +422,7 @@ def _verify_endpoints(kube: KubeSession) -> None:
         if attempt:
             time.sleep(ENDPOINTS_INTERVAL)
         selector = "kubernetes.io/service-name=kube-dns"
-        text = kube.kubectl(
-            ["-n", NAMESPACE, "get", "endpointslices", "-l", selector, "-o", "json"]
-        ).stdout.decode()
+        text = kube.kubectl(["-n", NAMESPACE, "get", "endpointslices", "-l", selector, "-o", "json"]).stdout.decode()
         names = endpointslice_pod_names(text)
         if names and all(name.startswith(f"{DEPLOYMENT}-") for name in names):
             return

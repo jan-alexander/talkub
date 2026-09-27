@@ -23,13 +23,9 @@ def test_split_globals():
 
 
 @pytest.mark.parametrize("alias", ["t", "talosctl"])
-def test_talosctl_alias_passes_everything_verbatim(
-    repo_with_configs, fake_bin, capfd, alias
-):
+def test_talosctl_alias_passes_everything_verbatim(repo_with_configs, fake_bin, capfd, alias):
     fake_bin("talosctl", ECHO_ARGS)
-    code = _run(
-        ["--repo", str(repo_with_configs.root), alias, "--help", "get", "--", "x"]
-    )
+    code = _run(["--repo", str(repo_with_configs.root), alias, "--help", "get", "--", "x"])
     assert code == 3
     assert "args:--help get -- x" in capfd.readouterr().out
 
@@ -91,12 +87,7 @@ def test_sops_decrypt_to_stdout(repo_with_configs, capfd):
 
 def test_shell_command(repo_with_configs, fake_bin, capfd):
     program = fake_bin("fakeshell", "printf 'session:%s\\n' \"$TALKUB_SESSION\"\n")
-    assert (
-        _run(
-            ["--repo", str(repo_with_configs.root), "shell", "--program", str(program)]
-        )
-        == 0
-    )
+    assert _run(["--repo", str(repo_with_configs.root), "shell", "--program", str(program)]) == 0
     assert "session:test" in capfd.readouterr().out
 
 
@@ -112,17 +103,13 @@ def test_ctrl_c_exits_130_without_traceback(repo_with_configs, capfd, monkeypatc
 def _editor(fake_bin, monkeypatch, tmp_path, body):
     """A fake $EDITOR that records whether it saw the master key, then runs `body`."""
     seen = tmp_path / "editor-saw-key.txt"
-    editor = fake_bin(
-        "fake-editor", f'printf "%s" "${{SOPS_AGE_KEY:-absent}}" > {seen}\n{body}'
-    )
+    editor = fake_bin("fake-editor", f'printf "%s" "${{SOPS_AGE_KEY:-absent}}" > {seen}\n{body}')
     monkeypatch.delenv("SOPS_EDITOR", raising=False)
     monkeypatch.setenv("EDITOR", str(editor))
     return seen
 
 
-def test_sops_edit_hides_key_from_editor_and_reencrypts(
-    repo_with_configs, fake_bin, monkeypatch, tmp_path
-):
+def test_sops_edit_hides_key_from_editor_and_reencrypts(repo_with_configs, fake_bin, monkeypatch, tmp_path):
     ctx = Context.open(repo_with_configs)
     # Even a master key given via the environment must not reach the editor.
     monkeypatch.setenv("SOPS_AGE_KEY", ctx.keyring.master_key())
@@ -137,9 +124,7 @@ def test_sops_edit_hides_key_from_editor_and_reencrypts(
     }
 
 
-def test_sops_edit_unchanged_exits_zero_and_keeps_file(
-    repo_with_configs, fake_bin, monkeypatch, tmp_path
-):
+def test_sops_edit_unchanged_exits_zero_and_keeps_file(repo_with_configs, fake_bin, monkeypatch, tmp_path):
     _editor(fake_bin, monkeypatch, tmp_path, "exit 0\n")
     path = repo_with_configs.talosconfig
     before = path.read_bytes()
@@ -152,12 +137,8 @@ def _with_shortcuts(repo):
 
     settings = repo.load_settings()
     settings.shortcuts = {
-        "pods": Shortcut(
-            name="pods", kind="run", description="list pods", argv=("k", "get", "pods")
-        ),
-        "backup": Shortcut(
-            name="backup", kind="job", namespace="prod", cronjob="backup-job"
-        ),
+        "pods": Shortcut(name="pods", kind="run", description="list pods", argv=("k", "get", "pods")),
+        "backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="backup-job"),
     }
     repo.write_settings(settings)
 

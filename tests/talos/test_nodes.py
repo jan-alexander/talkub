@@ -51,20 +51,14 @@ def test_static_with_mac_and_dns():
     )
     assert options.check() == []
     kinds = {d["kind"]: d for d in _docs(render_node_patch("cp-01", options))}
-    assert (
-        kinds["LinkAliasConfig"]["selector"]["match"]
-        == 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"'
-    )
+    assert kinds["LinkAliasConfig"]["selector"]["match"] == 'mac(link.permanent_addr) == "aa:bb:cc:dd:ee:ff"'
     assert kinds["ResolverConfig"]["nameservers"] == [{"address": "1.1.1.1"}]
 
 
 def test_disk_and_public_ingress_documents():
     options = NodeOptions(disk_selector='disk.transport == "nvme"', public_ingress=True)
     kinds = {d["kind"]: d for d in _docs(render_node_patch("cp-01", options))}
-    assert (
-        kinds["UnattendedInstallConfig"]["provisioning"]["diskSelector"]["match"]
-        == 'disk.transport == "nvme"'
-    )
+    assert kinds["UnattendedInstallConfig"]["provisioning"]["diskSelector"]["match"] == 'disk.transport == "nvme"'
     rule = kinds["NetworkRuleConfig"]
     assert rule["portSelector"] == {"ports": [80, 443], "protocol": "tcp"}
     assert rule["ingress"] == [{"subnet": "0.0.0.0/0"}, {"subnet": "::/0"}]
@@ -94,9 +88,7 @@ def talos_secrets(tmp_path_factory):
     if shutil.which("talosctl") is None:
         pytest.skip("missing tools: talosctl")
     path = tmp_path_factory.mktemp("talos") / "secrets.yaml"
-    subprocess.run(
-        ["talosctl", "gen", "secrets", "-o", str(path)], check=True, capture_output=True
-    )
+    subprocess.run(["talosctl", "gen", "secrets", "-o", str(path)], check=True, capture_output=True)
     return path
 
 
@@ -154,9 +146,7 @@ def test_patches_validate_with_talosctl(tmp_path, talos_secrets, options):
 
 
 def test_add_node_writes_patch_and_settings(empty_repo):
-    warnings = add_node(
-        empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions()
-    )
+    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions())
     assert warnings == []
     settings = empty_repo.load_settings()
     assert settings.nodes["w-01"] == NodeSpec(ip="10.0.0.11", role="worker")
@@ -181,9 +171,7 @@ def test_add_node_new_platform_copies_cluster_schematic(empty_repo):
         )
     ]
     hcloud = empty_repo.load_settings().schematics["hcloud"]
-    assert hcloud == SchematicSpec(
-        extensions=["siderolabs/intel-ucode"], kernel_args=["console=ttyS0"]
-    )
+    assert hcloud == SchematicSpec(extensions=["siderolabs/intel-ucode"], kernel_args=["console=ttyS0"])
     # a second node on the now-known platform neither copies nor warns
     assert (
         add_node(
@@ -197,9 +185,7 @@ def test_add_node_new_platform_copies_cluster_schematic(empty_repo):
 
 
 def test_add_node_new_platform_without_extensions_says_none(empty_repo):
-    warnings = add_node(
-        empty_repo, "h-01", NodeSpec(ip="10.0.0.20", platform="hcloud"), NodeOptions()
-    )
+    warnings = add_node(empty_repo, "h-01", NodeSpec(ip="10.0.0.20", platform="hcloud"), NodeOptions())
     assert warnings == [
         (
             "platform 'hcloud' is new: copied extensions from 'metal' (none); "
@@ -214,9 +200,7 @@ def test_add_node_rejects_duplicates_and_bad_input(empty_repo):
     with pytest.raises(ValidationError):
         add_node(empty_repo, "Bad_Name", NodeSpec(ip="10.0.0.12"), NodeOptions())
     with pytest.raises(ValidationError):
-        add_node(
-            empty_repo, "n-02", NodeSpec(ip="10.0.0.12", role="master"), NodeOptions()
-        )
+        add_node(empty_repo, "n-02", NodeSpec(ip="10.0.0.12", role="master"), NodeOptions())
     with pytest.raises(ValidationError):
         add_node(
             empty_repo,
@@ -239,31 +223,18 @@ def test_public_ingress_without_firewall_warns(empty_repo):
 
 
 def test_static_address_differs_from_ip_without_mgmt_warns(empty_repo):
-    options = NodeOptions(
-        static="10.0.0.50/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff"
-    )
-    warnings = add_node(
-        empty_repo, "w-01", NodeSpec(ip="192.168.1.50", role="worker"), options
-    )
-    assert warnings == [
-        "after install the node is reachable at 10.0.0.50; add --mgmt 10.0.0.50 so plan/apply use it"
-    ]
-    same = NodeOptions(
-        static="10.0.0.51/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff"
-    )
-    assert (
-        add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.51", role="worker"), same)
-        == []
-    )
+    options = NodeOptions(static="10.0.0.50/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff")
+    warnings = add_node(empty_repo, "w-01", NodeSpec(ip="192.168.1.50", role="worker"), options)
+    assert warnings == ["after install the node is reachable at 10.0.0.50; add --mgmt 10.0.0.50 so plan/apply use it"]
+    same = NodeOptions(static="10.0.0.51/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff")
+    assert add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.51", role="worker"), same) == []
     with_mgmt = NodeSpec(ip="192.168.1.52", role="worker", mgmt="10.0.0.52")
     assert (
         add_node(
             empty_repo,
             "w-03",
             with_mgmt,
-            NodeOptions(
-                static="10.0.0.52/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff"
-            ),
+            NodeOptions(static="10.0.0.52/24", gateway="10.0.0.1", mac="aa:bb:cc:dd:ee:ff"),
         )
         == []
     )
@@ -296,9 +267,7 @@ def test_add_node_after_lockdown_uses_tailnet_mgmt(empty_repo):
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
     empty_repo.write_settings(settings)
     add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions())
-    assert (
-        empty_repo.load_settings().nodes["w-01"].mgmt is None
-    )  # enabled, not locked down
+    assert empty_repo.load_settings().nodes["w-01"].mgmt is None  # enabled, not locked down
     tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True, exist_ok=True)
     tailscale.firewall_patch_path(empty_repo).write_text("x")
     add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
@@ -318,15 +287,11 @@ def test_add_node_after_lockdown_use_ips_keeps_lan_ip_and_warns(empty_repo):
     from talkub.talos import tailscale
 
     settings = empty_repo.load_settings()
-    settings.tailscale = TailscaleSpec(
-        tailnet="t.ts.net", node_cidr="10.0.0.0/24", use_ips=True
-    )
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24", use_ips=True)
     empty_repo.write_settings(settings)
     tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True, exist_ok=True)
     tailscale.firewall_patch_path(empty_repo).write_text("x")
-    warnings = add_node(
-        empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions()
-    )
+    warnings = add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
     node = empty_repo.load_settings().nodes["w-02"]
     assert node.mgmt is None  # keeps the LAN ip (mgmt_address falls back to it)
     assert node.ip == "10.0.0.12"
@@ -352,28 +317,11 @@ def test_add_node_after_lockdown_warns_outside_the_node_network(empty_repo):
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
     empty_repo.write_settings(settings)
     # enabled, not locked down: no firewall yet, no warning
-    assert (
-        add_node(
-            empty_repo, "w-01", NodeSpec(ip="192.168.1.5", role="worker"), NodeOptions()
-        )
-        == []
-    )
+    assert add_node(empty_repo, "w-01", NodeSpec(ip="192.168.1.5", role="worker"), NodeOptions()) == []
     tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True, exist_ok=True)
     tailscale.firewall_patch_path(empty_repo).write_text("x")
-    warnings = add_node(
-        empty_repo, "w-02", NodeSpec(ip="192.168.1.6", role="worker"), NodeOptions()
-    )
+    warnings = add_node(empty_repo, "w-02", NodeSpec(ip="192.168.1.6", role="worker"), NodeOptions())
     assert len(warnings) == 1
     assert "10.0.0.0/24" in warnings[0] and "firewall.yaml" in warnings[0]
-    assert (
-        add_node(
-            empty_repo, "w-03", NodeSpec(ip="10.0.0.13", role="worker"), NodeOptions()
-        )
-        == []
-    )
-    assert (
-        add_node(
-            empty_repo, "w-04", NodeSpec(ip="w-04.lan", role="worker"), NodeOptions()
-        )
-        == []
-    )
+    assert add_node(empty_repo, "w-03", NodeSpec(ip="10.0.0.13", role="worker"), NodeOptions()) == []
+    assert add_node(empty_repo, "w-04", NodeSpec(ip="w-04.lan", role="worker"), NodeOptions()) == []

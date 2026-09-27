@@ -70,13 +70,8 @@ def test_enable_prompts_for_the_key(repo, monkeypatch):
     import getpass
 
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": KEY)
-    assert (
-        _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"])
-        == 0
-    )
-    assert KEY.encode() in Context.open(repo).sops.decrypt(
-        tailscale.extension_patch_path(repo)
-    )
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"]) == 0
+    assert KEY.encode() in Context.open(repo).sops.decrypt(tailscale.extension_patch_path(repo))
 
 
 def test_enable_rejects_bad_key_file(repo, tmp_path, capfd):
@@ -153,9 +148,7 @@ def test_init_with_tailscale(tmp_path, software_identity, fake_bin, monkeypatch)
 
 
 @need("talosctl")
-def test_init_tailscale_lockdown_failure_hints_at_the_repo(
-    tmp_path, software_identity, fake_bin, monkeypatch, capfd
-):
+def test_init_tailscale_lockdown_failure_hints_at_the_repo(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     key_file = tmp_path / "key"
@@ -212,13 +205,8 @@ def test_enable_refuses_before_asking_for_the_key(repo, tmp_path, monkeypatch, c
     )
     capfd.readouterr()
     asked = []
-    monkeypatch.setattr(
-        getpass, "getpass", lambda prompt="": asked.append(prompt) or KEY
-    )
-    assert (
-        _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"])
-        == 1
-    )
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": asked.append(prompt) or KEY)
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"]) == 1
     assert "already enabled" in capfd.readouterr().err
     assert asked == []
 
@@ -229,13 +217,8 @@ def test_enable_refuses_half_state_before_asking_for_the_key(repo, monkeypatch, 
     tailscale.extension_patch_path(repo).parent.mkdir(parents=True, exist_ok=True)
     tailscale.extension_patch_path(repo).write_text("stray: true\n")
     asked = []
-    monkeypatch.setattr(
-        getpass, "getpass", lambda prompt="": asked.append(prompt) or KEY
-    )
-    assert (
-        _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"])
-        == 1
-    )
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": asked.append(prompt) or KEY)
+    assert _run(["--repo", str(repo.root), "tailscale", "enable", "--tailnet", "t.ts.net"]) == 1
     assert "interrupted" in capfd.readouterr().err
     assert asked == []
 
@@ -279,9 +262,7 @@ def test_read_authkey_warns_only_inside_the_repo(tmp_path, capfd):
 
 
 @need("talosctl")
-def test_init_tailscale_enable_failure_hint_keeps_node_cidr(
-    tmp_path, software_identity, fake_bin, monkeypatch, capfd
-):
+def test_init_tailscale_enable_failure_hint_keeps_node_cidr(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     key_file = tmp_path / "key"
@@ -311,7 +292,4 @@ def test_init_tailscale_enable_failure_hint_keeps_node_cidr(
         ]
     )
     assert code == 1
-    assert (
-        "talkub tailscale enable --tailnet t.ts.net --node-cidr 10.0.0.0/16"
-        in capfd.readouterr().err
-    )
+    assert "talkub tailscale enable --tailnet t.ts.net --node-cidr 10.0.0.0/16" in capfd.readouterr().err

@@ -19,9 +19,7 @@ def secret(keyed_repo):
     path = keyed_repo.root / "x.sops.yaml"
     atomic_write(
         path,
-        ctx.sops.encrypt(
-            b"a: 1\n", filename=path.name, public_key=ctx.keyring.public_key()
-        ),
+        ctx.sops.encrypt(b"a: 1\n", filename=path.name, public_key=ctx.keyring.public_key()),
     )
     return ctx, path
 
@@ -36,9 +34,7 @@ def test_invalid_yaml_reopens_editor(secret, fake_bin, tmp_path, monkeypatch):
     ctx, path = secret
     counter = _editor(fake_bin, tmp_path, monkeypatch)
     questions = []
-    code = ctx.sops.edit(
-        path, ctx.keyring.public_key(), retry=lambda q: questions.append(q) or True
-    )
+    code = ctx.sops.edit(path, ctx.keyring.public_key(), retry=lambda q: questions.append(q) or True)
     assert code == 0
     assert counter.read_text().strip() == "2"
     assert "not valid YAML" in questions[0]
@@ -57,9 +53,7 @@ def test_declined_reopen_writes_nothing(secret, fake_bin, tmp_path, monkeypatch,
     assert ctx.sops.edit(path, ctx.keyring.public_key(), retry=lambda q: False) == 1
     assert path.read_bytes() == before
     assert "discarded" in capfd.readouterr().err
-    assert (
-        list(temp.iterdir()) == []
-    )  # the decrypted plaintext's talkub-* directory is gone
+    assert list(temp.iterdir()) == []  # the decrypted plaintext's talkub-* directory is gone
 
 
 @pytest.mark.parametrize("variable", ["SOPS_EDITOR", "EDITOR"])

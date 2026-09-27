@@ -30,25 +30,19 @@ def talosctl(ctx: Context, args: Sequence[str]) -> int:
     require_tool("talosctl")
     source = _existing(ctx, ctx.repo.talosconfig, TALOSCONFIG_HINT)
     with decrypted(ctx.sops, {"talosconfig": source}) as paths:
-        return ctx.runner.call(
-            ["talosctl", *args], env={"TALOSCONFIG": str(paths["talosconfig"])}
-        )
+        return ctx.runner.call(["talosctl", *args], env={"TALOSCONFIG": str(paths["talosconfig"])})
 
 
 def kubectl(ctx: Context, args: Sequence[str]) -> int:
     require_tool("kubectl")
     source = _existing(ctx, ctx.repo.kubeconfig, KUBECONFIG_HINT)
     with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
-        return ctx.runner.call(
-            ["kubectl", *args], env={"KUBECONFIG": str(paths["kubeconfig"])}
-        )
+        return ctx.runner.call(["kubectl", *args], env={"KUBECONFIG": str(paths["kubeconfig"])})
 
 
 def shell(ctx: Context, program: str | None = None) -> int:
     if active := os.environ.get("TALKUB_SESSION"):
-        raise ValidationError(
-            f"already inside a talkub shell for '{active}'", hint="exit it first"
-        )
+        raise ValidationError(f"already inside a talkub shell for '{active}'", hint="exit it first")
     program = program or os.environ.get("SHELL") or "/bin/sh"
     require_tool(program)
     name = ctx.repo.load_settings().name

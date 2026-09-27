@@ -38,11 +38,7 @@ def upgrade_argocd(ctx: Context, kube: KubeSession) -> None:
 
 def _bootstrap_sources(repo: Repo) -> dict[str, HelmSource]:
     """The chart sources bootstrap installs, in install order (`ValidationError` if one is broken)."""
-    keys = [
-        key
-        for key in OPTIONAL_KEYS
-        if (repo.gitops_dir / "apps" / f"{key}.yaml").exists()
-    ]
+    keys = [key for key in OPTIONAL_KEYS if (repo.gitops_dir / "apps" / f"{key}.yaml").exists()]
     return {key: app_source(repo, key) for key in [*keys, *REQUIRED_KEYS]}
 
 
@@ -51,11 +47,7 @@ def run(ctx: Context) -> None:
         require_tool(tool)
     settings = ctx.repo.load_settings()
     sources = _bootstrap_sources(ctx.repo)
-    controlplanes = [
-        n
-        for n in ordered_nodes(settings, [])
-        if settings.nodes[n].role == "controlplane"
-    ]
+    controlplanes = [n for n in ordered_nodes(settings, []) if settings.nodes[n].role == "controlplane"]
     if not controlplanes:
         raise ValidationError("bootstrap needs a controlplane node")
     first = controlplanes[0]
@@ -72,9 +64,7 @@ def run(ctx: Context) -> None:
         else:
             _bootstrap_etcd(talos, address)
         _step("waiting for the cluster to become healthy")
-        code = talos.call(
-            address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT]
-        )
+        code = talos.call(address, ["health", "--wait-timeout", BOOTSTRAP_HEALTH_TIMEOUT])
         if code != 0:
             raise CommandFailed(
                 "the cluster did not become healthy",
@@ -82,9 +72,7 @@ def run(ctx: Context) -> None:
             )
         kubeconfig = talos.run(address, ["kubeconfig", "-", "--merge=false"]).stdout
     if tailscale.is_locked_down(ctx.repo):
-        kubeconfig = tailscale.rewrite_kubeconfig_server(
-            kubeconfig, tailscale.admin_server(settings)
-        )
+        kubeconfig = tailscale.rewrite_kubeconfig_server(kubeconfig, tailscale.admin_server(settings))
     _store_kubeconfig(ctx, kubeconfig)
 
     backup = sealing.key_backup_path(ctx.repo)
@@ -95,9 +83,7 @@ def run(ctx: Context) -> None:
                 _step("restoring the sealed-secrets key")
                 with decrypted(ctx.sops, {"sealing-key.yaml": backup}) as plain:
                     # server-side: no last-applied-configuration annotation carrying the private key
-                    kube.kubectl(
-                        ["apply", "--server-side", "-f", str(plain["sealing-key.yaml"])]
-                    )
+                    kube.kubectl(["apply", "--server-side", "-f", str(plain["sealing-key.yaml"])])
             _step(f"installing {source.release}")
             helm_install(kube, source, create_namespace=key in CREATE_NAMESPACE)
             if key != "sealed-secrets":
@@ -127,9 +113,7 @@ def run(ctx: Context) -> None:
 ETCD_PROBE_TIMEOUT = 20.0
 
 
-def _etcd_member(
-    talos: TalosSession, settings: Settings, controlplanes: list[str]
-) -> str | None:
+def _etcd_member(talos: TalosSession, settings: Settings, controlplanes: list[str]) -> str | None:
     """The first control plane whose etcd already has members (bootstrapping again would split etcd)."""
     for name in controlplanes:
         proc = talos.run(
@@ -144,10 +128,7 @@ def _etcd_member(
                 flush=True,
             )
             continue
-        if (
-            proc.returncode == 0
-            and (etcd_member_count(proc.stdout.decode(errors="replace")) or 0) >= 1
-        ):
+        if proc.returncode == 0 and (etcd_member_count(proc.stdout.decode(errors="replace")) or 0) >= 1:
             return name
     return None
 
@@ -168,9 +149,7 @@ def _bootstrap_etcd(talos: TalosSession, address: str) -> None:
 
 def _warn_if_restored_key_is_stale(ctx: Context, kube: KubeSession) -> None:
     """The controller may have rotated its key since the backup; warn, but do not back up automatically."""
-    proc = ctx.runner.run(
-        ["kubeseal", "--fetch-cert", *sealing.CONTROLLER], env=kube.env, check=False
-    )
+    proc = ctx.runner.run(["kubeseal", "--fetch-cert", *sealing.CONTROLLER], env=kube.env, check=False)
     if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
         sealing.warn_if_cert_changed(ctx.repo, proc.stdout)
 
@@ -182,8 +161,6 @@ def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
         return
     atomic_write(
         target,
-        ctx.sops.encrypt(
-            kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()
-        ),
+        ctx.sops.encrypt(kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()),
     )
     print(f"   wrote {ctx.repo.rel(target)}")

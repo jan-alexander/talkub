@@ -20,9 +20,7 @@ def test_talos_patch_parses_to_three_keys():
 
 def test_values_without_tailnet_has_leading_comment_and_one_server():
     text = coredns.values()
-    assert text.startswith(
-        "# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n"
-    )
+    assert text.startswith("# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n")
     doc = yamlio.load(text)
     assert doc["fullnameOverride"] == "coredns-talkub"
     assert doc["k8sAppLabelOverride"] == "kube-dns"
@@ -83,9 +81,7 @@ def test_add_stub_zone_adds_server_and_keeps_comment():
     base = coredns.values()
     text, changed = coredns.add_stub_zone(base, TAILNET)
     assert changed is True
-    assert text.startswith(
-        "# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n"
-    )
+    assert text.startswith("# Helm values for CoreDNS (chart coredns). Used by talkub and by Argo CD.\n")
     doc = yamlio.load(text)
     assert len(doc["servers"]) == 2
     assert doc["servers"][1]["zones"] == [{"zone": TAILNET, "use_tcp": True}]
@@ -121,9 +117,7 @@ def test_real_chart_renders_expected_shape(tmp_path):
     except (subprocess.TimeoutExpired, OSError) as err:
         pytest.skip(f"helm template failed (network?): {err}")
     if result.returncode != 0:
-        pytest.skip(
-            f"helm template failed (network?): {result.stderr.decode(errors='replace')}"
-        )
+        pytest.skip(f"helm template failed (network?): {result.stderr.decode(errors='replace')}")
     rendered = result.stdout.decode()
     assert "lameduck 5s" in rendered
     assert "forward . /etc/resolv.conf" in rendered
@@ -164,8 +158,6 @@ def test_real_chart_renders_stub_forward(tmp_path):
     except (subprocess.TimeoutExpired, OSError) as err:
         pytest.skip(f"helm template failed (network?): {err}")
     if result.returncode != 0:
-        pytest.skip(
-            f"helm template failed (network?): {result.stderr.decode(errors='replace')}"
-        )
+        pytest.skip(f"helm template failed (network?): {result.stderr.decode(errors='replace')}")
     rendered = result.stdout.decode()
     assert "forward . 10.96.0.53" in rendered

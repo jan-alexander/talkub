@@ -21,9 +21,7 @@ from talkub.secrets.sops import Sops, render_sops_config
 
 
 class Keyring:
-    def __init__(
-        self, repo: Repo, runner: Runner, env: Mapping[str, str] | None = None
-    ) -> None:
+    def __init__(self, repo: Repo, runner: Runner, env: Mapping[str, str] | None = None) -> None:
         self.repo = repo
         self.runner = runner
         self.env = dict(os.environ if env is None else env)
@@ -71,9 +69,7 @@ class Keyring:
 
     def create(self, recipients: Sequence[Recipient]) -> str:
         if self.repo.master_age.exists():
-            raise ValidationError(
-                f"{self.repo.rel(self.repo.master_age)} already exists"
-            )
+            raise ValidationError(f"{self.repo.rel(self.repo.master_age)} already exists")
         if not recipients:
             raise ValidationError("at least one recipient is required")
         pair = age.generate(self.runner)
@@ -89,9 +85,7 @@ class Keyring:
             if existing.name == recipient.name:
                 raise ValidationError(f"recipient '{recipient.name}' already exists")
             if existing.key == recipient.key:
-                raise ValidationError(
-                    f"this key is already registered as '{existing.name}'"
-                )
+                raise ValidationError(f"this key is already registered as '{existing.name}'")
         self._write(self.master_key(), [*current, recipient])
 
     def remove(self, name: str) -> None:
@@ -100,27 +94,19 @@ class Keyring:
         if len(remaining) == len(current):
             raise ValidationError(f"no recipient named '{name}'")
         if not remaining:
-            raise ValidationError(
-                "refusing to remove the last recipient", hint="add another admin first"
-            )
+            raise ValidationError("refusing to remove the last recipient", hint="add another admin first")
         self._write(self.master_key(), remaining)
 
     def _write(self, secret: str, recipients: list[Recipient]) -> None:
         # Invariant: master.age always holds the key matching master.pub, which every
         # SOPS file is encrypted to. Writing any other key would lock everyone out.
         if age.public_key(self.runner, secret) != self.public_key():
-            raise ValidationError(
-                "refusing to write keys/master.age: the key does not match keys/master.pub"
-            )
-        ciphertext = age.encrypt(
-            self.runner, (secret + "\n").encode(), [r.key for r in recipients]
-        )
+            raise ValidationError("refusing to write keys/master.age: the key does not match keys/master.pub")
+        ciphertext = age.encrypt(self.runner, (secret + "\n").encode(), [r.key for r in recipients])
         # master.age first: if we stop in between, recipients.txt is merely stale
         # and re-running the same command fixes it.
         atomic_write(self.repo.master_age, ciphertext)
-        atomic_write(
-            self.repo.recipients_file, recipients_file.render(recipients).encode()
-        )
+        atomic_write(self.repo.recipients_file, recipients_file.render(recipients).encode())
 
     def rotate(self, sops: Sops) -> None:
         """Replace the master key and re-encrypt every SOPS file.
@@ -143,14 +129,10 @@ class Keyring:
 
         atomic_write(
             pending,
-            age.encrypt(
-                self.runner, (new.secret + "\n").encode(), [r.key for r in recipients]
-            ),
+            age.encrypt(self.runner, (new.secret + "\n").encode(), [r.key for r in recipients]),
         )
         for path, plaintext in plaintexts.items():
-            atomic_write(
-                path, sops.encrypt(plaintext, filename=path.name, public_key=new.public)
-            )
+            atomic_write(path, sops.encrypt(plaintext, filename=path.name, public_key=new.public))
         atomic_write(self.repo.master_pub, (new.public + "\n").encode())
         atomic_write(self.repo.sops_config, render_sops_config(new.public).encode())
         os.replace(pending, self.repo.master_age)

@@ -39,13 +39,9 @@ class Sops:
 
     def decrypt(self, path: Path) -> bytes:
         try:
-            return self.runner.run(
-                ["sops", "decrypt", str(path)], env=self._key_env()
-            ).stdout
+            return self.runner.run(["sops", "decrypt", str(path)], env=self._key_env()).stdout
         except CommandFailed as err:
-            raise DecryptFailed(
-                f"sops could not decrypt {path}", hint=err.hint
-            ) from err
+            raise DecryptFailed(f"sops could not decrypt {path}", hint=err.hint) from err
 
     def encrypt(self, plaintext: bytes, *, filename: str, public_key: str) -> bytes:
         argv = [
@@ -76,9 +72,7 @@ class Sops:
         The editor is checked before anything is decrypted. Invalid YAML re-opens the
         editor while `retry` says so; otherwise nothing is written and 1 is returned.
         """
-        editor = shlex.split(
-            os.environ.get("SOPS_EDITOR") or os.environ.get("EDITOR") or "vi"
-        )
+        editor = shlex.split(os.environ.get("SOPS_EDITOR") or os.environ.get("EDITOR") or "vi")
         if not editor:
             raise ValidationError(
                 "$SOPS_EDITOR/$EDITOR is empty",
@@ -97,9 +91,7 @@ class Sops:
                 problem = _yaml_problem(edited)
                 if problem is None:
                     break
-                if not retry(
-                    f"the edited file is not valid YAML ({problem}); re-open the editor?"
-                ):
+                if not retry(f"the edited file is not valid YAML ({problem}); re-open the editor?"):
                     print(
                         "talkub: changes discarded, nothing was written",
                         file=sys.stderr,
@@ -114,7 +106,5 @@ def _yaml_problem(data: bytes) -> str | None:
     try:
         yamlio.load_all(data.decode())
     except (YAMLError, UnicodeDecodeError) as err:
-        return (
-            str(err).strip().splitlines()[0] if str(err).strip() else type(err).__name__
-        )
+        return str(err).strip().splitlines()[0] if str(err).strip() else type(err).__name__
     return None

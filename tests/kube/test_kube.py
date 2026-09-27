@@ -8,11 +8,7 @@ from talkub.kube.session import kube_session
 
 
 def test_spy_rules_first_match_and_logging(spy):
-    fake = (
-        spy("kubectl")
-        .on("get", "nodes", stdout="nodes!", rc=3)
-        .on("get", stdout="other")
-    )
+    fake = spy("kubectl").on("get", "nodes", stdout="nodes!", rc=3).on("get", stdout="other")
     proc = Runner().run(["kubectl", "get", "nodes"], check=False)
     assert (proc.returncode, proc.stdout) == (3, b"nodes!")
     assert Runner().run(["kubectl", "get", "pods"]).stdout == b"other"

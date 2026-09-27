@@ -135,17 +135,11 @@ def check_can_enable(repo: Repo, *, rotate_credentials: bool = False) -> Setting
     `--rotate-credentials` was not given. Called before the OAuth client secret is asked for."""
     settings = repo.load_settings()
     if settings.tailscale is None:
-        raise ValidationError(
-            "tailscale is not enabled", hint="run `talkub tailscale enable` first"
-        )
+        raise ValidationError("tailscale is not enabled", hint="run `talkub tailscale enable` first")
     if not coredns.app_path(repo).exists():
-        raise ValidationError(
-            "CoreDNS is not managed by talkub yet", hint="talkub coredns takeover"
-        )
+        raise ValidationError("CoreDNS is not managed by talkub yet", hint="talkub coredns takeover")
     if settings.git is None:
-        raise ValidationError(
-            "no git URL in .talkub.yaml", hint="talkub repo set-url <url>"
-        )
+        raise ValidationError("no git URL in .talkub.yaml", hint="talkub repo set-url <url>")
     if app_path(repo).exists() and not rotate_credentials:
         raise ValidationError(
             "the Tailscale operator is already enabled",
@@ -176,9 +170,7 @@ def write_files(repo: Repo, chart: ChartSpec, git_url: str, cluster: str) -> Non
             NAMESPACE,
             create_namespace=True,
             skip_dry_run_on_missing=True,
-            ignore_differences=[
-                {"group": "", "kind": "Service", "jsonPointers": ["/spec/externalName"]}
-            ],
+            ignore_differences=[{"group": "", "kind": "Service", "jsonPointers": ["/spec/externalName"]}],
             sync_wave="1",
         ),
         dnsconfig_path(repo): dnsconfig(),
@@ -224,9 +216,7 @@ def enable(
     if app_path(repo).exists():
         if not namespace_path(repo).exists():
             atomic_write(namespace_path(repo), namespace().encode())
-            print(
-                f"   wrote {repo.rel(namespace_path(repo))} (added: privileged pod security for this namespace)"
-            )
+            print(f"   wrote {repo.rel(namespace_path(repo))} (added: privileged pod security for this namespace)")
         return ["re-sealed the OAuth client secret", COMMIT_NOTE]
 
     chart = charts.resolve(ctx.runner, CHART_KEY)
@@ -237,9 +227,7 @@ def enable(
 
 def _tailnet(settings: Settings) -> str:
     if settings.tailscale is None:
-        raise ValidationError(
-            "tailscale is not enabled", hint="talkub tailscale enable"
-        )
+        raise ValidationError("tailscale is not enabled", hint="talkub tailscale enable")
     return settings.tailscale.tailnet
 
 
@@ -263,9 +251,7 @@ def _check_egress_name(name: str) -> str:
 
 def _check_fqdn(fqdn: str, tailnet: str) -> str:
     if not fqdn.lower().endswith(f".{tailnet.lower()}"):
-        raise ValidationError(
-            f"--fqdn must end with .{tailnet}", hint=f"e.g. host.{tailnet}"
-        )
+        raise ValidationError(f"--fqdn must end with .{tailnet}", hint=f"e.g. host.{tailnet}")
     return fqdn
 
 
@@ -314,9 +300,7 @@ def egress_add(
     if (fqdn is None) == (ip is None):
         raise ValidationError("give exactly one of --fqdn or --ip")
     if fqdn is not None:
-        annotations = {
-            "tailscale.com/tailnet-fqdn": _check_fqdn(fqdn, _tailnet(settings))
-        }
+        annotations = {"tailscale.com/tailnet-fqdn": _check_fqdn(fqdn, _tailnet(settings))}
     else:
         annotations = {"tailscale.com/tailnet-ip": _check_ip(ip)}
     path = egress_path(repo, name)
@@ -376,9 +360,7 @@ def _check_path(path: str) -> str:
     return path
 
 
-def ingress(
-    name: str, namespace: str, service: str, port: int | str, path: str | None = None
-) -> str:
+def ingress(name: str, namespace: str, service: str, port: int | str, path: str | None = None) -> str:
     """Render a Tailscale-Ingress manifest exposing `service` (in `namespace`) at
     `https://<name>.<tailnet>`, either as a `defaultBackend` or, with `path`, a single
     path-based rule."""
@@ -388,13 +370,7 @@ def ingress(
     if path is None:
         spec["defaultBackend"] = backend
     else:
-        spec["rules"] = [
-            {
-                "http": {
-                    "paths": [{"path": path, "pathType": "Prefix", "backend": backend}]
-                }
-            }
-        ]
+        spec["rules"] = [{"http": {"paths": [{"path": path, "pathType": "Prefix", "backend": backend}]}}]
     spec["tls"] = [{"hosts": [name]}]
     doc = {
         "apiVersion": "networking.k8s.io/v1",
@@ -405,9 +381,7 @@ def ingress(
     return _INGRESS_HEADER + yamlio.dump(doc)
 
 
-def expose(
-    ctx: Context, name: str, *, service: str, port: str, path: str | None = None
-) -> Path:
+def expose(ctx: Context, name: str, *, service: str, port: str, path: str | None = None) -> Path:
     """Write an Ingress in `gitops/manifests/tailscale/ingress/<name>.yaml` that exposes a
     Service in the tailnet at `https://<name>.<tailnet>`. The backend must speak HTTP: the
     Tailscale proxy terminates TLS."""

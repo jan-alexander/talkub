@@ -34,23 +34,17 @@ def test_add_extensions_validates_names(factory_stub):
 def test_add_and_remove_extensions(factory_stub):
     settings = sample_settings()
     client = FactoryClient()
-    assert images.add_extensions(
-        settings, "metal", ["siderolabs/tailscale", "siderolabs/intel-ucode"], client
-    ) == [
+    assert images.add_extensions(settings, "metal", ["siderolabs/tailscale", "siderolabs/intel-ucode"], client) == [
         "siderolabs/intel-ucode",
         "siderolabs/tailscale",
     ]
-    assert (
-        images.add_extensions(settings, "metal", ["siderolabs/tailscale"], client) == []
-    )
+    assert images.add_extensions(settings, "metal", ["siderolabs/tailscale"], client) == []
     assert settings.schematics["metal"].extensions == [
         "siderolabs/intel-ucode",
         "siderolabs/tailscale",
     ]
     assert settings.schematics["metal"].is_current
-    assert images.remove_extensions(
-        settings, "metal", ["siderolabs/tailscale"], client
-    ) == ["siderolabs/tailscale"]
+    assert images.remove_extensions(settings, "metal", ["siderolabs/tailscale"], client) == ["siderolabs/tailscale"]
     assert settings.schematics["metal"].extensions == ["siderolabs/intel-ucode"]
     with pytest.raises(ValidationError):
         images.remove_extensions(settings, "metal", ["siderolabs/tailscale"], client)

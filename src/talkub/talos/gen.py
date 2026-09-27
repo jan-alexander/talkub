@@ -43,9 +43,7 @@ def parse_defaults(text: str) -> Defaults:
             installer = (doc.get("installer") or {}).get("image")
         elif kind == "KubeletConfig":
             kubelet = doc.get("image")
-        elif doc.get("version") == "v1alpha1" and isinstance(
-            doc.get("machine"), Mapping
-        ):
+        elif doc.get("version") == "v1alpha1" and isinstance(doc.get("machine"), Mapping):
             machine = doc["machine"]
             installer = installer or (machine.get("install") or {}).get("image")
             kubelet = kubelet or (machine.get("kubelet") or {}).get("image")
@@ -63,9 +61,7 @@ def parse_defaults(text: str) -> Defaults:
     )
 
 
-def detect_defaults(
-    runner: Runner, name: str, endpoint: str, secrets: Path
-) -> Defaults:
+def detect_defaults(runner: Runner, name: str, endpoint: str, secrets: Path) -> Defaults:
     argv = [
         "talosctl",
         "gen",
@@ -110,8 +106,6 @@ def gen_talosconfig(
             str(path),
         ]
     )
-    runner.run(
-        ["talosctl", "--talosconfig", str(path), "config", "endpoint", *endpoints]
-    )
+    runner.run(["talosctl", "--talosconfig", str(path), "config", "endpoint", *endpoints])
     runner.run(["talosctl", "--talosconfig", str(path), "config", "node", node])
     return path

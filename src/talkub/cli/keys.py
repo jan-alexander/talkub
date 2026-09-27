@@ -15,9 +15,7 @@ def rotate(
     """Create a new master key and re-encrypt every *.sops.yaml."""
     context = ctx.obj.context()
     count = len(context.repo.sops_files())
-    if not yes and not typer.confirm(
-        f"Rotate the master key and re-encrypt {count} file(s)?"
-    ):
+    if not yes and not typer.confirm(f"Rotate the master key and re-encrypt {count} file(s)?"):
         raise typer.Exit(1)
     context.keyring.rotate(context.sops)
     print(f"rotated; re-encrypted {count} file(s). Commit all changes together.")

@@ -58,9 +58,7 @@ def version_http_stub(monkeypatch):
     server.server_close()
 
 
-def _spy_talos_kube(
-    spy, talos_stdout=VERSION_OUT, talos_rc=0, kube_stdout=NODES_JSON, kube_rc=0
-):
+def _spy_talos_kube(spy, talos_stdout=VERSION_OUT, talos_rc=0, kube_stdout=NODES_JSON, kube_rc=0):
     talosctl = spy("talosctl").on("version", stdout=talos_stdout, rc=talos_rc)
     kubectl = spy("kubectl").on("get", "nodes", stdout=kube_stdout, rc=kube_rc)
     return talosctl, kubectl
@@ -84,9 +82,7 @@ def test_talos_and_kubernetes_rows(repo_with_configs, spy, version_http_stub):
     assert k8s.note == "check the Talos support matrix before upgrading"
 
 
-def test_talos_running_is_question_mark_on_talosctl_failure(
-    repo_with_configs, spy, version_http_stub
-):
+def test_talos_running_is_question_mark_on_talosctl_failure(repo_with_configs, spy, version_http_stub):
     _spy_talos_kube(spy, talos_rc=1)
     spy("helm")
     rows = versions.collect(Context.open(repo_with_configs))
@@ -94,9 +90,7 @@ def test_talos_running_is_question_mark_on_talosctl_failure(
     assert talos.running == "?"
 
 
-def test_talos_running_is_question_mark_without_talosconfig(
-    empty_repo, spy, version_http_stub
-):
+def test_talos_running_is_question_mark_without_talosconfig(empty_repo, spy, version_http_stub):
     spy("talosctl")
     spy("kubectl")
     spy("helm")
@@ -105,9 +99,7 @@ def test_talos_running_is_question_mark_without_talosconfig(
     assert talos.running == "?"
 
 
-def test_kubernetes_running_is_question_mark_without_kubeconfig(
-    repo_with_configs, spy, version_http_stub
-):
+def test_kubernetes_running_is_question_mark_without_kubeconfig(repo_with_configs, spy, version_http_stub):
     repo_with_configs.kubeconfig.unlink()
     _spy_talos_kube(spy)
     spy("helm")
@@ -116,9 +108,7 @@ def test_kubernetes_running_is_question_mark_without_kubeconfig(
     assert k8s.running == "?"
 
 
-def test_multiple_distinct_talos_versions_are_comma_joined(
-    repo_with_configs, spy, version_http_stub
-):
+def test_multiple_distinct_talos_versions_are_comma_joined(repo_with_configs, spy, version_http_stub):
     from talkub.config import NodeSpec
     from talkub.core.fsutil import atomic_write
     from talkub.talos.nodes import node_patch_path, render_node_patch
@@ -126,9 +116,7 @@ def test_multiple_distinct_talos_versions_are_comma_joined(
     settings = repo_with_configs.load_settings()
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker")
     repo_with_configs.write_settings(settings)
-    atomic_write(
-        node_patch_path(repo_with_configs, "w-01"), render_node_patch("w-01").encode()
-    )
+    atomic_write(node_patch_path(repo_with_configs, "w-01"), render_node_patch("w-01").encode())
 
     (
         spy("talosctl")
@@ -142,12 +130,8 @@ def test_multiple_distinct_talos_versions_are_comma_joined(
     assert talos.running in ("v1.14.0, v1.13.9", "v1.13.9, v1.14.0")
 
 
-def test_offline_sets_latest_dash_everywhere_and_makes_no_http_request(
-    repo_with_configs, spy, monkeypatch
-):
-    monkeypatch.setenv(
-        "TALKUB_GITHUB_API", "http://127.0.0.1:1"
-    )  # nothing listens there
+def test_offline_sets_latest_dash_everywhere_and_makes_no_http_request(repo_with_configs, spy, monkeypatch):
+    monkeypatch.setenv("TALKUB_GITHUB_API", "http://127.0.0.1:1")  # nothing listens there
     monkeypatch.setenv("TALKUB_K8S_RELEASE_URL", "http://127.0.0.1:1/x")
     _spy_talos_kube(spy)
     spy("helm")
@@ -155,9 +139,7 @@ def test_offline_sets_latest_dash_everywhere_and_makes_no_http_request(
     assert all(row.latest == "-" for row in rows)
 
 
-def test_talos_latest_is_question_mark_on_http_failure(
-    repo_with_configs, spy, version_http_stub
-):
+def test_talos_latest_is_question_mark_on_http_failure(repo_with_configs, spy, version_http_stub):
     version_http_stub.fail = True
     _spy_talos_kube(spy)
     spy("helm")
@@ -169,9 +151,7 @@ def test_talos_latest_is_question_mark_on_http_failure(
     assert k8s.note == ""
 
 
-def test_no_note_when_kubernetes_target_is_already_latest(
-    repo_with_configs, spy, version_http_stub
-):
+def test_no_note_when_kubernetes_target_is_already_latest(repo_with_configs, spy, version_http_stub):
     version_http_stub.k8s_stable = "v1.37.0\n"
     _spy_talos_kube(spy)
     spy("helm")
@@ -197,9 +177,7 @@ def _write_argocd_app(repo):
 APP_SYNCED_JSON = '{"status": {"sync": {"revisions": ["10.9.2", "HEAD"]}}}'
 
 
-def test_chart_row_running_latest_and_appversion_note(
-    repo_with_configs, spy, version_http_stub
-):
+def test_chart_row_running_latest_and_appversion_note(repo_with_configs, spy, version_http_stub):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
@@ -220,9 +198,7 @@ def test_chart_row_running_latest_and_appversion_note(
     assert argocd.note == "appVersion v3.5.3 → v3.6.0"
 
 
-def test_chart_row_no_note_when_already_at_latest(
-    repo_with_configs, spy, version_http_stub
-):
+def test_chart_row_no_note_when_already_at_latest(repo_with_configs, spy, version_http_stub):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
@@ -234,9 +210,7 @@ def test_chart_row_no_note_when_already_at_latest(
     assert argocd.note == ""
 
 
-def test_chart_row_running_is_question_mark_when_app_missing(
-    repo_with_configs, spy, version_http_stub
-):
+def test_chart_row_running_is_question_mark_when_app_missing(repo_with_configs, spy, version_http_stub):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
@@ -247,9 +221,7 @@ def test_chart_row_running_is_question_mark_when_app_missing(
     assert argocd.running == "?"
 
 
-def test_chart_row_latest_is_question_mark_on_helm_failure(
-    repo_with_configs, spy, version_http_stub
-):
+def test_chart_row_latest_is_question_mark_on_helm_failure(repo_with_configs, spy, version_http_stub):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
@@ -261,9 +233,7 @@ def test_chart_row_latest_is_question_mark_on_helm_failure(
     assert argocd.note == ""
 
 
-def test_singular_source_app_running_uses_sync_revision(
-    repo_with_configs, spy, version_http_stub
-):
+def test_singular_source_app_running_uses_sync_revision(repo_with_configs, spy, version_http_stub):
     """An app with `spec.source` (not `spec.sources`) has no multi-source revision index:
     running comes from `status.sync.revision`, not `status.sync.revisions[i]`."""
     apps_dir = repo_with_configs.gitops_dir / "apps"
@@ -329,43 +299,31 @@ def _write_app_yaml(repo, stem, name, target_revision_line, *, namespace="argocd
     )
 
 
-def test_chart_row_target_is_question_mark_for_null_target_revision(
-    repo_with_configs, spy
-):
+def test_chart_row_target_is_question_mark_for_null_target_revision(repo_with_configs, spy):
     _write_app_yaml(repo_with_configs, "argocd", "argocd", "targetRevision:")
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
     kubectl.on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
-    rows = versions.collect(
-        Context.open(repo_with_configs), offline=True
-    )  # must not crash
+    rows = versions.collect(Context.open(repo_with_configs), offline=True)  # must not crash
     argocd = next(r for r in rows if r.component == "argocd")
     assert argocd.target == "?"
 
 
-def test_chart_row_target_is_question_mark_for_float_target_revision(
-    repo_with_configs, spy
-):
+def test_chart_row_target_is_question_mark_for_float_target_revision(repo_with_configs, spy):
     _write_app_yaml(repo_with_configs, "argocd", "argocd", "targetRevision: 1.10")
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
     kubectl.on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
-    rows = versions.collect(
-        Context.open(repo_with_configs), offline=True
-    )  # must not crash
+    rows = versions.collect(Context.open(repo_with_configs), offline=True)  # must not crash
     argocd = next(r for r in rows if r.component == "argocd")
     assert argocd.target == "?"
 
 
-def test_chart_row_uses_file_stem_not_metadata_name(
-    repo_with_configs, spy, version_http_stub
-):
+def test_chart_row_uses_file_stem_not_metadata_name(repo_with_configs, spy, version_http_stub):
     """The Application is named `renamed-argocd`; the row (and the `kubectl get application`
     lookup for the running revision) must key off the file stem `argocd`/the real resource name
     respectively — not conflate the two."""
-    _write_app_yaml(
-        repo_with_configs, "argocd", "renamed-argocd", "targetRevision: 10.9.2"
-    )
+    _write_app_yaml(repo_with_configs, "argocd", "renamed-argocd", "targetRevision: 10.9.2")
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
     kubectl.on("get", "application", "renamed-argocd", stdout=APP_SYNCED_JSON)
@@ -375,9 +333,7 @@ def test_chart_row_uses_file_stem_not_metadata_name(
     assert not any(r.component == "renamed-argocd" for r in rows)
 
 
-def test_chart_row_multi_chart_app_shows_not_single_chart_note(
-    repo_with_configs, spy, version_http_stub
-):
+def test_chart_row_multi_chart_app_shows_not_single_chart_note(repo_with_configs, spy, version_http_stub):
     apps_dir = repo_with_configs.gitops_dir / "apps"
     apps_dir.mkdir(parents=True, exist_ok=True)
     (apps_dir / "twocharts.yaml").write_text(

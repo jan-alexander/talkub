@@ -40,13 +40,9 @@ def master_key_candidates_from_env(env: Mapping[str, str]) -> list[str]:
         return _all_secrets(value, "SOPS_AGE_KEY")
     if path := env.get("SOPS_AGE_KEY_FILE"):
         try:
-            return _all_secrets(
-                Path(path).expanduser().read_text(), "SOPS_AGE_KEY_FILE"
-            )
+            return _all_secrets(Path(path).expanduser().read_text(), "SOPS_AGE_KEY_FILE")
         except OSError as err:
-            raise NoIdentity(
-                f"cannot read SOPS_AGE_KEY_FILE {path}: {err.strerror}"
-            ) from err
+            raise NoIdentity(f"cannot read SOPS_AGE_KEY_FILE {path}: {err.strerror}") from err
     return []
 
 
@@ -56,16 +52,12 @@ def identity_files(env: Mapping[str, str]) -> list[Path]:
         files = [Path(part).expanduser() for part in raw.split(os.pathsep) if part]
         missing = [str(f) for f in files if not f.is_file()]
         if missing:
-            raise NoIdentity(
-                f"TALKUB_IDENTITY points to missing file(s): {', '.join(missing)}"
-            )
+            raise NoIdentity(f"TALKUB_IDENTITY points to missing file(s): {', '.join(missing)}")
         return files
     directory = identities_dir(env)
     if not directory.is_dir():
         return []
-    return sorted(
-        p for p in directory.iterdir() if p.is_file() and not p.name.startswith(".")
-    )
+    return sorted(p for p in directory.iterdir() if p.is_file() and not p.name.startswith("."))
 
 
 def recipient_of(path: Path) -> str | None:
@@ -76,20 +68,14 @@ def recipient_of(path: Path) -> str | None:
     return None
 
 
-def create_identity(
-    runner: Runner, kind: str, directory: Path, name: str | None = None
-) -> tuple[Path, str]:
+def create_identity(runner: Runner, kind: str, directory: Path, name: str | None = None) -> tuple[Path, str]:
     if kind not in KINDS:
-        raise ValidationError(
-            f"unknown identity kind {kind!r}", hint=f"use one of: {', '.join(KINDS)}"
-        )
+        raise ValidationError(f"unknown identity kind {kind!r}", hint=f"use one of: {', '.join(KINDS)}")
     directory.mkdir(parents=True, exist_ok=True)
     os.chmod(directory, 0o700)
     path = directory / f"{name or kind}.txt"
     if path.exists():
-        raise ValidationError(
-            f"identity {path} already exists", hint="choose another --name"
-        )
+        raise ValidationError(f"identity {path} already exists", hint="choose another --name")
 
     if kind == "software":
         runner.run(["age-keygen", "-o", str(path)])
@@ -97,9 +83,7 @@ def create_identity(
         # Interactive: the plugin asks for slot, PIN and touch policy on the terminal.
         if runner.call(["age-plugin-yubikey", "--generate"]) != 0:
             raise CommandFailed("age-plugin-yubikey --generate failed")
-        atomic_write(
-            path, runner.run(["age-plugin-yubikey", "--identity"]).stdout, mode=0o600
-        )
+        atomic_write(path, runner.run(["age-plugin-yubikey", "--identity"]).stdout, mode=0o600)
     else:
         runner.run(
             [

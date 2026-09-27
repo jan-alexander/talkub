@@ -34,11 +34,7 @@ def _bundle_yaml() -> YAML:
 def _os_ca(bundle: bytes) -> tuple[object, object]:
     doc = _bundle_yaml().load(bundle.decode())
     os_certs = doc.get("certs", {}).get("os") if isinstance(doc, dict) else None
-    return (
-        (os_certs.get("crt"), os_certs.get("key"))
-        if isinstance(os_certs, dict)
-        else (None, None)
-    )
+    return (os_certs.get("crt"), os_certs.get("key")) if isinstance(os_certs, dict) else (None, None)
 
 
 def replace_os_ca(bundle: bytes, crt: str, key: str) -> bytes:
@@ -96,13 +92,9 @@ def _require_working_talosconfig(ctx: Context, settings: Settings, data: bytes) 
     with private_tempdir() as work:
         candidate = work / "talosconfig"
         candidate.write_bytes(_pointed_at_controlplanes(settings, data))
-        result = talos_session_from(ctx.runner, candidate).run(
-            address, ["version"], check=False
-        )
+        result = talos_session_from(ctx.runner, candidate).run(address, ["version"], check=False)
     if result.returncode != 0:
-        raise ValidationError(
-            f"the given talosconfig does not work against {address}; nothing was changed"
-        )
+        raise ValidationError(f"the given talosconfig does not work against {address}; nothing was changed")
 
 
 def _decodes_to(value: str, prefix: bytes) -> bool:
@@ -142,11 +134,7 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
         ]
     with talos_session(ctx) as talos:
         wait_healthy(talos, cp_addrs[0])
-        drifting = [
-            name
-            for name in order
-            if node_drift(talos, settings, name, configs[name]) != "in sync"
-        ]
+        drifting = [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
         if drifting:
             raise ValidationError(
                 f"the repo is not in sync with: {', '.join(drifting)}",
@@ -161,9 +149,7 @@ def rotate(ctx: Context, confirm: Callable[[str], bool]) -> list[str]:
         # The only plaintext kept on disk on failure: losing the new talosconfig can lock the user out.
         work = Path(tempfile.mkdtemp(prefix="talkub-rotate-"))  # mode 0700
         new = work / "talosconfig"
-        raw = (
-            work / "rotate-ca.out"
-        )  # unredacted output: the only copy of the new keys if `-o` is missing
+        raw = work / "rotate-ca.out"  # unredacted output: the only copy of the new keys if `-o` is missing
         try:
             print(
                 "== rotate-ca (this can take several minutes; do not interrupt it)",
@@ -215,9 +201,7 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
         data = talosconfig.read_bytes()
         _require_working_talosconfig(ctx, settings, data)
         _store_talosconfig(ctx, settings, data)
-        notes.append(
-            f"the new talosconfig is stored in the repo; delete {talosconfig} now"
-        )
+        notes.append(f"the new talosconfig is stored in the repo; delete {talosconfig} now")
     address = _cp_addresses(settings)[0]
     with talos_session(ctx) as talos:
         result = talos.run(address, ["get", "machineconfig", "-o", "yaml"], check=False)
@@ -228,12 +212,8 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
         )
     out = result.stdout.decode(errors="replace")
     crt, key = inspect.machine_ca(out)
-    if not _decodes_to(crt, b"-----BEGIN CERTIFICATE-----") or not _decodes_to(
-        key, b"-----BEGIN"
-    ):
-        raise ValidationError(
-            "the machine CA in the running machine config does not look like a PEM certificate/key"
-        )
+    if not _decodes_to(crt, b"-----BEGIN CERTIFICATE-----") or not _decodes_to(key, b"-----BEGIN"):
+        raise ValidationError("the machine CA in the running machine config does not look like a PEM certificate/key")
     plain = ctx.sops.decrypt(repo.talos_secrets)
     if _os_ca(plain) != (
         crt,
@@ -251,11 +231,7 @@ def finish(ctx: Context, talosconfig: Path | None = None) -> list[str]:
                     f"node '{name}' ({address}) did not answer `talosctl version` (exit {code})",
                     hint="the Talos CA in the secrets bundle is updated; retry with `talkub rotate-ca --finish`",
                 )
-        drifting = [
-            name
-            for name in order
-            if node_drift(talos, settings, name, configs[name]) != "in sync"
-        ]
+        drifting = [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
     if drifting:
         raise ValidationError(
             f"still not in sync: {', '.join(drifting)}",

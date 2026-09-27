@@ -56,9 +56,7 @@ NOT_FOUND = 'Error from server (NotFound): services "kube-dns" not found\n'
 
 
 def live_service(ports=PORTS, cluster_ip="10.96.0.10") -> str:
-    return json.dumps(
-        {"kind": "Service", "spec": {"clusterIP": cluster_ip, "ports": ports}}
-    )
+    return json.dumps({"kind": "Service", "spec": {"clusterIP": cluster_ip, "ports": ports}})
 
 
 def endpoints(*names: str, ready: bool = True) -> str:
@@ -70,15 +68,11 @@ def endpoints(*names: str, ready: bool = True) -> str:
         }
         for i, n in enumerate(names)
     ]
-    return json.dumps(
-        {"kind": "List", "items": [{"kind": "EndpointSlice", "endpoints": endpoints}]}
-    )
+    return json.dumps({"kind": "List", "items": [{"kind": "EndpointSlice", "endpoints": endpoints}]})
 
 
 def first_rule(spy, *words, stdout="", stderr="", rc=0):
-    spy.rules.insert(
-        0, {"match": list(words), "stdout": stdout, "stderr": stderr, "rc": rc}
-    )
+    spy.rules.insert(0, {"match": list(words), "stdout": stdout, "stderr": stderr, "rc": rc})
     spy._save()
 
 
@@ -98,9 +92,7 @@ def cluster(repo_with_configs, spy, fake_bin, monkeypatch):
     )
     kubectl.on("get", "svc", "json", stdout=live_service())
     kubectl.on("template", "--show-only", stdout=RENDERED_SERVICE)  # helm
-    kubectl.on(
-        "show", "chart", stdout="name: coredns\nversion: 1.45.0\n"
-    )  # helm shares the rules
+    kubectl.on("show", "chart", stdout="name: coredns\nversion: 1.45.0\n")  # helm shares the rules
     script = kubectl.directory / "spy.py"
     fake_bin(
         "helm",
@@ -109,9 +101,7 @@ def cluster(repo_with_configs, spy, fake_bin, monkeypatch):
     applied = []
 
     def fake_apply(ctx, names, *, mode="auto", confirm, skip_precheck=False):
-        applied.append(
-            {"names": list(names), "mode": mode, "skip_precheck": skip_precheck}
-        )
+        applied.append({"names": list(names), "mode": mode, "skip_precheck": skip_precheck})
         if not confirm("apply this configuration to cp-01?"):
             return []
         kubectl.log.open("a").write(json.dumps({"args": ["<talos apply>"]}) + "\n")
@@ -205,9 +195,7 @@ def test_happy_path_order_files_and_notes(cluster):
     assert template[:4] == ["template", "coredns", "coredns", "--repo"]
     assert template[template.index("--version") + 1] == "1.45.0"
     assert template[template.index("--namespace") + 1] == "kube-system"
-    assert template[template.index("--values") + 1] == str(
-        repo.gitops_dir / "values" / "coredns.yaml"
-    )
+    assert template[template.index("--values") + 1] == str(repo.gitops_dir / "values" / "coredns.yaml")
     assert template[-2:] == ["--show-only", "templates/service.yaml"]
     assert argvs[7][:7] == [
         "-n",
@@ -218,9 +206,7 @@ def test_happy_path_order_files_and_notes(cluster):
         "--type=json",
         "-p",
     ]
-    assert json.loads(argvs[7][7]) == [
-        {"op": "replace", "path": "/spec/ports", "value": PORTS}
-    ]
+    assert json.loads(argvs[7][7]) == [{"op": "replace", "path": "/spec/ports", "value": PORTS}]
     assert len(argvs[7]) == 8
     assert argvs[8] == [
         "-n",
@@ -236,9 +222,7 @@ def test_happy_path_order_files_and_notes(cluster):
     assert helm[:5] == ["upgrade", "--install", "coredns", "coredns", "--repo"]
     assert helm[helm.index("--version") + 1] == "1.45.0"
     assert helm[helm.index("-n") + 1] == "kube-system"
-    assert helm[helm.index("-f") + 1] == str(
-        repo.gitops_dir / "values" / "coredns.yaml"
-    )
+    assert helm[helm.index("-f") + 1] == str(repo.gitops_dir / "values" / "coredns.yaml")
     assert "--create-namespace" not in helm
     assert argvs[10] == [
         "-n",
@@ -262,23 +246,15 @@ def test_happy_path_order_files_and_notes(cluster):
         "json",
     ]
     assert len(argvs) == 18
-    assert all(
-        call["kubeconfig"]
-        for call in kubectl.calls
-        if call["args"][0] not in ("<talos apply>", "show")
-    )
+    assert all(call["kubeconfig"] for call in kubectl.calls if call["args"][0] not in ("<talos apply>", "show"))
 
     assert "charts" not in repo.settings_file.read_text()
-    assert (
-        repo.talos_dir / "patches" / "controlplane-coredns.yaml"
-    ).read_text() == coredns.talos_patch()
+    assert (repo.talos_dir / "patches" / "controlplane-coredns.yaml").read_text() == coredns.talos_patch()
     assert (repo.gitops_dir / "values" / "coredns.yaml").read_text() == coredns.values()
     app = yamlio.load((repo.gitops_dir / "apps" / "coredns.yaml").read_text())
     assert app["spec"]["destination"]["namespace"] == "kube-system"
     assert app["spec"]["sources"][1]["repoURL"] == GIT_URL
-    assert app["spec"]["sources"][0]["helm"]["valueFiles"] == [
-        "$values/gitops/values/coredns.yaml"
-    ]
+    assert app["spec"]["sources"][0]["helm"]["valueFiles"] == ["$values/gitops/values/coredns.yaml"]
     assert notes == [
         "CoreDNS now runs as coredns-talkub (Helm release coredns)",
         "commit and push gitops/ and talos/ — Argo CD manages CoreDNS from now on",
@@ -290,24 +266,16 @@ def test_values_get_stub_zone_when_operator_app_exists(cluster):
 
     repo, _, _ = cluster
     settings = repo.load_settings()
-    settings.tailscale = TailscaleSpec(
-        tailnet="tail1234.ts.net", node_cidr="10.0.0.0/24"
-    )
+    settings.tailscale = TailscaleSpec(tailnet="tail1234.ts.net", node_cidr="10.0.0.0/24")
     repo.write_settings(settings)
-    atomic_write(
-        repo.gitops_dir / "apps" / "tailscale-operator.yaml", b"kind: Application\n"
-    )
+    atomic_write(repo.gitops_dir / "apps" / "tailscale-operator.yaml", b"kind: Application\n")
     run(repo)
-    assert (repo.gitops_dir / "values" / "coredns.yaml").read_text() == coredns.values(
-        "tail1234.ts.net"
-    )
+    assert (repo.gitops_dir / "values" / "coredns.yaml").read_text() == coredns.values("tail1234.ts.net")
 
 
 def test_wrong_cluster_ip_aborts_without_changes(cluster):
     repo, kubectl, applied = cluster
-    kubectl.rules.insert(
-        0, {"match": ["jsonpath={.spec.clusterIP}"], "stdout": "10.43.0.10", "rc": 0}
-    )
+    kubectl.rules.insert(0, {"match": ["jsonpath={.spec.clusterIP}"], "stdout": "10.43.0.10", "rc": 0})
     kubectl._save()
     before = repo.settings_file.read_text()
     with pytest.raises(ValidationError) as exc:
@@ -350,22 +318,16 @@ def test_resume_without_files_is_rejected(cluster):
 def test_resume_skips_file_writing_and_runs_the_rest(cluster):
     repo, kubectl, applied = cluster
     run(repo)
-    app_text = (
-        "# edited by hand\n" + (repo.gitops_dir / "apps" / "coredns.yaml").read_text()
-    )
+    app_text = "# edited by hand\n" + (repo.gitops_dir / "apps" / "coredns.yaml").read_text()
     app_text = app_text.replace("targetRevision: 1.45.0", "targetRevision: 1.44.0")
     atomic_write(repo.gitops_dir / "apps" / "coredns.yaml", app_text.encode())
     kubectl.log.unlink()
     run(repo, resume=True)
     argvs = kubectl.argvs
     assert not any(a[0] == "show" for a in argvs)  # no chart resolution
-    assert [
-        "<talos apply>"
-    ] not in argvs  # every node is in sync: the Talos step is skipped
+    assert ["<talos apply>"] not in argvs  # every node is in sync: the Talos step is skipped
     assert argvs[7][:3] == ["upgrade", "--install", "coredns"]
-    assert (
-        argvs[7][argvs[7].index("--version") + 1] == "1.44.0"
-    )  # the app file is the source
+    assert argvs[7][argvs[7].index("--version") + 1] == "1.44.0"  # the app file is the source
     assert argvs[10:15] == DELETES
     assert (repo.gitops_dir / "apps" / "coredns.yaml").read_text() == app_text
     assert applied == [APPLY]
@@ -383,9 +345,7 @@ def test_resume_rejects_mismatched_namespace(cluster):
         run(repo, resume=True)
     assert "other-ns" in str(exc.value)
     assert mutations(kubectl.argvs) == []
-    assert applied == [
-        APPLY
-    ]  # only from the first (successful) run; resume aborted before Talos
+    assert applied == [APPLY]  # only from the first (successful) run; resume aborted before Talos
 
 
 def test_resume_rejects_mismatched_release_name(cluster):
@@ -400,9 +360,7 @@ def test_resume_rejects_mismatched_release_name(cluster):
         run(repo, resume=True)
     assert "other-release" in str(exc.value)
     assert mutations(kubectl.argvs) == []
-    assert applied == [
-        APPLY
-    ]  # only from the first (successful) run; resume aborted before Talos
+    assert applied == [APPLY]  # only from the first (successful) run; resume aborted before Talos
 
 
 def test_drift_is_refused_before_any_change(cluster, monkeypatch):
@@ -454,9 +412,7 @@ def test_declined_confirm_changes_nothing(cluster):
 
 def test_missing_old_deployment_only_warns(cluster, capsys):
     repo, kubectl, _ = cluster
-    kubectl.rules.insert(
-        0, {"match": ["jsonpath={.status.readyReplicas}"], "stdout": "", "rc": 1}
-    )
+    kubectl.rules.insert(0, {"match": ["jsonpath={.status.readyReplicas}"], "stdout": "", "rc": 1})
     kubectl._save()
     run(repo)
     assert "warning:" in capsys.readouterr().err
@@ -532,9 +488,7 @@ def test_service_mismatch_after_helm_deletes_nothing(cluster):
         "get",
         "svc",
         "json",
-        stdout=live_service(
-            [*PORTS, {"name": "metrics", "port": 9153, "protocol": "TCP"}]
-        ),
+        stdout=live_service([*PORTS, {"name": "metrics", "port": 9153, "protocol": "TCP"}]),
     )
     with pytest.raises(CommandFailed) as exc:
         run(repo)
@@ -544,9 +498,7 @@ def test_service_mismatch_after_helm_deletes_nothing(cluster):
 
 def test_service_with_wrong_cluster_ip_after_helm_fails(cluster):
     repo, kubectl, _ = cluster
-    first_rule(
-        kubectl, "get", "svc", "json", stdout=live_service(cluster_ip="10.96.0.99")
-    )
+    first_rule(kubectl, "get", "svc", "json", stdout=live_service(cluster_ip="10.96.0.99"))
     with pytest.raises(CommandFailed) as exc:
         run(repo)
     assert str(exc.value).startswith("takeover step 'verify service' failed")

@@ -7,9 +7,7 @@ from pathlib import Path
 
 import typer
 
-app = typer.Typer(
-    help="Edit or decrypt SOPS files with the cluster master key.", no_args_is_help=True
-)
+app = typer.Typer(help="Edit or decrypt SOPS files with the cluster master key.", no_args_is_help=True)
 
 
 @app.command("edit")

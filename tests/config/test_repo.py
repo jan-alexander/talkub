@@ -39,9 +39,7 @@ def test_legacy_charts_block_is_ignored_and_dropped_on_write(tmp_path):
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert "charts" not in repo.settings_file.read_text()
-    assert (
-        Settings.from_dict(_data(charts="garbage")) == sample_settings()
-    )  # not even validated
+    assert Settings.from_dict(_data(charts="garbage")) == sample_settings()  # not even validated
 
 
 def test_find_repo_searches_upwards(tmp_path):
@@ -134,9 +132,7 @@ def test_full_settings_roundtrip(tmp_path):
 
 def test_tailscale_use_ips_roundtrip(tmp_path):
     settings = sample_settings()
-    settings.tailscale = TailscaleSpec(
-        tailnet="tail.ts.net", node_cidr="10.0.0.0/24", use_ips=True
-    )
+    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24", use_ips=True)
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert repo.load_settings() == settings
@@ -188,13 +184,8 @@ def test_unknown_platform_and_arch_rejected():
 
 def test_installer_image_and_node_helpers():
     settings = sample_settings()
-    settings.nodes["w-01"] = NodeSpec(
-        ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud"
-    )
-    assert (
-        settings.installer_image("metal")
-        == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
-    )
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.ts", platform="hcloud")
+    assert settings.installer_image("metal") == f"factory.talos.dev/metal-installer/{DEFAULT_SCHEMATIC_ID}:v1.14.0"
     assert settings.node_platform("cp-01") == "metal"
     assert settings.node_platform("w-01") == "hcloud"
     assert settings.mgmt_address("cp-01") == "10.0.0.10"
@@ -328,9 +319,7 @@ def test_shortcuts_absent_block_not_written(tmp_path):
 
 def test_shortcut_job_follow_only_written_when_true(tmp_path):
     settings = sample_settings()
-    settings.shortcuts = {
-        "backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="cj")
-    }
+    settings.shortcuts = {"backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="cj")}
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert "follow" not in repo.settings_file.read_text()
@@ -354,9 +343,7 @@ def test_shortcut_name_must_be_valid_label():
     assert "shortcuts.Bad_Name" in str(exc.value)
 
 
-@pytest.mark.parametrize(
-    "spec", [{}, {"run": ["k", "x"], "job": {"namespace": "a", "cronjob": "b"}}]
-)
+@pytest.mark.parametrize("spec", [{}, {"run": ["k", "x"], "job": {"namespace": "a", "cronjob": "b"}}])
 def test_shortcut_must_have_exactly_one_kind(spec):
     with pytest.raises(ValidationError) as exc:
         Settings.from_dict(_shortcuts_data(backup=spec))
@@ -365,9 +352,7 @@ def test_shortcut_must_have_exactly_one_kind(spec):
 
 def test_shortcut_description_must_be_non_empty_string():
     with pytest.raises(ValidationError) as exc:
-        Settings.from_dict(
-            _shortcuts_data(backup={"description": "", "run": ["k", "x"]})
-        )
+        Settings.from_dict(_shortcuts_data(backup={"description": "", "run": ["k", "x"]}))
     assert "shortcuts.backup.description" in str(exc.value)
 
 
@@ -397,9 +382,7 @@ def test_shortcut_secret_field_rules(secret, path):
 
 def test_shortcut_secret_key_may_contain_dot_and_underscore():
     settings = Settings.from_dict(
-        _shortcuts_data(
-            backup={"secret": {"namespace": "prod", "name": "s", "key": "tls.crt_1"}}
-        )
+        _shortcuts_data(backup={"secret": {"namespace": "prod", "name": "s", "key": "tls.crt_1"}})
     )
     assert settings.shortcuts["backup"].key == "tls.crt_1"
 

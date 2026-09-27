@@ -23,9 +23,7 @@ def _confirm(yes: bool):
 @app.command("talos")
 def talos(
     ctx: typer.Context,
-    nodes: list[str] = typer.Argument(
-        None, help="Nodes (default: all, control planes first)."
-    ),
+    nodes: list[str] = typer.Argument(None, help="Nodes (default: all, control planes first)."),
     yes: bool = YES,
 ) -> None:
     """Upgrade nodes whose Talos version or schematic differs (one at a time)."""

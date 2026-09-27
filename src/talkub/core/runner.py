@@ -47,9 +47,7 @@ def child_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
 def require_tool(name: str) -> str:
     path = shutil.which(name)
     if path is None:
-        raise ToolMissing(
-            f"required tool '{name}' not found in PATH", hint=INSTALL_HINTS.get(name)
-        )
+        raise ToolMissing(f"required tool '{name}' not found in PATH", hint=INSTALL_HINTS.get(name))
     return path
 
 
@@ -95,9 +93,7 @@ class Runner:
             )
         return proc
 
-    def run_uninterruptible(
-        self, argv: Sequence[str], *, output: Path, env: Mapping[str, str] | None = None
-    ) -> int:
+    def run_uninterruptible(self, argv: Sequence[str], *, output: Path, env: Mapping[str, str] | None = None) -> int:
         """Run a step that must not be interrupted halfway and return its exit code.
 
         stdout+stderr go straight to `output` (created, owner-only 0600; must not exist), so they
@@ -123,11 +119,7 @@ class Runner:
                     pass  # e.g. the terminal hung up (EIO); keep waiting regardless
             received.append(signum)
 
-        previous = (
-            {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS}
-            if on_main_thread
-            else {}
-        )
+        previous = {sig: signal.signal(sig, hold) for sig in _HELD_SIGNALS} if on_main_thread else {}
         try:
             try:
                 proc = subprocess.Popen(
@@ -142,9 +134,7 @@ class Runner:
                 os.close(fd)
             if not on_main_thread:
                 return proc.wait()
-            code = (
-                proc.wait()
-            )  # the handler does not raise, so wait() resumes after each signal
+            code = proc.wait()  # the handler does not raise, so wait() resumes after each signal
         finally:
             for sig, old in previous.items():
                 signal.signal(sig, old)
@@ -173,16 +163,12 @@ class Runner:
             proc.stdin.write(input)
             proc.stdin.close()
         except BrokenPipeError as exc:
-            raise CommandFailed(
-                f"{Path(argv[0]).name} closed its stdin before receiving input"
-            ) from exc
+            raise CommandFailed(f"{Path(argv[0]).name} closed its stdin before receiving input") from exc
         # We deliberately never wait() on a detached child; mark it as already reaped so
         # Popen.__del__ does not emit a ResourceWarning about it still running.
         proc.returncode = 0
 
-    def feed(
-        self, argv: Sequence[str], *, input: bytes, env: Mapping[str, str] | None = None
-    ) -> int:
+    def feed(self, argv: Sequence[str], *, input: bytes, env: Mapping[str, str] | None = None) -> int:
         """Run `argv`, feeding it `input` on stdin, and return its exit code.
 
         Unlike `run`, nothing is captured with a pipe: stdout is discarded and stderr goes to the

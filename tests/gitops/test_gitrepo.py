@@ -21,15 +21,11 @@ from talkub.scaffold import TEMPLATES
         ),
         (
             "  git@git.example.com:/srv/cluster.git ",
-            GitUrl(
-                "git@git.example.com:/srv/cluster.git", "ssh", "git.example.com", None
-            ),
+            GitUrl("git@git.example.com:/srv/cluster.git", "ssh", "git.example.com", None),
         ),
         (
             "ssh://git@git.example.com/me/c.git",
-            GitUrl(
-                "ssh://git@git.example.com/me/c.git", "ssh", "git.example.com", None
-            ),
+            GitUrl("ssh://git@git.example.com/me/c.git", "ssh", "git.example.com", None),
         ),
         (
             "ssh://git@git.example.com:2222/me/c.git",
@@ -42,9 +38,7 @@ from talkub.scaffold import TEMPLATES
         ),
         (
             "ssh://git@git.example.com:22/me/c.git",
-            GitUrl(
-                "ssh://git@git.example.com:22/me/c.git", "ssh", "git.example.com", None
-            ),
+            GitUrl("ssh://git@git.example.com:22/me/c.git", "ssh", "git.example.com", None),
         ),
         (
             "https://github.com/me/cluster.git",
@@ -106,10 +100,7 @@ def test_classify_url_allows_ssh_username_without_password():
 
 
 def test_placeholder_url():
-    assert (
-        gitrepo.placeholder_url("homelab")
-        == "https://example.invalid/CHANGE-ME/homelab.git"
-    )
+    assert gitrepo.placeholder_url("homelab") == "https://example.invalid/CHANGE-ME/homelab.git"
 
 
 OLD = "https://example.invalid/CHANGE-ME/test.git"
@@ -137,9 +128,7 @@ def _gitops(tmp_path) -> Repo:
         "gitops/apps/sealed-secrets.yaml",
     ):
         template = (TEMPLATES / "repo" / (rel + ".tmpl")).read_text()
-        atomic_write(
-            repo.root / rel, Template(template).safe_substitute(values).encode()
-        )
+        atomic_write(repo.root / rel, Template(template).safe_substitute(values).encode())
     return repo
 
 
@@ -153,13 +142,8 @@ def test_rewrite_changes_only_matching_repo_urls_and_keeps_comments(tmp_path):
         "gitops/apps/sealed-secrets.yaml",
     ]
     for path, text in before.items():
-        assert path.read_text() == text.replace(
-            OLD, NEW
-        )  # byte-identical apart from the URL
-    assert (
-        "argoproj.github.io/argo-helm"
-        in (repo.gitops_dir / "apps/argocd.yaml").read_text()
-    )
+        assert path.read_text() == text.replace(OLD, NEW)  # byte-identical apart from the URL
+    assert "argoproj.github.io/argo-helm" in (repo.gitops_dir / "apps/argocd.yaml").read_text()
 
 
 def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path):
@@ -167,9 +151,7 @@ def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path
     other = repo.gitops_dir / "apps" / "extra.yml"
     other.write_text(
         "# two apps\n"
-        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: "
-        + OLD
-        + "\n"
+        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: " + OLD + "\n"
         "---\n"
         "apiVersion: argoproj.io/v1alpha1\nkind: Application\nspec:\n  source:\n    repoURL: https://charts.example.com\n"
     )
@@ -178,11 +160,7 @@ def test_rewrite_handles_multi_document_files_and_skips_untouched_files(tmp_path
     mtime = unrelated.stat().st_mtime_ns
     gitrepo.rewrite_repo_urls(repo, OLD, NEW)
     text = other.read_text()
-    assert (
-        text.startswith("# two apps\n")
-        and text.count(NEW) == 1
-        and "https://charts.example.com" in text
-    )
+    assert text.startswith("# two apps\n") and text.count(NEW) == 1 and "https://charts.example.com" in text
     assert unrelated.stat().st_mtime_ns == mtime
 
 
@@ -218,9 +196,7 @@ def test_git_init_creates_repo_and_origin(tmp_path):
         check=True,
     )
     assert branch.stdout.strip() == "main"
-    assert (
-        gitrepo.git_init(tmp_path, "git@other:x.git", Runner()) == []
-    )  # existing origin is kept
+    assert gitrepo.git_init(tmp_path, "git@other:x.git", Runner()) == []  # existing origin is kept
     remote = subprocess.run(
         ["git", "-C", str(tmp_path), "remote", "get-url", "origin"],
         capture_output=True,
@@ -246,9 +222,7 @@ def test_git_init_without_git_warns(tmp_path, monkeypatch):
 @pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
 def test_origin_hint_none_when_remote_matches(tmp_path):
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "remote", "add", "origin", NEW], check=True
-    )
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", NEW], check=True)
     assert gitrepo.origin_hint(tmp_path, NEW, Runner()) is None
 
 
@@ -292,9 +266,7 @@ def test_has_extra_hosts_false_when_values_file_missing(tmp_path):
 
 def test_has_extra_hosts_false_when_no_extra_hosts_configured(tmp_path):
     repo = Repo(tmp_path)
-    atomic_write(
-        repo.gitops_dir / "values" / "argocd.yaml", b"dex:\n  enabled: false\n"
-    )
+    atomic_write(repo.gitops_dir / "values" / "argocd.yaml", b"dex:\n  enabled: false\n")
     assert gitrepo.has_extra_hosts(repo) is False
 
 

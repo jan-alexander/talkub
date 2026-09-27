@@ -36,9 +36,7 @@ STATIC = typer.Option(
     help="Static address with prefix, e.g. 10.0.0.10/24 (default: DHCP).",
 )
 GATEWAY = typer.Option(None, "--gateway", help="Default gateway (with --static).")
-MAC = typer.Option(
-    None, "--mac", help="MAC address of the interface to configure (with --static)."
-)
+MAC = typer.Option(None, "--mac", help="MAC address of the interface to configure (with --static).")
 DNS = typer.Option(None, "--dns", help="DNS server (repeatable).")
 DISK = typer.Option(
     None,
@@ -61,19 +59,11 @@ def print_warnings(warnings: list[str]) -> None:
 def add(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Node name; becomes the hostname."),
-    ip: str = typer.Option(
-        ..., "--ip", help="Address for the first install (LAN or public)."
-    ),
+    ip: str = typer.Option(..., "--ip", help="Address for the first install (LAN or public)."),
     role: str = typer.Option("controlplane", "--role", help="controlplane or worker."),
-    platform: str = typer.Option(
-        None, "--platform", help="metal or hcloud (default: cluster platform)."
-    ),
-    arch: str = typer.Option(
-        None, "--arch", help="amd64 or arm64 (for boot media URLs)."
-    ),
-    mgmt: str = typer.Option(
-        None, "--mgmt", help="Address used after installation, e.g. a Tailscale name."
-    ),
+    platform: str = typer.Option(None, "--platform", help="metal or hcloud (default: cluster platform)."),
+    arch: str = typer.Option(None, "--arch", help="amd64 or arm64 (for boot media URLs)."),
+    mgmt: str = typer.Option(None, "--mgmt", help="Address used after installation, e.g. a Tailscale name."),
     static: str = STATIC,
     gateway: str = GATEWAY,
     mac: str = MAC,

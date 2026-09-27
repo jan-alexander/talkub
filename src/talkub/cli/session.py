@@ -39,9 +39,7 @@ def register(app: typer.Typer) -> None:
     @app.command("shell")
     def shell_cmd(
         ctx: typer.Context,
-        program: str = typer.Option(
-            None, "--program", help="Shell to start (default: $SHELL)."
-        ),
+        program: str = typer.Option(None, "--program", help="Shell to start (default: $SHELL)."),
     ) -> None:
         """Start a subshell with TALOSCONFIG and KUBECONFIG set; removed on exit."""
         raise typer.Exit(access.shell(ctx.obj.context(), program))

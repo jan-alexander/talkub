@@ -11,14 +11,10 @@ from talkub.talos.factory import FactoryClient
 
 
 def used_platforms(settings: Settings) -> list[str]:
-    return sorted(
-        {settings.platform} | {settings.node_platform(name) for name in settings.nodes}
-    )
+    return sorted({settings.platform} | {settings.node_platform(name) for name in settings.nodes})
 
 
-def refresh(
-    settings: Settings, client: FactoryClient, platforms: Iterable[str]
-) -> bool:
+def refresh(settings: Settings, client: FactoryClient, platforms: Iterable[str]) -> bool:
     """Resolve schematic IDs whose cache is missing or outdated. Returns True if anything changed."""
     changed = False
     for platform in platforms:
@@ -31,9 +27,7 @@ def refresh(
     return changed
 
 
-def add_extensions(
-    settings: Settings, platform: str, names: Sequence[str], client: FactoryClient
-) -> list[str]:
+def add_extensions(settings: Settings, platform: str, names: Sequence[str], client: FactoryClient) -> list[str]:
     official = set(client.official_extensions(settings.talos_version))
     unknown = sorted(set(names) - official)
     if unknown:
@@ -48,9 +42,7 @@ def add_extensions(
     return added
 
 
-def remove_extensions(
-    settings: Settings, platform: str, names: Sequence[str], client: FactoryClient
-) -> list[str]:
+def remove_extensions(settings: Settings, platform: str, names: Sequence[str], client: FactoryClient) -> list[str]:
     spec = settings.ensure_schematic(platform)
     missing = sorted(set(names) - set(spec.extensions))
     if missing:

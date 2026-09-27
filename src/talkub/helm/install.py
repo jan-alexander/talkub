@@ -17,9 +17,7 @@ def chart_ref(chart: ChartSpec) -> list[str]:
     return [chart.chart, "--repo", chart.repo]
 
 
-def helm_install(
-    kube: KubeSession, source: HelmSource, *, create_namespace: bool
-) -> None:
+def helm_install(kube: KubeSession, source: HelmSource, *, create_namespace: bool) -> None:
     """`helm upgrade --install` one Argo CD app's chart source as Argo CD would render it."""
     chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
     argv = [
@@ -36,9 +34,7 @@ def helm_install(
         argv += ["-f", str(value_file)]
     with ExitStack() as stack:
         if source.inline_values is not None:
-            inline = stack.enter_context(
-                private_file("values.yaml", source.inline_values.encode())
-            )
+            inline = stack.enter_context(private_file("values.yaml", source.inline_values.encode()))
             argv += ["-f", str(inline)]
         argv += ["--wait", "--timeout", "10m"]
         if create_namespace:

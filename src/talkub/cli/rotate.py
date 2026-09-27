@@ -13,9 +13,7 @@ from talkub.talos import rotation
 def rotate_ca(
     ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", help="Do not ask before rotating."),
-    finish: bool = typer.Option(
-        False, "--finish", help="Finish an interrupted rotation."
-    ),
+    finish: bool = typer.Option(False, "--finish", help="Finish an interrupted rotation."),
     talosconfig: Path = typer.Option(
         None,
         "--talosconfig",
@@ -27,9 +25,7 @@ def rotate_ca(
     if talosconfig is not None and not finish:
         raise ValidationError("--talosconfig needs --finish")
     if yes and finish:
-        raise ValidationError(
-            "--yes cannot be combined with --finish", hint="--finish does not ask"
-        )
+        raise ValidationError("--yes cannot be combined with --finish", hint="--finish does not ask")
     if talosconfig is not None:
         talosconfig = talosconfig.expanduser()
         if not talosconfig.is_file():

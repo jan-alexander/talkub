@@ -4,9 +4,7 @@ from talkub.core import yamlio
 
 
 def _chart():
-    return ChartSpec(
-        repo="https://coredns.github.io/helm", chart="coredns", version="1.47.1"
-    )
+    return ChartSpec(repo="https://coredns.github.io/helm", chart="coredns", version="1.47.1")
 
 
 def test_helm_app_has_leading_comment():
@@ -142,26 +140,16 @@ def test_both_renderers_retry_failed_syncs():
             "kube-system",
         )
     )
-    directory = yamlio.load(
-        apps.directory_app("cfg", "https://g/r.git", "gitops/manifests/x", "x")
-    )
+    directory = yamlio.load(apps.directory_app("cfg", "https://g/r.git", "gitops/manifests/x", "x"))
     assert helm["spec"]["syncPolicy"]["retry"] == RETRY
     assert directory["spec"]["syncPolicy"]["retry"] == RETRY
 
 
 def test_sync_wave_annotation_only_when_given():
-    plain = yamlio.load(
-        apps.helm_app("coredns", _chart(), "https://g/r.git", "v.yaml", "kube-system")
-    )
+    plain = yamlio.load(apps.helm_app("coredns", _chart(), "https://g/r.git", "v.yaml", "kube-system"))
     assert "annotations" not in plain["metadata"]
-    helm = yamlio.load(
-        apps.helm_app(
-            "op", _chart(), "https://g/r.git", "v.yaml", "tailscale", sync_wave="0"
-        )
-    )
-    directory = yamlio.load(
-        apps.directory_app("cfg", "https://g/r.git", "p", "tailscale", sync_wave="1")
-    )
+    helm = yamlio.load(apps.helm_app("op", _chart(), "https://g/r.git", "v.yaml", "tailscale", sync_wave="0"))
+    directory = yamlio.load(apps.directory_app("cfg", "https://g/r.git", "p", "tailscale", sync_wave="1"))
     assert helm["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "0"}
     assert directory["metadata"]["annotations"] == {"argocd.argoproj.io/sync-wave": "1"}
 

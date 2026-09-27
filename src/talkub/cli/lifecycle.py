@@ -20,9 +20,7 @@ def apply(
     nodes: list[str] = NODES,
     mode: str = typer.Option("auto", "--mode", help="auto, no-reboot, staged or try."),
     yes: bool = typer.Option(False, "--yes", help="Do not ask before applying."),
-    insecure: bool = typer.Option(
-        False, "--insecure", help="First install of ONE node in maintenance mode."
-    ),
+    insecure: bool = typer.Option(False, "--insecure", help="First install of ONE node in maintenance mode."),
     force_unhealthy: bool = typer.Option(
         False,
         "--force-unhealthy",
@@ -54,6 +52,4 @@ def apply(
         if not lifecycle.apply_insecure(context, nodes[0], confirm=confirm):
             raise typer.Exit(1)
         return
-    lifecycle.apply(
-        context, nodes or [], mode=mode, confirm=confirm, skip_precheck=force_unhealthy
-    )
+    lifecycle.apply(context, nodes or [], mode=mode, confirm=confirm, skip_precheck=force_unhealthy)

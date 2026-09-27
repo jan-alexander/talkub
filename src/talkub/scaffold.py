@@ -57,18 +57,12 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
     target = request.target
     existed = target.exists()
     if existed and not target.is_dir():
-        raise ValidationError(
-            f"{target} exists and is not a directory", hint="choose a new directory"
-        )
+        raise ValidationError(f"{target} exists and is not a directory", hint="choose a new directory")
     if existed and {p.name for p in target.iterdir()} - ALLOWED_EXISTING:
-        raise ValidationError(
-            f"{target} is not empty", hint="use a new directory or a fresh git clone"
-        )
+        raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
 
     # Network lookups first: nothing is written if they fail.
-    chart_specs = charts.resolve_defaults(runner) | {
-        "coredns": charts.resolve(runner, "coredns")
-    }
+    chart_specs = charts.resolve_defaults(runner) | {"coredns": charts.resolve(runner, "coredns")}
     target.mkdir(parents=True, exist_ok=True)
     try:
         return _populate(Repo(target.resolve()), request, chart_specs, runner)
@@ -84,9 +78,7 @@ def _validate(request: InitRequest) -> None:
             hint="lowercase letters, digits and '-'",
         )
     if not request.endpoint.startswith("https://"):
-        raise ValidationError(
-            "endpoint must start with https://", hint="e.g. https://10.0.0.10:6443"
-        )
+        raise ValidationError("endpoint must start with https://", hint="e.g. https://10.0.0.10:6443")
     if request.platform not in PLATFORMS:
         raise ValidationError(
             f"unknown platform {request.platform!r}",
@@ -116,18 +108,14 @@ def _cleanup(target: Path, existed: bool) -> None:
             child.unlink(missing_ok=True)
 
 
-def _populate(
-    repo: Repo, request: InitRequest, chart_specs: dict[str, ChartSpec], runner: Runner
-) -> Repo:
+def _populate(repo: Repo, request: InitRequest, chart_specs: dict[str, ChartSpec], runner: Runner) -> Repo:
     keyring = Keyring(repo, runner, env={})
     keyring.create(request.recipients)
     public = keyring.public_key()
     sops = Sops(runner, keyring.master_key)
     atomic_write(repo.sops_config, render_sops_config(public).encode())
 
-    controlplane_ips = [
-        n.ip for n in request.nodes.values() if n.role == "controlplane"
-    ]
+    controlplane_ips = [n.ip for n in request.nodes.values() if n.role == "controlplane"]
     with private_tempdir() as work:
         secrets = gen.gen_secrets(runner, work)
         defaults = gen.detect_defaults(runner, request.name, request.endpoint, secrets)
@@ -146,9 +134,7 @@ def _populate(
         ):
             atomic_write(
                 target,
-                sops.encrypt(
-                    source.read_bytes(), filename=target.name, public_key=public
-                ),
+                sops.encrypt(source.read_bytes(), filename=target.name, public_key=public),
             )
 
     # The schematic ID depends only on the customization, not on the platform, so the
@@ -161,11 +147,7 @@ def _populate(
         talos_version=defaults.talos_version,
         kubernetes_version=defaults.kubernetes_version,
         platform=request.platform,
-        schematics={
-            request.platform: SchematicSpec(
-                id=default_id, hash=customization_hash([], [])
-            )
-        },
+        schematics={request.platform: SchematicSpec(id=default_id, hash=customization_hash([], []))},
         nodes=dict(request.nodes),
         git=GitSpec(url=git_url),
     )
@@ -186,9 +168,7 @@ def _populate(
     return repo
 
 
-def _template_values(
-    name: str, git_url: str, chart_specs: dict[str, ChartSpec]
-) -> dict[str, str]:
+def _template_values(name: str, git_url: str, chart_specs: dict[str, ChartSpec]) -> dict[str, str]:
     values = {"name": name, "git_url": git_url}
     for key, spec in chart_specs.items():
         prefix = key.replace("-", "_")

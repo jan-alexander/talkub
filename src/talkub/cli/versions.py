@@ -6,24 +6,18 @@ import typer
 
 from talkub.overview import versions as versions_flow
 
-app = typer.Typer(
-    help="Target vs. running vs. latest versions: Talos, Kubernetes and chart apps."
-)
+app = typer.Typer(help="Target vs. running vs. latest versions: Talos, Kubernetes and chart apps.")
 
 
 @app.callback(invoke_without_command=True)
 def show(
     ctx: typer.Context,
-    offline: bool = typer.Option(
-        False, "--offline", help="Skip latest-version lookups (no network)."
-    ),
+    offline: bool = typer.Option(False, "--offline", help="Skip latest-version lookups (no network)."),
 ) -> None:
     """Show target vs. running vs. latest versions for Talos, Kubernetes and every chart app."""
     if ctx.invoked_subcommand is not None:
         return
-    print(
-        versions_flow.render(versions_flow.collect(ctx.obj.context(), offline=offline))
-    )
+    print(versions_flow.render(versions_flow.collect(ctx.obj.context(), offline=offline)))
 
 
 @app.command("set")

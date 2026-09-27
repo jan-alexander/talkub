@@ -41,10 +41,7 @@ def cluster(talos_repo, spy):
     atomic_write(talos_repo.gitops_dir / "root.yaml", b"kind: Application\n")
     talos_repo.kubeconfig.unlink()
     spies = {
-        "talosctl": spy("talosctl")
-        .real("gen")
-        .real("validate")
-        .on("kubeconfig", stdout=KUBECONFIG),
+        "talosctl": spy("talosctl").real("gen").real("validate").on("kubeconfig", stdout=KUBECONFIG),
         "kubectl": spy("kubectl").on("get", "secret", stdout=KEY_LIST),
         "helm": spy("helm"),
         "kubeseal": spy("kubeseal").on("--fetch-cert", stdout=CERT),
@@ -72,14 +69,10 @@ def test_fresh_bootstrap(cluster):
     assert "--create-namespace" in helm[1] and "argocd" in helm[1]
     assert helm[0][helm[0].index("--version") + 1] == "2.20.0"
     assert helm[0][helm[0].index("-n") + 1] == "kube-system"
-    assert helm[0][helm[0].index("-f") + 1] == str(
-        repo.gitops_dir / "values" / "sealed-secrets.yaml"
-    )
+    assert helm[0][helm[0].index("-f") + 1] == str(repo.gitops_dir / "values" / "sealed-secrets.yaml")
     assert helm[1][helm[1].index("--version") + 1] == "10.9.2"
     assert helm[1][helm[1].index("-n") + 1] == "argocd"
-    assert all(
-        call["kubeconfig"] and call["files"]["-f"] for call in spies["helm"].calls
-    )
+    assert all(call["kubeconfig"] and call["files"]["-f"] for call in spies["helm"].calls)
     kubectl = spies["kubectl"].argvs
     assert kubectl[0][:2] == [
         "get",
@@ -107,21 +100,12 @@ def test_rerun_is_idempotent_and_restores_key_first(cluster):
     for fake in spies.values():
         fake.log.unlink(missing_ok=True)
     bootstrap.run(Context.open(repo))
-    assert (
-        repo.kubeconfig.read_bytes() == kubeconfig_bytes
-    )  # unchanged content → not rewritten
+    assert repo.kubeconfig.read_bytes() == kubeconfig_bytes  # unchanged content → not rewritten
     kubectl = spies["kubectl"].calls
     # server-side apply: no last-applied-configuration annotation with the private key
-    assert (
-        kubectl[0]["args"][:3] == ["apply", "--server-side", "-f"]
-        and kubectl[0]["files"]["-f"]
-    )
-    assert kubectl[0]["args"][3] != str(
-        repo.gitops_dir / "root.yaml"
-    )  # the decrypted key comes first
-    assert not any(
-        a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs
-    )  # no new backup
+    assert kubectl[0]["args"][:3] == ["apply", "--server-side", "-f"] and kubectl[0]["files"]["-f"]
+    assert kubectl[0]["args"][3] != str(repo.gitops_dir / "root.yaml")  # the decrypted key comes first
+    assert not any(a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs)  # no new backup
     assert len(spies["helm"].argvs) == 2
 
 
@@ -146,11 +130,7 @@ def test_etcd_members_are_checked_on_every_controlplane(cluster):
     _add_controlplane(repo, "cp-02", "10.0.0.13")
     bootstrap.run(Context.open(repo))
     talos = spies["talosctl"].argvs
-    members = [
-        a[a.index("-n") + 1]
-        for a in talos
-        if a[a.index("-e") + 2 :] == ["etcd", "members"]
-    ]
+    members = [a[a.index("-n") + 1] for a in talos if a[a.index("-e") + 2 :] == ["etcd", "members"]]
     assert members == ["10.0.0.10", "10.0.0.13"]
     [call] = [a for a in talos if "bootstrap" in a]
     assert call[call.index("-n") + 1] == "10.0.0.10"
@@ -172,13 +152,8 @@ def test_existing_etcd_member_skips_bootstrap(cluster, capfd):
     spies["talosctl"]._save()
     bootstrap.run(Context.open(repo))
     assert not any("bootstrap" in a for a in spies["talosctl"].argvs)
-    assert (
-        "etcd already has members on cp-02; skipping bootstrap"
-        in capfd.readouterr().out
-    )
-    assert (
-        Context.open(repo).sops.decrypt(repo.kubeconfig).decode() == KUBECONFIG
-    )  # the rest still runs
+    assert "etcd already has members on cp-02; skipping bootstrap" in capfd.readouterr().out
+    assert Context.open(repo).sops.decrypt(repo.kubeconfig).decode() == KUBECONFIG  # the rest still runs
 
 
 def test_hanging_etcd_members_times_out_and_bootstraps(cluster, monkeypatch, capfd):
@@ -194,9 +169,7 @@ def test_hanging_etcd_members_times_out_and_bootstraps(cluster, monkeypatch, cap
 
 def test_failing_or_empty_etcd_answer_still_bootstraps(cluster):
     repo, spies = cluster
-    spies["talosctl"].rules.insert(
-        0, {"match": ["etcd", "members"], "stdout": ETCD_MEMBERS, "stderr": "", "rc": 1}
-    )
+    spies["talosctl"].rules.insert(0, {"match": ["etcd", "members"], "stdout": ETCD_MEMBERS, "stderr": "", "rc": 1})
     spies["talosctl"]._save()
     bootstrap.run(Context.open(repo))
     assert any("bootstrap" in a for a in spies["talosctl"].argvs)
@@ -223,9 +196,7 @@ def test_rerun_warns_when_restored_key_is_stale(cluster, capfd):
     bootstrap.run(Context.open(repo))
     capfd.readouterr()
     other = CERT.replace("MIIB", "MIIC")
-    spies["kubeseal"].rules.insert(
-        0, {"match": ["--fetch-cert"], "stdout": other, "stderr": "", "rc": 0}
-    )
+    spies["kubeseal"].rules.insert(0, {"match": ["--fetch-cert"], "stdout": other, "stderr": "", "rc": 0})
     spies["kubeseal"]._save()
     _rerun(repo, spies)
     err = capfd.readouterr().err
@@ -233,9 +204,7 @@ def test_rerun_warns_when_restored_key_is_stale(cluster, capfd):
     assert "talkub secret backup-sealing-key" in err
     assert any("--fetch-cert" in a for a in spies["kubeseal"].argvs)
     assert all(call["kubeconfig"] for call in spies["kubeseal"].calls)
-    assert not any(
-        a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs
-    )  # still no automatic backup
+    assert not any(a[:2] == ["get", "secret"] for a in spies["kubectl"].argvs)  # still no automatic backup
     assert sealing.cert_path(repo).read_text() == CERT
 
 
@@ -249,9 +218,7 @@ def test_rerun_with_matching_cert_does_not_warn(cluster, capfd):
 
 def test_health_failure_stops_before_kubeconfig(cluster):
     repo, spies = cluster
-    spies["talosctl"].rules.insert(
-        0, {"match": ["health"], "stdout": "", "stderr": "", "rc": 1}
-    )
+    spies["talosctl"].rules.insert(0, {"match": ["health"], "stdout": "", "stderr": "", "rc": 1})
     spies["talosctl"]._save()
     with pytest.raises(CommandFailed) as exc:
         bootstrap.run(Context.open(repo))
@@ -337,9 +304,7 @@ spec:
 def test_release_namespace_version_and_values_come_from_the_app_file(cluster):
     repo, spies = cluster
     atomic_write(repo.gitops_dir / "values" / "extra.yaml", b"{}\n")
-    atomic_write(
-        repo.gitops_dir / "apps" / "sealed-secrets.yaml", SEALED_SECRETS_APP.encode()
-    )
+    atomic_write(repo.gitops_dir / "apps" / "sealed-secrets.yaml", SEALED_SECRETS_APP.encode())
     bootstrap.run(Context.open(repo))
     argv = spies["helm"].argvs[0]
     assert argv[:4] == [
@@ -351,13 +316,8 @@ def test_release_namespace_version_and_values_come_from_the_app_file(cluster):
     assert argv[argv.index("--version") + 1] == "2.21.1"
     assert argv[argv.index("-n") + 1] == "sealing"
     values = [argv[i + 1] for i, arg in enumerate(argv) if arg == "-f"]
-    assert values[:2] == [
-        str(repo.gitops_dir / "values" / name)
-        for name in ("sealed-secrets.yaml", "extra.yaml")
-    ]
-    assert (
-        len(values) == 3
-    )  # the inline valuesObject goes through a private temp file ...
+    assert values[:2] == [str(repo.gitops_dir / "values" / name) for name in ("sealed-secrets.yaml", "extra.yaml")]
+    assert len(values) == 3  # the inline valuesObject goes through a private temp file ...
     assert not Path(values[2]).exists()  # ... removed after the install
     assert argv[-3:] == ["--wait", "--timeout", "10m"]
 
@@ -378,14 +338,8 @@ def test_commit_reminder_right_after_key_backup(cluster, capfd):
     bootstrap.run(Context.open(repo))
     out = capfd.readouterr().out
     reminder = out.index("commit bootstrap/ now")
-    assert (
-        out.index("backing up the new sealed-secrets key")
-        < reminder
-        < out.index("installing argocd")
-    )
-    assert out.rstrip().endswith(
-        "bootstrap complete — commit kubernetes/ and bootstrap/"
-    )
+    assert out.index("backing up the new sealed-secrets key") < reminder < out.index("installing argocd")
+    assert out.rstrip().endswith("bootstrap complete — commit kubernetes/ and bootstrap/")
 
 
 def test_bootstrap_applies_repo_credentials_before_root(cluster):
@@ -399,14 +353,8 @@ def test_bootstrap_applies_repo_credentials_before_root(cluster):
     )
     bootstrap.run(ctx)
     applies = [c for c in spies["kubectl"].calls if c["args"][0] == "apply"]
-    root = [
-        i
-        for i, c in enumerate(applies)
-        if c["args"] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]
-    ]
-    creds = [
-        i for i, c in enumerate(applies) if c["args"][:2] == ["apply", "--server-side"]
-    ]
+    root = [i for i, c in enumerate(applies) if c["args"] == ["apply", "-f", str(repo.gitops_dir / "root.yaml")]]
+    creds = [i for i, c in enumerate(applies) if c["args"][:2] == ["apply", "--server-side"]]
     assert root and creds and max(creds) < root[0]
 
 
@@ -421,9 +369,7 @@ def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     repo.write_settings(settings)
     tailscale.firewall_patch_path(repo).parent.mkdir(parents=True, exist_ok=True)
-    tailscale.firewall_patch_path(repo).write_text(
-        tailscale.render_firewall_patch("10.0.0.0/24")
-    )
+    tailscale.firewall_patch_path(repo).write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
     spies["talosctl"].rules.insert(
         0,
         {

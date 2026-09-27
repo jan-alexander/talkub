@@ -9,10 +9,7 @@ from talkub.talos.factory import FactoryClient, boot_media_url
 
 def test_schematic_id_posts_the_document(factory_stub):
     body = schematic_document(["siderolabs/tailscale"], [])
-    assert (
-        FactoryClient().schematic_id(["siderolabs/tailscale"], [])
-        == hashlib.sha256(body.encode()).hexdigest()
-    )
+    assert FactoryClient().schematic_id(["siderolabs/tailscale"], []) == hashlib.sha256(body.encode()).hexdigest()
     assert factory_stub.requests == [("POST", "/schematics", body.encode())]
 
 
@@ -37,9 +34,7 @@ def test_server_error_is_reported(factory_stub):
 
 def test_unreachable_factory(monkeypatch):
     with pytest.raises(CommandFailed):
-        FactoryClient(base_url="http://127.0.0.1:9", timeout=2).official_extensions(
-            "v1.14.0"
-        )
+        FactoryClient(base_url="http://127.0.0.1:9", timeout=2).official_extensions("v1.14.0")
 
 
 def test_boot_media_urls():

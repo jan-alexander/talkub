@@ -99,9 +99,7 @@ def test_error_and_warning_findings_have_line_numbers(empty_repo):
 
 
 def test_sops_yaml_ignored_by_default(empty_repo):
-    (empty_repo.root / "secret.sops.yaml").write_text(
-        "a: [1, 2\n"
-    )  # would be a syntax error otherwise
+    (empty_repo.root / "secret.sops.yaml").write_text("a: [1, 2\n")  # would be a syntax error otherwise
     report = LintReport()
     lint_yaml(empty_repo, report)
     assert not any(f.path == "secret.sops.yaml" for f in report.findings)
@@ -111,15 +109,11 @@ def test_non_utf8_yaml_file_is_an_error_finding_not_a_crash(empty_repo):
     (empty_repo.root / "bad.yaml").write_bytes(b"a: \xff\xfe bad\n")
     report = LintReport()
     lint_yaml(empty_repo, report)  # must not raise UnicodeDecodeError
-    assert [f for f in report.findings if f.path == "bad.yaml"] == [
-        Finding("error", "bad.yaml", "not valid UTF-8")
-    ]
+    assert [f for f in report.findings if f.path == "bad.yaml"] == [Finding("error", "bad.yaml", "not valid UTF-8")]
 
 
 def test_malformed_yamllint_extends_raises_validation_error(empty_repo):
-    (empty_repo.root / ".yamllint").write_text(
-        "extends: relaxd\n"
-    )  # typo: not a built-in name
+    (empty_repo.root / ".yamllint").write_text("extends: relaxd\n")  # typo: not a built-in name
     report = LintReport()
     with pytest.raises(ValidationError) as exc:
         lint_yaml(empty_repo, report)
@@ -134,11 +128,7 @@ def test_repo_yamllint_overrides_default(empty_repo):
     report = LintReport()
     lint_yaml(empty_repo, report)
     findings = [f for f in report.findings if f.path == "long.yaml"]
-    assert (
-        findings
-        and findings[0].level == "error"
-        and "line-length" in findings[0].message
-    )
+    assert findings and findings[0].level == "error" and "line-length" in findings[0].message
 
 
 def test_run_reports_yaml_findings(empty_repo):
@@ -474,35 +464,25 @@ def test_lint_manifests_missing_tool_reports_skipped(empty_repo, monkeypatch, tm
 
 
 def test_lint_manifests_no_manifests_is_silent(empty_repo, monkeypatch, tmp_path):
-    monkeypatch.setenv(
-        "PATH", str(tmp_path / "empty-path")
-    )  # would skip loudly if it got this far
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # would skip loudly if it got this far
     report = LintReport()
     lint_manifests(Context.open(empty_repo), report, offline=False)
     assert report.findings == [] and report.skipped == []
 
 
-def test_lint_manifests_offline_empty_cache_skips_without_calling(
-    empty_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_lint_manifests_offline_empty_cache_skips_without_calling(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo)
     fake_bin("kubeconform", "exit 1\n")  # never actually invoked
-    monkeypatch.setenv(
-        "XDG_CACHE_HOME", str(tmp_path / "cache")
-    )  # nonexistent -> empty
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # nonexistent -> empty
     runner = FakeRunner()
     report = LintReport()
     lint_manifests(Context.open(empty_repo, runner=runner), report, offline=True)
-    assert report.skipped == [
-        "kubeconform: no schema cache yet (run `talkub lint` online once)"
-    ]
+    assert report.skipped == ["kubeconform: no schema cache yet (run `talkub lint` online once)"]
     assert report.findings == []
     assert runner.calls == []
 
 
-def test_lint_manifests_offline_populated_cache_runs_normally(
-    empty_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_lint_manifests_offline_populated_cache_runs_normally(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo)
     fake_bin("kubeconform", "true\n")
     cache = tmp_path / "cache"
@@ -516,9 +496,7 @@ def test_lint_manifests_offline_populated_cache_runs_normally(
     assert report.findings == [] and report.skipped == []
 
 
-def test_lint_manifests_calls_kubeconform_and_records_findings(
-    empty_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_lint_manifests_calls_kubeconform_and_records_findings(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo, "a.yaml")
     fake_bin("kubeconform", "true\n")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -545,9 +523,7 @@ def test_lint_manifests_calls_kubeconform_and_records_findings(
     call = runner.calls[1]
     assert call.argv[0] == "kubeconform"
     assert "gitops/apps/a.yaml" in call.argv
-    assert report.findings == [
-        Finding("error", "gitops/apps/a.yaml", "ConfigMap/x: /data: bad")
-    ]
+    assert report.findings == [Finding("error", "gitops/apps/a.yaml", "ConfigMap/x: /data: bad")]
     assert report.skipped == []
 
 
@@ -613,15 +589,11 @@ def test_probe_version_memoized_per_report(empty_repo):
     report = LintReport()
     ctx = Context.open(empty_repo, runner=runner)
     assert _probe_version(ctx, report, "1.37.0") == "1.37.0"
-    assert (
-        _probe_version(ctx, report, "1.37.0") == "1.37.0"
-    )  # cached: a second probe would IndexError (no output left)
+    assert _probe_version(ctx, report, "1.37.0") == "1.37.0"  # cached: a second probe would IndexError (no output left)
     assert len(runner.calls) == 1
 
 
-def test_lint_manifests_probe_available_ignores_crds_no_false_fallback(
-    empty_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_lint_manifests_probe_available_ignores_crds_no_false_fallback(empty_repo, fake_bin, monkeypatch, tmp_path):
     """Regression: a chart bundling CRDs must not look like a missing-schema-version problem."""
     _manifest(empty_repo, "a.yaml")
     fake_bin("kubeconform", "true\n")
@@ -645,14 +617,10 @@ def test_lint_manifests_probe_available_ignores_crds_no_false_fallback(
     assert "1.37.0" in runner.calls[0] and "1.37.0" in runner.calls[1]
     assert not any("master" in c for c in runner.calls)
     assert report.findings == []
-    assert report.skipped == [
-        "manifests: 1 CustomResourceDefinition objects not validated (no schema)"
-    ]
+    assert report.skipped == ["manifests: 1 CustomResourceDefinition objects not validated (no schema)"]
 
 
-def test_lint_manifests_probe_missing_falls_back_to_master(
-    empty_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_lint_manifests_probe_missing_falls_back_to_master(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo, "a.yaml")
     fake_bin("kubeconform", "true\n")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -683,18 +651,14 @@ def test_lint_manifests_probe_missing_falls_back_to_master(
     assert report.skipped == []
 
 
-def test_probe_runs_once_across_manifests_and_helm_apps(
-    empty_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_probe_runs_once_across_manifests_and_helm_apps(empty_repo, fake_bin, monkeypatch, tmp_path):
     _manifest(empty_repo, "a.yaml")
     _write_source_app(empty_repo, "myapp")
     fake_bin("helm", "true\n")
     fake_bin("kubeconform", "true\n")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     outputs = [
-        _probe_json(
-            "statusValid"
-        ).encode(),  # the only probe call, shared by both lint steps
+        _probe_json("statusValid").encode(),  # the only probe call, shared by both lint steps
         _kubeconform_json([]).encode(),  # lint_manifests' real call
         b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n",  # helm template
         _kubeconform_json([]).encode(),  # the helm app's real call
@@ -703,9 +667,7 @@ def test_probe_runs_once_across_manifests_and_helm_apps(
     report = LintReport()
     lint_manifests(Context.open(empty_repo, runner=runner), report, offline=False)
     lint_helm_apps(Context.open(empty_repo, runner=runner), report, offline=False)
-    assert (
-        len(runner.calls) == 4
-    )  # a 5th call (a second probe) would IndexError on empty outputs
+    assert len(runner.calls) == 4  # a 5th call (a second probe) would IndexError on empty outputs
     assert report.findings == [] and report.skipped == []
 
 
@@ -740,9 +702,7 @@ def test_parse_kubeconform_collapses_crd_skips_to_one_summary_line():
     )
     findings, skipped = parse_kubeconform(stdout)
     assert findings == []
-    assert skipped == [
-        "manifests: 2 CustomResourceDefinition objects not validated (no schema)"
-    ]
+    assert skipped == ["manifests: 2 CustomResourceDefinition objects not validated (no schema)"]
 
 
 def test_parse_kubeconform_crd_summary_uses_prefix_label():
@@ -760,9 +720,7 @@ def test_parse_kubeconform_crd_summary_uses_prefix_label():
     )
     findings, skipped = parse_kubeconform(stdout, prefix="app coredns: ")
     assert findings == []
-    assert skipped == [
-        "app coredns: 1 CustomResourceDefinition objects not validated (no schema)"
-    ]
+    assert skipped == ["app coredns: 1 CustomResourceDefinition objects not validated (no schema)"]
 
 
 def test_parse_kubeconform_non_crd_skip_is_unaffected():
@@ -828,9 +786,7 @@ spec:
 
 @need("kubeconform")
 def test_real_kubeconform_validates_manifests(empty_repo, monkeypatch, tmp_path):
-    monkeypatch.setenv(
-        "XDG_CACHE_HOME", str(tmp_path / "cache")
-    )  # never touch the real ~/.cache
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # never touch the real ~/.cache
     apps = empty_repo.root / "gitops" / "apps"
     apps.mkdir(parents=True)
     (apps / "good.yaml").write_text(_GOOD_DEPLOYMENT)
@@ -840,25 +796,19 @@ def test_real_kubeconform_validates_manifests(empty_repo, monkeypatch, tmp_path)
 
     bad_findings = [f for f in report.findings if f.path == "gitops/apps/bad.yaml"]
     if not bad_findings or not any("bogus" in f.message for f in bad_findings):
-        pytest.skip(
-            f"kubeconform did not report the expected schema error (network issue?): {report.render()}"
-        )
+        pytest.skip(f"kubeconform did not report the expected schema error (network issue?): {report.render()}")
     assert bad_findings[0].level == "error"
 
     good_findings = [f for f in report.findings if f.path == "gitops/apps/good.yaml"]
     if good_findings:
-        pytest.skip(
-            f"good.yaml unexpectedly flagged (network issue?): {report.render()}"
-        )
+        pytest.skip(f"good.yaml unexpectedly flagged (network issue?): {report.render()}")
 
 
 @need("kubeconform")
 def test_real_kubeconform_download_error_msg_matches_our_prefix(tmp_path):
     """Pins the exact msg shape an unreachable schema host produces, since offline handling in
     `parse_kubeconform` depends on it starting with `_DOWNLOAD_ERROR_PREFIX`."""
-    (tmp_path / "x.yaml").write_text(
-        "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: test\n"
-    )
+    (tmp_path / "x.yaml").write_text("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: test\n")
     cache = tmp_path / "cache"
     cache.mkdir()
     proc = Runner().run(
@@ -880,9 +830,7 @@ def test_real_kubeconform_download_error_msg_matches_our_prefix(tmp_path):
     data = json.loads(proc.stdout.decode())
     resources = data["resources"]
     if not resources or resources[0]["status"] != "statusError":
-        pytest.skip(
-            f"kubeconform did not report a download error (network/DNS issue?): {data}"
-        )
+        pytest.skip(f"kubeconform did not report a download error (network/DNS issue?): {data}")
     msg = resources[0]["msg"]
     if not msg.startswith("failed downloading schema"):
         pytest.skip(f"kubeconform's error msg shape changed: {msg!r}")
@@ -912,14 +860,10 @@ def _app_doc(name, *, namespace="ns1", source=None, sources=None):
     }
 
 
-def test_run_survives_broken_app_file_and_non_mapping_spec(
-    empty_repo, monkeypatch, tmp_path
-):
+def test_run_survives_broken_app_file_and_non_mapping_spec(empty_repo, monkeypatch, tmp_path):
     """Integration-level regression for the crash: yamllint still reports the broken file; the
     rest of `talkub lint` completes instead of raising."""
-    monkeypatch.setenv(
-        "PATH", str(tmp_path / "empty-path")
-    )  # no helm/kubeconform: nothing else to run
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # no helm/kubeconform: nothing else to run
     apps_dir = empty_repo.root / "gitops" / "apps"
     apps_dir.mkdir(parents=True)
     (apps_dir / "broken.yaml").write_text("apiVersion: v1\nkind: [oops\n")
@@ -1012,9 +956,7 @@ def test_lint_helm_apps_helm_failure_is_an_error(empty_repo, spy):
     _write_source_app(empty_repo, "myapp")
     helm = spy("helm")
     helm.on("template", stderr="line1\nline2\nline3\nline4\nline5\nline6\n", rc=1)
-    kubeconform = spy(
-        "kubeconform"
-    )  # never called: nothing rendered, so nothing to probe/validate
+    kubeconform = spy("kubeconform")  # never called: nothing rendered, so nothing to probe/validate
 
     report = LintReport()
     lint_helm_apps(Context.open(empty_repo), report, offline=False)
@@ -1031,9 +973,7 @@ def test_lint_helm_apps_helm_failure_is_an_error(empty_repo, spy):
 
 def test_lint_helm_apps_offline_skips(empty_repo, monkeypatch, tmp_path):
     _write_source_app(empty_repo, "myapp")
-    monkeypatch.setenv(
-        "PATH", str(tmp_path / "empty-path")
-    )  # would fail loudly if invoked
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))  # would fail loudly if invoked
     report = LintReport()
     lint_helm_apps(Context.open(empty_repo), report, offline=True)
     assert report.skipped == ["helm apps: skipped (--offline)"]
@@ -1056,18 +996,12 @@ def test_lint_helm_apps_helm_missing_is_skipped(empty_repo, monkeypatch, tmp_pat
     assert report.findings == []
 
 
-def test_lint_helm_apps_kubeconform_missing_does_not_duplicate_skip_reason(
-    empty_repo, spy, monkeypatch
-):
+def test_lint_helm_apps_kubeconform_missing_does_not_duplicate_skip_reason(empty_repo, spy, monkeypatch):
     _write_source_app(empty_repo, "myapp")
     helm = spy("helm")
-    helm.on(
-        "template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"
-    )
+    helm.on("template", stdout="apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
     bindir = os.environ["PATH"].split(os.pathsep)[0]
-    monkeypatch.setenv(
-        "PATH", bindir
-    )  # helm's spy script lives here (absolute paths inside); no kubeconform
+    monkeypatch.setenv("PATH", bindir)  # helm's spy script lives here (absolute paths inside); no kubeconform
     report = LintReport()
     lint_helm_apps(Context.open(empty_repo), report, offline=False)
     assert report.skipped == []
@@ -1076,9 +1010,7 @@ def test_lint_helm_apps_kubeconform_missing_does_not_duplicate_skip_reason(
 
 
 @need("helm", "kubeconform")
-def test_real_helm_and_kubeconform_validate_coredns_app(
-    empty_repo, monkeypatch, tmp_path
-):
+def test_real_helm_and_kubeconform_validate_coredns_app(empty_repo, monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("HELM_CACHE_HOME", str(tmp_path / "helm-cache"))
     monkeypatch.setenv("HELM_CONFIG_HOME", str(tmp_path / "helm-config"))
@@ -1103,7 +1035,5 @@ def test_real_helm_and_kubeconform_validate_coredns_app(
     lint_helm_apps(Context.open(empty_repo), report, offline=False)
 
     if report.findings:
-        pytest.skip(
-            f"real helm+kubeconform reported findings (network?): {report.render()}"
-        )
+        pytest.skip(f"real helm+kubeconform reported findings (network?): {report.render()}")
     assert report.skipped == []

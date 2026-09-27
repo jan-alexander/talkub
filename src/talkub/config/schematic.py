@@ -22,9 +22,7 @@ def customization(extensions: Sequence[str], kernel_args: Sequence[str]) -> dict
 
 
 def customization_hash(extensions: Sequence[str], kernel_args: Sequence[str]) -> str:
-    data = json.dumps(
-        customization(extensions, kernel_args), sort_keys=True, separators=(",", ":")
-    )
+    data = json.dumps(customization(extensions, kernel_args), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(data.encode()).hexdigest()
 
 

@@ -29,19 +29,13 @@ def test_encrypt_needs_no_private_key(keyed_repo):
         raise AssertionError("encrypt must not resolve the master key")
 
     public = Context.open(keyed_repo).keyring.public_key()
-    assert Sops(Runner(), no_key).encrypt(
-        b"a: 1\n", filename="x.sops.yaml", public_key=public
-    )
+    assert Sops(Runner(), no_key).encrypt(b"a: 1\n", filename="x.sops.yaml", public_key=public)
 
 
 def test_decrypt_with_wrong_key(keyed_repo, tmp_path):
     ctx = Context.open(keyed_repo)
     path = tmp_path / "x.sops.yaml"
-    path.write_bytes(
-        ctx.sops.encrypt(
-            b"a: 1\n", filename=path.name, public_key=ctx.keyring.public_key()
-        )
-    )
+    path.write_bytes(ctx.sops.encrypt(b"a: 1\n", filename=path.name, public_key=ctx.keyring.public_key()))
     wrong = "AGE-SECRET-KEY-133FP6CADJCE6M9H6AUXY3NLXNX73NSSLQS0CHGVLPSVZKK87V80SPY0R56"
     with pytest.raises(DecryptFailed):
         Sops(Runner(), lambda: wrong).decrypt(path)
@@ -69,9 +63,7 @@ def test_edit_failed_editor_writes_nothing(keyed_repo, fake_bin, monkeypatch, tm
     assert not path.exists()
 
 
-def test_edit_prefers_sops_editor_with_arguments(
-    keyed_repo, fake_bin, monkeypatch, tmp_path
-):
+def test_edit_prefers_sops_editor_with_arguments(keyed_repo, fake_bin, monkeypatch, tmp_path):
     fake_bin("fake-editor", 'printf "flag: %s\\n" "$1" > "$2"\n')
     monkeypatch.setenv("EDITOR", "vi-must-not-run")
     monkeypatch.setenv("SOPS_EDITOR", "fake-editor --wait")
@@ -83,6 +75,4 @@ def test_edit_prefers_sops_editor_with_arguments(
 
 def test_render_sops_config():
     text = render_sops_config("age1abc")
-    assert yamlio.load(text) == {
-        "creation_rules": [{"path_regex": r"\.sops\.yaml$", "age": "age1abc"}]
-    }
+    assert yamlio.load(text) == {"creation_rules": [{"path_regex": r"\.sops\.yaml$", "age": "age1abc"}]}

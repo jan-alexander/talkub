@@ -42,18 +42,14 @@ def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
                 if version.returncode != 0:
                     raise CommandFailed(
                         f"cannot reach node '{name}' at {address}",
-                        hint=(version.stderr or b"").decode().strip()
-                        or f"exit code {version.returncode}",
+                        hint=(version.stderr or b"").decode().strip() or f"exit code {version.returncode}",
                     )
                 current = inspect.server_version(version.stdout.decode())
-                extensions = session.run(
-                    address, ["get", "extensions", "-o", "json"], check=False
-                )
+                extensions = session.run(address, ["get", "extensions", "-o", "json"], check=False)
                 if extensions.returncode != 0:
                     raise CommandFailed(
                         f"cannot read extensions of node '{name}'",
-                        hint=(extensions.stderr or b"").decode().strip()
-                        or f"exit code {extensions.returncode}",
+                        hint=(extensions.stderr or b"").decode().strip() or f"exit code {extensions.returncode}",
                     )
                 schematic = inspect.schematic_id(extensions.stdout.decode())
                 print(
@@ -100,15 +96,11 @@ def k8s(ctx: Context, *, confirm: Confirm) -> bool:
         )
         code = session.call_redacted(address, [*target, "--dry-run"])
         if code != 0:
-            raise CommandFailed(
-                "upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}"
-            )
+            raise CommandFailed("upgrade-k8s dry-run failed", hint=f"talosctl exited with {code}")
         if not confirm(f"upgrade Kubernetes to {settings.kubernetes_version}?"):
             print("aborted")
             return False
         code = session.call(address, target)
         if code != 0:
-            raise CommandFailed(
-                "upgrade-k8s failed", hint=f"talosctl exited with {code}"
-            )
+            raise CommandFailed("upgrade-k8s failed", hint=f"talosctl exited with {code}")
     return True

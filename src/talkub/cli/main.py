@@ -45,13 +45,9 @@ def _version(value: bool) -> None:
 @app.callback()
 def _globals(
     ctx: typer.Context,
-    repo: Path = typer.Option(
-        None, "--repo", help="Cluster repo (default: search upwards for .talkub.yaml)."
-    ),
+    repo: Path = typer.Option(None, "--repo", help="Cluster repo (default: search upwards for .talkub.yaml)."),
     debug: bool = typer.Option(False, "--debug", help="Show tracebacks on errors."),
-    version: bool = typer.Option(
-        False, "--version", callback=_version, is_eager=True, help="Show the version."
-    ),
+    version: bool = typer.Option(False, "--version", callback=_version, is_eager=True, help="Show the version."),
 ) -> None:
     ctx.obj = State(repo_path=repo, debug=debug)
 
@@ -91,9 +87,7 @@ usage: talkub run                                       list the shortcuts in .t
 Arguments after <name> are passed on verbatim (run shortcuts only)."""
 
 
-@app.command(
-    "run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
-)
+@app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def _run_help() -> None:
     """Run a shortcut from .talkub.yaml (secret, job, run, portForward); without a name, list them."""
     # Never reached via main(), which handles `run` raw (like t/k) so options after the name pass through.
@@ -116,9 +110,7 @@ def run_shortcut(state: State, args: list[str]) -> int:
         lines = shortcuts.listing(ctx.repo.load_settings())
         print("\n".join(lines) if lines else "no shortcuts defined in .talkub.yaml")
         return 0
-    return shortcuts.run(
-        ctx, args[index], args[index + 1 :], print_value=print_value, follow=follow
-    )
+    return shortcuts.run(ctx, args[index], args[index + 1 :], print_value=print_value, follow=follow)
 
 
 PASSTHROUGH = {

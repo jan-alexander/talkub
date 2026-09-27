@@ -34,28 +34,16 @@ def repo(repo_with_configs):
             if (TEMPLATES / "repo" / (rel + ".tmpl")).is_file()
             else (TEMPLATES / "repo" / rel)
         )
-        text = Template(template.read_text()).safe_substitute(
-            {"git_url": PLACEHOLDER, "name": "test"}
-        )
+        text = Template(template.read_text()).safe_substitute({"git_url": PLACEHOLDER, "name": "test"})
         atomic_write(repo_with_configs.root / rel, text.encode())
     return repo_with_configs
 
 
 def test_set_url_prints_files_and_next_step(repo, capfd):
-    assert (
-        _run(
-            ["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]
-        )
-        == 0
-    )
+    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]) == 0
     out = capfd.readouterr().out
     assert "updated gitops/root.yaml" in out and "talkub repo apply" in out
-    assert (
-        _run(
-            ["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]
-        )
-        == 0
-    )
+    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]) == 0
     assert "already set" in capfd.readouterr().out
 
 
@@ -103,10 +91,7 @@ def test_https_credentials_from_token_file(repo, tmp_path, capfd):
 
 def test_ssh_url_rejects_https_options(repo, tmp_path, capfd):
     _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"])
-    assert (
-        _run(["--repo", str(repo.root), "repo", "credentials", "--username", "jam"])
-        == 1
-    )
+    assert _run(["--repo", str(repo.root), "repo", "credentials", "--username", "jam"]) == 1
 
 
 def test_existing_credentials_ask_before_replacing(repo, monkeypatch, capfd):
@@ -150,9 +135,7 @@ def test_apply_upgrades_argocd_when_extra_hosts_present(repo, spy, capfd):
     kubectl = spy("kubectl")
     assert _run(["--repo", str(repo.root), "repo", "apply"]) == 0
     out = capfd.readouterr().out
-    assert (
-        "upgrading Argo CD with the known hosts from gitops/values/argocd.yaml" in out
-    )
+    assert "upgrading Argo CD with the known hosts from gitops/values/argocd.yaml" in out
     assert helm.argvs and helm.argvs[0][:4] == [
         "upgrade",
         "--install",
@@ -160,9 +143,7 @@ def test_apply_upgrades_argocd_when_extra_hosts_present(repo, spy, capfd):
         "argo-cd",
     ]
     assert helm.argvs[0][helm.argvs[0].index("--version") + 1] == "10.9.2"
-    assert helm.argvs[0][helm.argvs[0].index("-f") + 1] == str(
-        repo.gitops_dir / "values" / "argocd.yaml"
-    )
+    assert helm.argvs[0][helm.argvs[0].index("-f") + 1] == str(repo.gitops_dir / "values" / "argocd.yaml")
     assert kubectl.argvs == [["apply", "-f", str(repo.gitops_dir / "root.yaml")]]
     assert helm.log.stat().st_mtime_ns < kubectl.log.stat().st_mtime_ns
 
@@ -171,12 +152,7 @@ def test_set_url_notes_credentials_need_refresh_on_host_change(repo, capfd):
     _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"])
     _run(["--repo", str(repo.root), "repo", "credentials"])
     capfd.readouterr()
-    assert (
-        _run(
-            ["--repo", str(repo.root), "repo", "set-url", "git@gitlab.com:me/test.git"]
-        )
-        == 0
-    )
+    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@gitlab.com:me/test.git"]) == 0
     out = capfd.readouterr().out
     assert "run talkub repo credentials to trust the new host" in out
 
@@ -184,12 +160,7 @@ def test_set_url_notes_credentials_need_refresh_on_host_change(repo, capfd):
 @pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
 def test_set_url_notes_git_remote_origin_when_missing(repo, capfd):
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo.root)], check=True)
-    assert (
-        _run(
-            ["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]
-        )
-        == 0
-    )
+    assert _run(["--repo", str(repo.root), "repo", "set-url", "git@github.com:me/test.git"]) == 0
     out = capfd.readouterr().out
     assert "git remote origin is not set" in out
     assert "git remote add origin git@github.com:me/test.git" in out

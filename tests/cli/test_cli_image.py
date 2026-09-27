@@ -21,10 +21,7 @@ def test_extensions_marks_active(empty_repo, factory_stub, capfd):
 
 
 def test_add_writes_settings_and_hints_upgrade(empty_repo, factory_stub, capfd):
-    assert (
-        _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/intel-ucode"])
-        == 0
-    )
+    assert _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/intel-ucode"]) == 0
     settings = empty_repo.load_settings()
     assert settings.schematics["metal"].extensions == ["siderolabs/intel-ucode"]
     assert settings.schematics["metal"].is_current
@@ -33,9 +30,7 @@ def test_add_writes_settings_and_hints_upgrade(empty_repo, factory_stub, capfd):
 
 
 def test_add_unknown_extension_fails(empty_repo, factory_stub, capfd):
-    assert (
-        _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/nope"]) == 1
-    )
+    assert _run(["--repo", str(empty_repo.root), "image", "add", "siderolabs/nope"]) == 1
     assert "siderolabs/nope" in capfd.readouterr().err
 
 
@@ -101,9 +96,7 @@ def test_show_offline_with_current_cache(empty_repo, monkeypatch, capfd):
 
 
 def test_show_rejects_unknown_arch(empty_repo, capfd):
-    assert (
-        _run(["--repo", str(empty_repo.root), "image", "show", "--arch", "riscv"]) == 1
-    )
+    assert _run(["--repo", str(empty_repo.root), "image", "show", "--arch", "riscv"]) == 1
 
 
 @pytest.mark.parametrize(

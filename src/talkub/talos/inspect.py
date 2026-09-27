@@ -111,11 +111,7 @@ def tailnet_ipv4(text: str) -> str | None:
             continue
         if address not in _TAILNET_V4:
             continue
-        if (
-            link_index is not None
-            and len(fields) > link_index
-            and fields[link_index] == "tailscale0"
-        ):
+        if link_index is not None and len(fields) > link_index and fields[link_index] == "tailscale0":
             return str(address)
         if fallback is None:
             fallback = str(address)
@@ -123,9 +119,7 @@ def tailnet_ipv4(text: str) -> str | None:
 
 
 _MARKER_CHARS = (" ", "+", "-")
-_YAML_KV = re.compile(
-    r"^(?P<indent>[ \t]*(?:-[ \t]+)*)(?P<key>[A-Za-z][\w]*):(?P<sep>[ \t]+)(?P<value>\S.*)$"
-)
+_YAML_KV = re.compile(r"^(?P<indent>[ \t]*(?:-[ \t]+)*)(?P<key>[A-Za-z][\w]*):(?P<sep>[ \t]+)(?P<value>\S.*)$")
 _BLOCK_SCALAR = re.compile(r"^[|>][+\-0-9]*\s*$")
 _SENSITIVE_KEY_SUFFIXES = ("key", "secret", "token", "password", "auth")
 
@@ -224,9 +218,7 @@ def redact_diff(text: str) -> str:
             value = match.group("value")
             if _BLOCK_SCALAR.match(value):
                 block_indent = len(match.group("indent"))
-            out.append(
-                f"{marker}{match.group('indent')}{match.group('key')}:{match.group('sep')}<redacted>"
-            )
+            out.append(f"{marker}{match.group('indent')}{match.group('key')}:{match.group('sep')}<redacted>")
             continue
         out.append(f"{marker}{_redact_nested(content)}")
     return "\n".join(out)
@@ -244,11 +236,7 @@ def config_drift(text: str) -> str:
 
 def _items(text: str) -> list[dict]:
     docs = json_documents(text)
-    if (
-        len(docs) != 1
-        or not isinstance(docs[0], dict)
-        or not isinstance(docs[0].get("items"), list)
-    ):
+    if len(docs) != 1 or not isinstance(docs[0], dict) or not isinstance(docs[0].get("items"), list):
         return []
     return [item for item in docs[0]["items"] if isinstance(item, dict)]
 
@@ -302,16 +290,8 @@ def machine_ca(text: str) -> tuple[str, str]:
         spec = resource.get("spec")
         documents = yamlio.load_all(spec) if isinstance(spec, str) else [spec]
         for doc in documents:
-            ca = (
-                (doc or {}).get("machine", {}).get("ca")
-                if isinstance(doc, dict)
-                else None
-            )
-            if (
-                isinstance(ca, dict)
-                and isinstance(ca.get("crt"), str)
-                and isinstance(ca.get("key"), str)
-            ):
+            ca = (doc or {}).get("machine", {}).get("ca") if isinstance(doc, dict) else None
+            if isinstance(ca, dict) and isinstance(ca.get("crt"), str) and isinstance(ca.get("key"), str):
                 return ca["crt"], ca["key"]
     raise ValidationError("no machine CA in the machine config")
 
@@ -338,11 +318,7 @@ def application_sync_revision(text: str, *, source_index: int | None) -> str | N
 def application_summary(text: str) -> dict[str, int] | None:
     """'<sync>/<health>' -> count from `kubectl get applications -o json`; None if not parseable."""
     docs = json_documents(text)
-    if (
-        len(docs) != 1
-        or not isinstance(docs[0], dict)
-        or not isinstance(docs[0].get("items"), list)
-    ):
+    if len(docs) != 1 or not isinstance(docs[0], dict) or not isinstance(docs[0].get("items"), list):
         return None
     counts: Counter[str] = Counter()
     items = docs[0].get("items", [])

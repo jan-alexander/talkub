@@ -26,13 +26,9 @@ class KubeSession:
     def kubectl(
         self, args: Sequence[str], *, input: bytes | None = None, check: bool = True
     ) -> subprocess.CompletedProcess[bytes]:
-        return self.runner.run(
-            ["kubectl", *args], input=input, env=self.env, check=check
-        )
+        return self.runner.run(["kubectl", *args], input=input, env=self.env, check=check)
 
-    def helm(
-        self, args: Sequence[str], *, check: bool = True
-    ) -> subprocess.CompletedProcess[bytes]:
+    def helm(self, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[bytes]:
         return self.runner.run(["helm", *args], env=self.env, check=check)
 
 

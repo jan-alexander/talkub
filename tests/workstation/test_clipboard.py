@@ -49,9 +49,7 @@ def test_tool_pins_pbcopy_argv(tmp_path, monkeypatch):
     from talkub.workstation import clipboard
 
     monkeypatch.setenv("PATH", str(_bin_dir_with(tmp_path, "pbcopy", "pbpaste")))
-    assert clipboard.tool() == clipboard.ClipboardTool(
-        copy=["pbcopy"], paste=["pbpaste"], clear=["pbcopy"]
-    )
+    assert clipboard.tool() == clipboard.ClipboardTool(copy=["pbcopy"], paste=["pbpaste"], clear=["pbcopy"])
 
 
 def test_tool_pins_wlcopy_argv(tmp_path, monkeypatch):
@@ -154,9 +152,7 @@ def test_spawn_detached_feeds_stdin_to_a_real_child_and_it_runs_in_its_own_sessi
         "open(sys.argv[1] + '.sid', 'w').write(str(os.getsid(0)))\n"
         "open(sys.argv[1], 'wb').write(sys.stdin.buffer.read())\n"
     )
-    Runner().spawn_detached(
-        [sys.executable, "-c", code, str(out)], input=b"hello-detached"
-    )
+    Runner().spawn_detached([sys.executable, "-c", code, str(out)], input=b"hello-detached")
 
     deadline = time.monotonic() + 5
     while not out.exists() and time.monotonic() < deadline:
@@ -199,9 +195,7 @@ def test_clipboard_clear_leaves_the_clipboard_alone_when_it_changed(monkeypatch,
 def test_clipboard_clear_clears_wayland_with_the_dash_dash_clear_flag(monkeypatch, spy):
     from talkub.workstation import clipboard, clipboard_clear
 
-    wl_tool = clipboard.ClipboardTool(
-        copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"]
-    )
+    wl_tool = clipboard.ClipboardTool(copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"])
     monkeypatch.setattr(clipboard, "tool", lambda: wl_tool)
     spy("wl-paste").on(stdout=SECRET.decode())
     wlcopy = spy("wl-copy").on(read_stdin=True)

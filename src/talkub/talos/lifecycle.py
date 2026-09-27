@@ -77,11 +77,7 @@ def health_target(settings: Settings, touched: str) -> str:
     Workers do not serve the Kubernetes API, so health always goes through a control plane:
     the first one other than `touched`; on a single-CP cluster that CP itself.
     """
-    controlplanes = [
-        n
-        for n in ordered_nodes(settings, [])
-        if settings.nodes[n].role == "controlplane"
-    ]
+    controlplanes = [n for n in ordered_nodes(settings, []) if settings.nodes[n].role == "controlplane"]
     others = [n for n in controlplanes if n != touched]
     if others:
         return settings.mgmt_address(others[0])
@@ -118,9 +114,7 @@ def wait_healthy(talos: TalosSession, address: str, *, settle: float = 0.0) -> N
         )
 
 
-def health_precheck(
-    talos: TalosSession, settings: Settings, *, enabled: bool
-) -> Callable[[], None]:
+def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool) -> Callable[[], None]:
     """A callable that checks cluster health once, right before the first disruptive change."""
     done = not enabled
 
@@ -129,9 +123,7 @@ def health_precheck(
         if done:
             return
         done = True
-        address = settings.mgmt_address(
-            ordered_nodes(settings, [])[0]
-        )  # the first control plane
+        address = settings.mgmt_address(ordered_nodes(settings, [])[0])  # the first control plane
         try:
             wait_healthy(talos, address)
         except CommandFailed as err:
@@ -167,9 +159,7 @@ def _dry_run(
         )
 
 
-def node_drift(
-    talos: TalosSession, settings: Settings, name: str, config: bytes
-) -> str:
+def node_drift(talos: TalosSession, settings: Settings, name: str, config: bytes) -> str:
     """A quiet dry-run: classify drift for `name` without printing anything.
 
     Raises `CommandFailed` on a non-zero exit, like `_dry_run` (message without output)."""
@@ -181,9 +171,7 @@ def node_drift(
             f"dry-run failed for node '{name}'",
             hint=f"talosctl exited with {result.returncode}; is {address} reachable?",
         )
-    output = result.stdout.decode(errors="replace") + result.stderr.decode(
-        errors="replace"
-    )
+    output = result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
     return inspect.config_drift(output)
 
 
@@ -191,11 +179,7 @@ def drifting_nodes(ctx: Context) -> list[str]:
     """All nodes whose running config differs from the repo (quiet dry-runs, nothing applied)."""
     settings, order, configs = prepare(ctx, [])
     with talos_session(ctx) as talos:
-        return [
-            name
-            for name in order
-            if node_drift(talos, settings, name, configs[name]) != "in sync"
-        ]
+        return [name for name in order if node_drift(talos, settings, name, configs[name]) != "in sync"]
 
 
 def plan(ctx: Context, names: Sequence[str]) -> None:
@@ -214,17 +198,13 @@ def apply(
     skip_precheck: bool = False,
 ) -> list[str]:
     if mode not in MODES:
-        raise ValidationError(
-            f"unknown mode {mode!r}", hint=f"use one of: {', '.join(MODES)}"
-        )
+        raise ValidationError(f"unknown mode {mode!r}", hint=f"use one of: {', '.join(MODES)}")
     settings, order, configs = prepare(ctx, names)
     rolling = mode in ("auto", "try") and is_bootstrapped(ctx)
     settle = apply_settle_seconds() if rolling else 0.0
     applied: list[str] = []
     with talos_session(ctx) as talos:
-        precheck = health_precheck(
-            talos, settings, enabled=rolling and not skip_precheck
-        )
+        precheck = health_precheck(talos, settings, enabled=rolling and not skip_precheck)
         for index, name in enumerate(order):
             try:
                 _apply_one(
@@ -237,12 +217,7 @@ def apply(
                     applied,
                     precheck,
                 )
-                if (
-                    rolling
-                    and applied
-                    and applied[-1] == name
-                    and index < len(order) - 1
-                ):
+                if rolling and applied and applied[-1] == name and index < len(order) - 1:
                     wait_healthy(talos, health_target(settings, name), settle=settle)
             except CommandFailed as err:
                 progress = (
@@ -270,13 +245,9 @@ def _apply_one(
     precheck()
     address = settings.mgmt_address(name)
     with private_file(f"{name}.yaml", config) as path:
-        code = talos.call(
-            address, ["apply-config", "--file", str(path), "--mode", mode]
-        )
+        code = talos.call(address, ["apply-config", "--file", str(path), "--mode", mode])
     if code != 0:
-        raise CommandFailed(
-            f"apply failed for node '{name}'", hint=f"talosctl exited with {code}"
-        )
+        raise CommandFailed(f"apply failed for node '{name}'", hint=f"talosctl exited with {code}")
     applied.append(name)
 
 

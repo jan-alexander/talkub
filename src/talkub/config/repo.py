@@ -86,8 +86,7 @@ class Repo:
         return sorted(
             path
             for path in self.root.rglob("*.sops.yaml")
-            if path.name != ".sops.yaml"
-            and ".git" not in path.relative_to(self.root).parts
+            if path.name != ".sops.yaml" and ".git" not in path.relative_to(self.root).parts
         )
 
 

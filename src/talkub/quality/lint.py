@@ -47,9 +47,7 @@ class LintReport:
     skipped: list[str] = field(default_factory=list)  # human-readable reasons
     # Memoizes `_probe_version` per (version, cache dir) so one `run()` probes at most once per
     # version, however many of lint_manifests/lint_helm_apps's kubeconform calls share it.
-    _version_probe_cache: dict[tuple[str, str], str] = field(
-        default_factory=dict, repr=False, compare=False
-    )
+    _version_probe_cache: dict[tuple[str, str], str] = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def errors(self) -> int:
@@ -65,9 +63,7 @@ class LintReport:
             where = f"{f.path}:{f.line}" if f.line is not None else f.path
             lines.append(f"{where}: {f.level}: {f.message}")
         lines.extend(f"skipped: {reason}" for reason in self.skipped)
-        lines.append(
-            f"lint: {self.errors} errors, {self.warnings} warnings, {len(self.skipped)} skipped"
-        )
+        lines.append(f"lint: {self.errors} errors, {self.warnings} warnings, {len(self.skipped)} skipped")
         return lines
 
 
@@ -76,9 +72,7 @@ def yaml_files(repo: Repo) -> list[Path]:
     return sorted(
         path
         for path in repo.root.rglob("*")
-        if path.is_file()
-        and path.suffix in (".yaml", ".yml")
-        and ".git" not in path.relative_to(repo.root).parts
+        if path.is_file() and path.suffix in (".yaml", ".yml") and ".git" not in path.relative_to(repo.root).parts
     )
 
 
@@ -104,9 +98,7 @@ def lint_yaml(repo: Repo, report: LintReport) -> None:
             report.findings.append(Finding("error", relpath, "not valid UTF-8"))
             continue
         for problem in linter.run(text, conf, relpath):
-            report.findings.append(
-                Finding(problem.level, relpath, problem.message, problem.line)
-            )
+            report.findings.append(Finding(problem.level, relpath, problem.message, problem.line))
 
 
 def cache_dir() -> Path:
@@ -182,9 +174,7 @@ def _is_download_error(res: dict) -> bool:
 _CRD_KIND = "CustomResourceDefinition"
 
 
-def _parse_resources(
-    resources: list[dict], prefix: str | None, *, offline: bool
-) -> tuple[list[Finding], list[str]]:
+def _parse_resources(resources: list[dict], prefix: str | None, *, offline: bool) -> tuple[list[Finding], list[str]]:
     findings: list[Finding] = []
     skipped: list[str] = []
     crd_skipped = 0
@@ -199,23 +189,15 @@ def _parse_resources(
             if prefix:
                 # "stdin" is kubeconform's own name for our `-` input (Helm-rendered manifests);
                 # showing it after the app prefix ("app coredns: stdin") adds nothing real.
-                path = (
-                    prefix.rstrip(": ")
-                    if filename == "stdin"
-                    else f"{prefix}{filename}"
-                )
+                path = prefix.rstrip(": ") if filename == "stdin" else f"{prefix}{filename}"
             else:
                 path = filename
             errors = res.get("validationErrors") or []
             if errors:
                 for err in errors:
-                    findings.append(
-                        Finding("error", path, f"{ident}: {err['path']}: {err['msg']}")
-                    )
+                    findings.append(Finding("error", path, f"{ident}: {err['path']}: {err['msg']}"))
             else:
-                findings.append(
-                    Finding("error", path, f"{ident}: {res.get('msg', '')}")
-                )
+                findings.append(Finding("error", path, f"{ident}: {res.get('msg', '')}"))
         elif status == "statusSkipped":
             if res.get("kind") == _CRD_KIND:
                 crd_skipped += 1
@@ -223,9 +205,7 @@ def _parse_resources(
                 skipped.append(f"no schema for {ident} ({res.get('version', '')})")
     if crd_skipped:
         label = prefix.rstrip(": ") if prefix else "manifests"
-        skipped.append(
-            f"{label}: {crd_skipped} {_CRD_KIND} objects not validated (no schema)"
-        )
+        skipped.append(f"{label}: {crd_skipped} {_CRD_KIND} objects not validated (no schema)")
     return findings, skipped
 
 
@@ -259,9 +239,7 @@ def _cache_populated(cache: Path) -> bool:
 
 # A minimal, always-valid resource: only used to ask "does kubeconform have schemas for this
 # -kubernetes-version at all", never linted itself.
-_PROBE_MANIFEST = (
-    b"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: talkub-lint-probe\n"
-)
+_PROBE_MANIFEST = b"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: talkub-lint-probe\n"
 
 
 def _probe_version(ctx: Context, report: LintReport, version: str) -> str:
@@ -283,15 +261,11 @@ def _probe_version(ctx: Context, report: LintReport, version: str) -> str:
     if cache_key in memo:
         return memo[cache_key]
 
-    result = ctx.runner.run(
-        kubeconform_argv(version) + ["-"], input=_PROBE_MANIFEST, check=False
-    )
+    result = ctx.runner.run(kubeconform_argv(version) + ["-"], input=_PROBE_MANIFEST, check=False)
     resources = _try_resources(result.stdout.decode()) or []
     status = resources[0].get("status") if resources else None
 
-    if status == "statusSkipped" or (
-        status == "statusError" and not _is_download_error(resources[0])
-    ):
+    if status == "statusSkipped" or (status == "statusError" and not _is_download_error(resources[0])):
         resolved = "master"
         report.findings.append(
             Finding(
@@ -318,9 +292,7 @@ def _run_kubeconform(
     """Run kubeconform once against `version` (already resolved by `_probe_version`) over `args`
     (repo-relative files, or `["-"]` with `input` on stdin). Shared by manifest linting (Task 2)
     and Helm-rendered app linting (Task 3)."""
-    result = ctx.runner.run(
-        kubeconform_argv(version) + args, cwd=ctx.repo.root, check=False, input=input
-    )
+    result = ctx.runner.run(kubeconform_argv(version) + args, cwd=ctx.repo.root, check=False, input=input)
     return parse_kubeconform(result.stdout.decode(), prefix, offline=offline)
 
 
@@ -335,9 +307,7 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
 
     cache = cache_dir()
     if offline and not _cache_populated(cache):
-        report.skipped.append(
-            "kubeconform: no schema cache yet (run `talkub lint` online once)"
-        )
+        report.skipped.append("kubeconform: no schema cache yet (run `talkub lint` online once)")
         return
     cache.mkdir(parents=True, exist_ok=True)
 
@@ -349,9 +319,7 @@ def lint_manifests(ctx: Context, report: LintReport, *, offline: bool) -> None:
     report.skipped.extend(skipped)
 
 
-def _render_helm(
-    ctx: Context, source: HelmSource, tmp: Path, index: int, report: LintReport
-) -> bytes | None:
+def _render_helm(ctx: Context, source: HelmSource, tmp: Path, index: int, report: LintReport) -> bytes | None:
     """`helm template` one `HelmSource`; `None` (plus a Finding) on failure."""
     chart = ChartSpec(repo=source.repo, chart=source.chart, version=source.version)
     argv = [
@@ -385,9 +353,7 @@ def _render_helm(
     return result.stdout
 
 
-def lint_helm_app(
-    ctx: Context, report: LintReport, source: HelmSource, *, offline: bool = False
-) -> None:
+def lint_helm_app(ctx: Context, report: LintReport, source: HelmSource, *, offline: bool = False) -> None:
     """Render one Argo CD app's Helm chart source with `helm template` and validate the result
     with kubeconform: the per-source half of `lint_helm_apps` (Task 3), factored out so `chart
     upgrade` (Task 4) can lint just the one app whose `targetRevision` it changed, without

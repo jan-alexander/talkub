@@ -9,20 +9,14 @@ from talkub.core.errors import ValidationError
 from talkub.talos import images
 from talkub.talos.factory import FactoryClient, boot_media_url
 
-app = typer.Typer(
-    help="Manage Image Factory schematics (system extensions).", no_args_is_help=True
-)
+app = typer.Typer(help="Manage Image Factory schematics (system extensions).", no_args_is_help=True)
 
-PLATFORM = typer.Option(
-    None, "--platform", help="metal or hcloud (default: the cluster platform)."
-)
+PLATFORM = typer.Option(None, "--platform", help="metal or hcloud (default: the cluster platform).")
 
 
 def _check_platform(platform: str | None) -> None:
     if platform is not None and platform not in PLATFORMS:
-        raise ValidationError(
-            f"unknown platform {platform!r}", hint=f"use one of: {', '.join(PLATFORMS)}"
-        )
+        raise ValidationError(f"unknown platform {platform!r}", hint=f"use one of: {', '.join(PLATFORMS)}")
 
 
 @app.command("extensions")
@@ -38,9 +32,7 @@ def extensions(ctx: typer.Context, platform: str = PLATFORM) -> None:
 @app.command("add")
 def add(
     ctx: typer.Context,
-    names: list[str] = typer.Argument(
-        ..., help="Extensions, e.g. siderolabs/tailscale."
-    ),
+    names: list[str] = typer.Argument(..., help="Extensions, e.g. siderolabs/tailscale."),
     platform: str = PLATFORM,
 ) -> None:
     """Add extensions to a platform's schematic."""
@@ -50,9 +42,7 @@ def add(
     target = platform or settings.platform
     added = images.add_extensions(settings, target, names, FactoryClient())
     repo.write_settings(settings)
-    print(
-        f"{target}: added {', '.join(added) or 'nothing'}; schematic {settings.schematics[target].id}"
-    )
+    print(f"{target}: added {', '.join(added) or 'nothing'}; schematic {settings.schematics[target].id}")
     print("roll the new image out to running nodes with `talkub upgrade talos`")
 
 
@@ -69,9 +59,7 @@ def remove(
     target = platform or settings.platform
     removed = images.remove_extensions(settings, target, names, FactoryClient())
     repo.write_settings(settings)
-    print(
-        f"{target}: removed {', '.join(removed)}; schematic {settings.schematics[target].id}"
-    )
+    print(f"{target}: removed {', '.join(removed)}; schematic {settings.schematics[target].id}")
     print("roll the new image out to running nodes with `talkub upgrade talos`")
 
 
@@ -79,22 +67,16 @@ def remove(
 def show(
     ctx: typer.Context,
     platform: str = PLATFORM,
-    arch: str = typer.Option(
-        "amd64", "--arch", help="amd64 or arm64 (for the boot medium URL)."
-    ),
+    arch: str = typer.Option("amd64", "--arch", help="amd64 or arm64 (for the boot medium URL)."),
 ) -> None:
     """Show the installer image and the boot medium download URL."""
     _check_platform(platform)
     if arch not in ARCHES:
-        raise ValidationError(
-            f"unknown arch {arch!r}", hint=f"use one of: {', '.join(ARCHES)}"
-        )
+        raise ValidationError(f"unknown arch {arch!r}", hint=f"use one of: {', '.join(ARCHES)}")
     repo = ctx.obj.repo()
     settings = repo.load_settings()
     target = platform or settings.platform
     if images.refresh(settings, FactoryClient(), [target]):
         repo.write_settings(settings)
     print(f"installer:  {settings.installer_image(target)}")
-    print(
-        f"boot media: {boot_media_url(settings.schematics[target].id, settings.talos_version, target, arch)}"
-    )
+    print(f"boot media: {boot_media_url(settings.schematics[target].id, settings.talos_version, target, arch)}")

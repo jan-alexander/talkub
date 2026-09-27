@@ -30,9 +30,7 @@ def repo(repo_with_configs, talosctl):
         (repo_with_configs.talosconfig, TALOSCONFIG),
         (repo_with_configs.kubeconfig, KUBECONFIG),
     ):
-        atomic_write(
-            path, ctx.sops.encrypt(data, filename=path.name, public_key=public)
-        )
+        atomic_write(path, ctx.sops.encrypt(data, filename=path.name, public_key=public))
     settings = repo_with_configs.load_settings()
     settings.nodes["cp-02"] = NodeSpec(ip="10.0.0.12")
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.20", role="worker", mgmt="w-01.lan")
@@ -41,11 +39,7 @@ def repo(repo_with_configs, talosctl):
 
 
 def _plain_files(root):
-    return [
-        p
-        for p in root.rglob("*")
-        if p.is_file() and ".sops." not in p.name and p.suffix != ".age"
-    ]
+    return [p for p in root.rglob("*") if p.is_file() and ".sops." not in p.name and p.suffix != ".age"]
 
 
 def test_enable_keeps_addresses_and_encrypts_key(repo):
@@ -57,16 +51,12 @@ def test_enable_keeps_addresses_and_encrypts_key(repo):
     assert settings.nodes["cp-01"].mgmt is None  # addresses untouched: LAN still works
     assert repo.talosconfig.read_bytes() == before_talosconfig
     assert tailscale.EXTENSION in settings.schematics["metal"].extensions
-    assert not settings.schematics[
-        "metal"
-    ].is_current  # resolved by the next image show / plan / upgrade
+    assert not settings.schematics["metal"].is_current  # resolved by the next image show / plan / upgrade
     assert not tailscale.is_locked_down(repo)
     patch = Context.open(repo).sops.decrypt(tailscale.extension_patch_path(repo))
     assert f"TS_AUTHKEY={KEY}".encode() in patch
     assert not any(KEY.encode() in p.read_bytes() for p in _plain_files(repo.root))
-    assert any(
-        "upgrade talos" in n for n in notes
-    )  # the repo has a kubeconfig → running cluster
+    assert any("upgrade talos" in n for n in notes)  # the repo has a kubeconfig → running cluster
 
 
 def test_enable_note_tells_apply_before_upgrade(repo):
@@ -82,9 +72,7 @@ def test_enable_note_tells_apply_before_upgrade(repo):
 def test_enable_twice_and_bad_input(repo):
     with pytest.raises(ValidationError):
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey="nope")
-    tailscale.enable(
-        Context.open(repo), tailnet="t.ts.net", authkey=KEY, node_cidr="10.0.0.0/16"
-    )
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY, node_cidr="10.0.0.0/16")
     assert repo.load_settings().tailscale.node_cidr == "10.0.0.0/16"
     with pytest.raises(ValidationError) as exc:
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
@@ -96,9 +84,7 @@ def test_enable_reports_interrupted_half_state(repo):
     patch = tailscale.extension_patch_path(repo)
     atomic_write(
         patch,
-        ctx.sops.encrypt(
-            b"stray: true\n", filename=patch.name, public_key=ctx.keyring.public_key()
-        ),
+        ctx.sops.encrypt(b"stray: true\n", filename=patch.name, public_key=ctx.keyring.public_key()),
     )
     assert repo.load_settings().tailscale is None
     with pytest.raises(ValidationError) as exc:
@@ -116,15 +102,11 @@ def test_lockdown_switches_clients_to_the_tailnet(repo):
     assert settings.nodes["w-01"].mgmt == "w-01.lan"  # explicit mgmt is kept
     assert settings.endpoint == "https://10.0.0.10:6443"  # cluster endpoint unchanged
     ctx = Context.open(repo)
-    talosconfig = yamlio.load(ctx.sops.decrypt(repo.talosconfig).decode())["contexts"][
-        "test"
-    ]
+    talosconfig = yamlio.load(ctx.sops.decrypt(repo.talosconfig).decode())["contexts"]["test"]
     assert list(talosconfig["endpoints"]) == ["cp-01.t.ts.net", "cp-02.t.ts.net"]
     assert list(talosconfig["nodes"]) == ["cp-01.t.ts.net"]
     kubeconfig = yamlio.load(ctx.sops.decrypt(repo.kubeconfig).decode())
-    assert (
-        kubeconfig["clusters"][0]["cluster"]["server"] == "https://cp-01.t.ts.net:6443"
-    )
+    assert kubeconfig["clusters"][0]["cluster"]["server"] == "https://cp-01.t.ts.net:6443"
     assert tailscale.is_locked_down(repo)
     assert "10.0.0.0/24" in tailscale.firewall_patch_path(repo).read_text()
     assert any("talkub apply" in n for n in notes)
@@ -155,9 +137,7 @@ def test_lockdown_leaves_repo_retryable_on_failure(repo):
     bad_kubeconfig = b"apiVersion: v1\nkind: Config\n"  # no clusters
     atomic_write(
         repo.kubeconfig,
-        ctx.sops.encrypt(
-            bad_kubeconfig, filename=repo.kubeconfig.name, public_key=public
-        ),
+        ctx.sops.encrypt(bad_kubeconfig, filename=repo.kubeconfig.name, public_key=public),
     )
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     before_talosconfig = repo.talosconfig.read_bytes()
@@ -191,9 +171,7 @@ def test_lockdown_rejects_nodes_outside_the_node_network(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     before_settings = repo.settings_file.read_bytes()
     with pytest.raises(ValidationError) as exc:
-        tailscale.lockdown(
-            Context.open(repo), node_cidr="10.0.0.0/28"
-        )  # w-01 (10.0.0.20) is outside
+        tailscale.lockdown(Context.open(repo), node_cidr="10.0.0.0/28")  # w-01 (10.0.0.20) is outside
     assert "outside the node network 10.0.0.0/28" in str(exc.value)
     assert "w-01 (10.0.0.20)" in str(exc.value)
     assert "cp-01" not in str(exc.value)
@@ -277,9 +255,7 @@ def test_lockdown_use_ips_sets_mgmt_to_the_nodes_tailnet_ipv4(repo, talosctl):
     assert settings.tailscale.use_ips is True
     assert tailscale.is_locked_down(repo)
     non_tailnet_note = next(n for n in notes if "non-tailnet mgmt" in n)
-    assert (
-        "cp-01" not in non_tailnet_note and "cp-02" not in non_tailnet_note
-    )  # tailnet IPs count as tailnet
+    assert "cp-01" not in non_tailnet_note and "cp-02" not in non_tailnet_note  # tailnet IPs count as tailnet
     assert "w-01 (w-01.lan)" in non_tailnet_note  # explicit LAN mgmt is still flagged
     queries = [call for call in talosctl.calls if "addresses" in call["args"]]
     assert {call["args"][call["args"].index("-n") + 1] for call in queries} == {
@@ -295,9 +271,7 @@ def test_lockdown_use_ips_requires_a_tailnet_ip_for_every_bare_node(repo, talosc
         "addresses",
         stdout=_addresses_table("10.0.0.10", "100.100.148.20"),
     )
-    talosctl.on(
-        "10.0.0.12", "get", "addresses", stdout=_addresses_table("10.0.0.12")
-    )  # no tailnet address yet
+    talosctl.on("10.0.0.12", "get", "addresses", stdout=_addresses_table("10.0.0.12"))  # no tailnet address yet
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     before_settings = repo.settings_file.read_bytes()
     with pytest.raises(ValidationError) as exc:
@@ -311,9 +285,7 @@ def test_lockdown_use_ips_requires_a_tailnet_ip_for_every_bare_node(repo, talosc
     assert repo.settings_file.read_bytes() == before_settings
 
 
-def test_lockdown_use_ips_reports_a_failed_probe_separately_from_no_tailnet_ip(
-    repo, talosctl
-):
+def test_lockdown_use_ips_reports_a_failed_probe_separately_from_no_tailnet_ip(repo, talosctl):
     talosctl.on(
         "10.0.0.10",
         "get",

@@ -90,9 +90,7 @@ class Settings:
         if self.git is not None:
             data["git"] = {"url": self.git.url}
         if self.shortcuts:
-            data["shortcuts"] = {
-                name: shortcut_to_dict(s) for name, s in self.shortcuts.items()
-            }
+            data["shortcuts"] = {name: shortcut_to_dict(s) for name, s in self.shortcuts.items()}
         return data
 
     @classmethod
@@ -131,9 +129,7 @@ class Settings:
                     raise ValidationError(f"{MARKER}: {where} must be a mapping")
                 schematics[str(name)] = SchematicSpec(
                     extensions=text_list(spec.get("extensions"), f"{where}.extensions"),
-                    kernel_args=text_list(
-                        spec.get("kernelArgs"), f"{where}.kernelArgs"
-                    ),
+                    kernel_args=text_list(spec.get("kernelArgs"), f"{where}.kernelArgs"),
                     id=optional_text(spec.get("id"), f"{where}.id"),
                     hash=optional_text(spec.get("hash"), f"{where}.hash"),
                 )
@@ -141,9 +137,7 @@ class Settings:
             # Phase-1 format: a single installer image without extension intent.
             legacy_platform, legacy_id = parse_installer_image(text("installImage"))
             check_choice(legacy_platform, PLATFORMS, "installImage platform")
-            schematics[legacy_platform] = SchematicSpec(
-                id=legacy_id, hash=customization_hash([], [])
-            )
+            schematics[legacy_platform] = SchematicSpec(id=legacy_id, hash=customization_hash([], []))
             if "platform" not in data:
                 platform = legacy_platform
 
@@ -180,19 +174,13 @@ class Settings:
             if not isinstance(raw_tailscale, Mapping):
                 raise ValidationError(f"{MARKER}: 'tailscale' must be a mapping")
             tailnet = optional_text(raw_tailscale.get("tailnet"), "tailscale.tailnet")
-            node_cidr = optional_text(
-                raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr"
-            )
+            node_cidr = optional_text(raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr")
             if tailnet is None or node_cidr is None:
-                raise ValidationError(
-                    f"{MARKER}: 'tailscale' needs tailnet and nodeCidr"
-                )
+                raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet and nodeCidr")
             use_ips = raw_tailscale.get("useIps", False)
             if not isinstance(use_ips, bool):
                 raise ValidationError(f"{MARKER}: 'tailscale.useIps' must be a boolean")
-            tailscale = TailscaleSpec(
-                tailnet=tailnet, node_cidr=node_cidr, use_ips=use_ips
-            )
+            tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr, use_ips=use_ips)
 
         git = None
         raw_git = data.get("git")
@@ -201,9 +189,7 @@ class Settings:
                 raise ValidationError(f"{MARKER}: 'git' must be a mapping")
             url = optional_text(raw_git.get("url"), "git.url")
             if url is None:
-                raise ValidationError(
-                    f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>"
-                )
+                raise ValidationError(f"{MARKER}: 'git' needs a url", hint="talkub repo set-url <url>")
             git = GitSpec(url=url)
 
         shortcuts: dict[str, Shortcut] = {}

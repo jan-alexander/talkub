@@ -29,9 +29,7 @@ def isolated_env(monkeypatch, tmp_path):
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    monkeypatch.setenv(
-        "TALKUB_APPLY_SETTLE_SECONDS", "0"
-    )  # rolling apply must not really sleep
+    monkeypatch.setenv("TALKUB_APPLY_SETTLE_SECONDS", "0")  # rolling apply must not really sleep
 
 
 @pytest.fixture
@@ -128,9 +126,7 @@ def repo_with_configs(keyed_repo):
         (keyed_repo.talosconfig, b"talos: marker\n"),
         (keyed_repo.kubeconfig, b"kube: marker\n"),
     ):
-        atomic_write(
-            path, ctx.sops.encrypt(text, filename=path.name, public_key=public)
-        )
+        atomic_write(path, ctx.sops.encrypt(text, filename=path.name, public_key=public))
     return keyed_repo
 
 
@@ -151,13 +147,9 @@ def talos_repo(repo_with_configs):
         secrets = gen.gen_secrets(Runner(), work)
         atomic_write(
             repo_with_configs.talos_secrets,
-            ctx.sops.encrypt(
-                secrets.read_bytes(), filename="secrets.sops.yaml", public_key=public
-            ),
+            ctx.sops.encrypt(secrets.read_bytes(), filename="secrets.sops.yaml", public_key=public),
         )
-    atomic_write(
-        node_patch_path(repo_with_configs, "cp-01"), render_node_patch("cp-01").encode()
-    )
+    atomic_write(node_patch_path(repo_with_configs, "cp-01"), render_node_patch("cp-01").encode())
     return repo_with_configs
 
 
@@ -268,18 +260,13 @@ def factory_stub(monkeypatch):
                 return self._reply(500, {"error": "boom"})
             self._reply(
                 200,
-                [
-                    {"name": name, "ref": f"ghcr.io/{name}:1"}
-                    for name in state.extensions
-                ],
+                [{"name": name, "ref": f"ghcr.io/{name}:1"} for name in state.extensions],
             )
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    monkeypatch.setenv(
-        "TALKUB_FACTORY_URL", f"http://127.0.0.1:{server.server_address[1]}"
-    )
+    monkeypatch.setenv("TALKUB_FACTORY_URL", f"http://127.0.0.1:{server.server_address[1]}")
     yield state
     server.shutdown()
     server.server_close()

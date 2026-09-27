@@ -47,9 +47,7 @@ def hook_path(repo: Repo, runner: Runner) -> Path:
     *common* git dir's hooks in a linked worktree (worktrees do not have their own hooks/) and
     honors `core.hooksPath` when set.
     """
-    proc = runner.run(
-        ["git", "rev-parse", "--git-path", "hooks"], cwd=repo.root, check=False
-    )
+    proc = runner.run(["git", "rev-parse", "--git-path", "hooks"], cwd=repo.root, check=False)
     if proc.returncode != 0:
         raise ValidationError(f"{repo.root} is not a git repository", hint="git init")
     hooks_dir = Path(proc.stdout.decode(errors="replace").strip())
@@ -66,9 +64,7 @@ def install(repo: Repo, runner: Runner, *, force: bool = False) -> list[str]:
     """
     path = hook_path(repo, runner)
     if path.is_file() and MARKER not in path.read_text() and not force:
-        raise ValidationError(
-            "a pre-commit hook already exists", hint="talkub hooks install --force"
-        )
+        raise ValidationError("a pre-commit hook already exists", hint="talkub hooks install --force")
     atomic_write(path, render_hook(talkub_path()).encode(), mode=0o755)
 
     notes: list[str] = []

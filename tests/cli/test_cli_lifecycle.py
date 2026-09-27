@@ -17,11 +17,7 @@ def _run(argv):
 
 
 def _calls(log):
-    return (
-        [line for line in log.read_text().splitlines() if line.startswith("call ")]
-        if log.exists()
-        else []
-    )
+    return [line for line in log.read_text().splitlines() if line.startswith("call ")] if log.exists() else []
 
 
 def test_plan_command(talos_repo, talosctl_spy):
@@ -66,10 +62,7 @@ def test_insecure_declined_exits_nonzero(talos_repo, talosctl_spy, monkeypatch):
 
 
 def test_insecure_yes(talos_repo, talosctl_spy):
-    assert (
-        _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes"])
-        == 0
-    )
+    assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes"]) == 0
     assert "--insecure" in _calls(talosctl_spy)[0]
 
 
@@ -112,27 +105,16 @@ def test_insecure_rejects_force_unhealthy(talos_repo, talosctl_spy, capfd):
     assert _calls(talosctl_spy) == []
 
 
-def test_apply_force_unhealthy_flag_reaches_lifecycle(
-    talos_repo, talosctl_spy, monkeypatch
-):
+def test_apply_force_unhealthy_flag_reaches_lifecycle(talos_repo, talosctl_spy, monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        lifecycle, "apply", lambda ctx, nodes, **kw: calls.append(kw) or []
-    )
-    assert (
-        _run(["--repo", str(talos_repo.root), "apply", "--yes", "--force-unhealthy"])
-        == 0
-    )
+    monkeypatch.setattr(lifecycle, "apply", lambda ctx, nodes, **kw: calls.append(kw) or [])
+    assert _run(["--repo", str(talos_repo.root), "apply", "--yes", "--force-unhealthy"]) == 0
     assert calls[0]["skip_precheck"] is True
 
 
-def test_apply_without_force_unhealthy_defaults_to_precheck_enabled(
-    talos_repo, talosctl_spy, monkeypatch
-):
+def test_apply_without_force_unhealthy_defaults_to_precheck_enabled(talos_repo, talosctl_spy, monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        lifecycle, "apply", lambda ctx, nodes, **kw: calls.append(kw) or []
-    )
+    monkeypatch.setattr(lifecycle, "apply", lambda ctx, nodes, **kw: calls.append(kw) or [])
     assert _run(["--repo", str(talos_repo.root), "apply", "--yes"]) == 0
     assert calls[0]["skip_precheck"] is False
 

@@ -82,23 +82,17 @@ class TalosSession:
         _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
         return result.returncode
 
-    def call_global_redacted(
-        self, args: Sequence[str], endpoints: Sequence[str]
-    ) -> int:
+    def call_global_redacted(self, args: Sequence[str], endpoints: Sequence[str]) -> int:
         """Like `call_redacted`, but via `run_global` (endpoints only, no `-n`)."""
         result = self.run_global(args, endpoints, check=False)
         _print_redacted(result.stdout.decode(errors="replace"))
         _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
         return result.returncode
 
-    def call_global_uninterruptible(
-        self, args: Sequence[str], endpoints: Sequence[str], *, raw_to: Path
-    ) -> int:
+    def call_global_uninterruptible(self, args: Sequence[str], endpoints: Sequence[str], *, raw_to: Path) -> int:
         """Like `call_global_redacted`, via `Runner.run_uninterruptible`: the unredacted output
         is kept in `raw_to` (0600, must not exist); only its redacted form is printed."""
-        code = self.runner.run_uninterruptible(
-            self.argv_global(args, endpoints), output=raw_to
-        )
+        code = self.runner.run_uninterruptible(self.argv_global(args, endpoints), output=raw_to)
         _print_redacted(raw_to.read_bytes().decode(errors="replace"))
         return code
 

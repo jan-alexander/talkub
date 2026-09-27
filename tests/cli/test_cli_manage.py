@@ -30,9 +30,7 @@ def test_identity_new_rejects_two_kinds(capfd):
 
 
 @need("age", "age-keygen", "sops", "talosctl")
-def test_init_then_admin_and_check(
-    tmp_path, software_identity, fake_bin, capfd, monkeypatch
-):
+def test_init_then_admin_and_check(tmp_path, software_identity, fake_bin, capfd, monkeypatch):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     code = _run(

@@ -17,9 +17,7 @@ app = typer.Typer(
 @app.command("install")
 def install(
     ctx: typer.Context,
-    force: bool = typer.Option(
-        False, "--force", help="Overwrite a pre-commit hook not managed by talkub."
-    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite a pre-commit hook not managed by talkub."),
 ) -> None:
     """Install the pre-commit hook into the repo's git hooks directory."""
     repo = ctx.obj.repo()

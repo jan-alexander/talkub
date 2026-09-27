@@ -12,9 +12,7 @@ from talkub.config import Repo
 from talkub.core.errors import ValidationError
 from talkub.kube import sealing
 
-app = typer.Typer(
-    help="Sealed Secrets for manifests under gitops/.", no_args_is_help=True
-)
+app = typer.Typer(help="Sealed Secrets for manifests under gitops/.", no_args_is_help=True)
 
 
 def _refuse_inside_repo(repo: Repo, source: str, path: Path, hint: str) -> None:
@@ -69,31 +67,21 @@ def seal(
         "--from-literal",
         help="key=value (repeatable). Value is visible in ps/shell history; prefer --prompt or --from-file.",
     ),
-    from_file: list[str] = typer.Option(
-        None, "--from-file", help="[key=]path (repeatable)."
-    ),
-    prompt: list[str] = typer.Option(
-        None, "--prompt", help="Key to prompt for with hidden input (repeatable)."
-    ),
-    output: Path = typer.Option(
-        ..., "-o", "--output", help="Target file; must end with .sealed.yaml."
-    ),
+    from_file: list[str] = typer.Option(None, "--from-file", help="[key=]path (repeatable)."),
+    prompt: list[str] = typer.Option(None, "--prompt", help="Key to prompt for with hidden input (repeatable)."),
+    output: Path = typer.Option(..., "-o", "--output", help="Target file; must end with .sealed.yaml."),
 ) -> None:
     """Seal a Secret for gitops/; the plaintext never touches the repo."""
     context = ctx.obj.context()
     if literal or from_file or prompt:
         if not namespace:
-            raise ValidationError(
-                "--namespace is required with --from-literal/--from-file/--prompt"
-            )
+            raise ValidationError("--namespace is required with --from-literal/--from-file/--prompt")
         if from_file:
             _check_from_files(context.repo, from_file)
         for key in prompt or []:
             sealing.check_key(key)  # before asking for any value
         prompted = {key: getpass.getpass(f"{key}: ") for key in prompt or []}
-        manifest = sealing.secret_manifest(
-            source, namespace, literal or [], from_file or [], prompted=prompted
-        )
+        manifest = sealing.secret_manifest(source, namespace, literal or [], from_file or [], prompted=prompted)
     else:
         if namespace:
             raise ValidationError(
@@ -116,6 +104,4 @@ def backup_sealing_key(ctx: typer.Context) -> None:
     context = ctx.obj.context()
     for path in sealing.backup_sealing_key(context):
         print(f"wrote {context.repo.rel(path)}")
-    print(
-        "commit bootstrap/ so a rebuilt cluster can still decrypt existing SealedSecrets"
-    )
+    print("commit bootstrap/ so a rebuilt cluster can still decrypt existing SealedSecrets")

@@ -28,10 +28,7 @@ def test_replace_os_ca_changes_only_certs_os():
     out = rotation.replace_os_ca(BUNDLE.encode(), "NEWCRT", "NEWKEY").decode()
     assert out == BUNDLE.replace("OLDCRT", "NEWCRT").replace("OLDKEY", "NEWKEY")
     doc = yamlio.load(out)
-    assert (
-        doc["certs"]["etcd"]["key"] == "ETCDKEY"
-        and doc["secrets"]["bootstraptoken"] == "abc.def"
-    )
+    assert doc["certs"]["etcd"]["key"] == "ETCDKEY" and doc["secrets"]["bootstraptoken"] == "abc.def"
 
 
 @need("talosctl")
@@ -65,9 +62,7 @@ NEW_TALOSCONFIG = (
     "context: test\ncontexts:\n    test:\n        endpoints:\n            - 10.0.0.10\n"
     "        ca: NEWCA\n        crt: NEWCLIENTCRT\n        key: CLIENTKEYSECRET\n"
 )
-SECRET_OUTPUT = (
-    "  key: SUPERSECRETCAKEY\ncontexts:\n    test:\n        key: CLIENTKEYSECRET\n"
-)
+SECRET_OUTPUT = "  key: SUPERSECRETCAKEY\ncontexts:\n    test:\n        key: CLIENTKEYSECRET\n"
 ROTATOR = """#!{python}
 import json, os, sys
 args = sys.argv[1:]
@@ -130,8 +125,7 @@ def rotating(talos_repo, spy, tmp_path):
 
 def _machineconfig(crt: str, key: str) -> str:
     return _resource(
-        f"version: v1alpha1\nmachine:\n  type: controlplane\n  ca:\n    crt: {crt}\n    key: {key}\n"
-        "cluster:\n  id: x\n"
+        f"version: v1alpha1\nmachine:\n  type: controlplane\n  ca:\n    crt: {crt}\n    key: {key}\ncluster:\n  id: x\n"
     )
 
 
@@ -171,15 +165,9 @@ def test_rotate_happy_path(rotating, capfd, monkeypatch):
         "apply-config",
     ]
     argvs = talosctl.argvs
-    assert (
-        "--dry-run=true" in argvs[2]
-        and "--dry-run=false" in argvs[3]
-        and "-o" in argvs[3]
-    )
+    assert "--dry-run=true" in argvs[2] and "--dry-run=false" in argvs[3] and "-o" in argvs[3]
     for rotate_args in argvs[2:4]:
-        assert (
-            rotate_args[rotate_args.index("--control-plane-nodes") + 1] == "10.0.0.10"
-        )
+        assert rotate_args[rotate_args.index("--control-plane-nodes") + 1] == "10.0.0.10"
         assert "--talos=true" in rotate_args and "--kubernetes=false" in rotate_args
         assert "--worker-nodes" not in rotate_args
     talosconfig = yamlio.load(_decrypt(repo, repo.talosconfig))
@@ -200,9 +188,7 @@ def test_rotate_happy_path(rotating, capfd, monkeypatch):
     assert interrupted and interrupted.group(1) == interrupted.group(2)
     assert out.index(interrupted.group(0)) < out.index("ROTATED")
     assert "do not interrupt it" in out
-    assert talosctl.calls[3][
-        "session_leader"
-    ]  # a terminal Ctrl-C does not reach talosctl
+    assert talosctl.calls[3]["session_leader"]  # a terminal Ctrl-C does not reach talosctl
     assert not Path(interrupted.group(1)).parent.exists()  # deleted on success
     assert written.index(repo.talosconfig) < written.index(repo.talos_secrets)
 
@@ -239,10 +225,7 @@ def test_rotate_refuses_while_a_rotation_is_in_progress(rotating):
         rotation.rotate(Context.open(repo), confirm=lambda q: True)
 
     assert "--finish" in info.value.hint
-    assert (
-        "talkub-rotate-*/talosconfig" in info.value.hint
-        and "--finish --talosconfig" in info.value.hint
-    )
+    assert "talkub-rotate-*/talosconfig" in info.value.hint and "--finish --talosconfig" in info.value.hint
     assert talosctl.argvs == []
 
 
@@ -307,10 +290,7 @@ def test_finish_keeps_previous_when_still_drifting(rotating):
     with pytest.raises(ValidationError, match="still not in sync: cp-01") as info:
         rotation.finish(Context.open(repo))
 
-    assert (
-        "do not run `talkub apply` until `talkub plan` shows only expected changes"
-        in info.value.hint
-    )
+    assert "do not run `talkub apply` until `talkub plan` shows only expected changes" in info.value.hint
     assert "`talkub t version` works" in info.value.hint
 
     assert rotation.previous_path(repo).exists()
@@ -328,10 +308,7 @@ def test_rotate_points_to_finish_when_the_final_check_fails(rotating, capfd):
         rotation.rotate(Context.open(repo), confirm=lambda q: True)
 
     assert "talkub rotate-ca --finish`" in capfd.readouterr().err
-    assert (
-        yamlio.load(_decrypt(repo, repo.talosconfig))["contexts"]["test"]["key"]
-        == "CLIENTKEYSECRET"
-    )
+    assert yamlio.load(_decrypt(repo, repo.talosconfig))["contexts"]["test"]["key"] == "CLIENTKEYSECRET"
     assert rotation.previous_path(repo).exists()
 
 
@@ -367,9 +344,7 @@ def test_finish_refuses_a_talosconfig_that_does_not_work(rotating, tmp_path):
     new = tmp_path / "stale-talosconfig"
     new.write_text(NEW_TALOSCONFIG)
 
-    with pytest.raises(
-        ValidationError, match="does not work against 10.0.0.10; nothing was changed"
-    ) as info:
+    with pytest.raises(ValidationError, match="does not work against 10.0.0.10; nothing was changed") as info:
         rotation.finish(Context.open(repo), talosconfig=new)
 
     assert "SECRETSTDERR" not in str(info.value) + str(info.value.hint)
@@ -389,10 +364,7 @@ def test_finish_machineconfig_failure_points_to_kept_talosconfig(rotating):
         rotation.finish(Context.open(repo))
 
     assert "LEAKED" not in str(info.value) + str(info.value.hint)
-    assert (
-        "talkub-rotate-*/talosconfig" in info.value.hint
-        and "--finish --talosconfig" in info.value.hint
-    )
+    assert "talkub-rotate-*/talosconfig" in info.value.hint and "--finish --talosconfig" in info.value.hint
     assert repo.talos_secrets.read_bytes() == bundle
 
 
@@ -432,11 +404,7 @@ def test_rotate_failure_keeps_the_raw_output(rotating, capfd):
         assert str(raw) in err and "new CA and client key" in err
         assert raw.stat().st_mode & 0o777 == 0o600
         text = raw.read_text()
-        assert (
-            "SUPERSECRETCAKEY" in text
-            and "CLIENTKEYSECRET" in text
-            and "STDERRSECRET" in text
-        )
+        assert "SUPERSECRETCAKEY" in text and "CLIENTKEYSECRET" in text and "STDERRSECRET" in text
         for secret in ("SUPERSECRETCAKEY", "CLIENTKEYSECRET", "STDERRSECRET"):
             assert secret not in out + err
     finally:

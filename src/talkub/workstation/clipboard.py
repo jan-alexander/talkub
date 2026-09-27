@@ -42,9 +42,7 @@ _TOOLS = (
     ClipboardTool(copy=["pbcopy"], paste=["pbpaste"], clear=["pbcopy"]),
     # wl-paste appends a trailing newline by default; -n suppresses it so the clearer's hash of
     # the pasted content matches the hash of what was copied. wl-copy has a dedicated --clear.
-    ClipboardTool(
-        copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"]
-    ),
+    ClipboardTool(copy=["wl-copy"], paste=["wl-paste", "-n"], clear=["wl-copy", "--clear"]),
     ClipboardTool(
         copy=["xclip", "-selection", "clipboard"],
         paste=["xclip", "-selection", "clipboard", "-o"],
@@ -83,6 +81,4 @@ def schedule_clear(runner: Runner, value: bytes) -> None:
     """Spawn the detached clearer, handing it only the SHA-256 digest of `value` on stdin."""
     digest = hashlib.sha256(value).hexdigest().encode()
     # -I: isolated mode, so the clearer's sys.path does not depend on the caller's cwd.
-    runner.spawn_detached(
-        [sys.executable, "-I", "-m", "talkub.workstation.clipboard_clear"], input=digest
-    )
+    runner.spawn_detached([sys.executable, "-I", "-m", "talkub.workstation.clipboard_clear"], input=digest)

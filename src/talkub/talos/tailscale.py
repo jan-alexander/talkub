@@ -70,17 +70,11 @@ def validate_cidr(cidr: str) -> str:
     try:
         return str(ipaddress.ip_network(cidr, strict=False))
     except ValueError:
-        raise ValidationError(
-            f"invalid --node-cidr {cidr!r}", hint="e.g. 10.0.0.0/24"
-        ) from None
+        raise ValidationError(f"invalid --node-cidr {cidr!r}", hint="e.g. 10.0.0.0/24") from None
 
 
 def controlplanes(settings: Settings) -> list[str]:
-    return [
-        name
-        for name in ordered_nodes(settings, [])
-        if settings.nodes[name].role == "controlplane"
-    ]
+    return [name for name in ordered_nodes(settings, []) if settings.nodes[name].role == "controlplane"]
 
 
 def default_node_cidr(settings: Settings) -> str:
@@ -118,9 +112,7 @@ def is_tailnet_address(address: str, tailnet: str) -> bool:
         ip = ipaddress.ip_address(address)
     except ValueError:
         return False
-    return ip in ipaddress.ip_network(TAILNET_V4) or ip in ipaddress.ip_network(
-        TAILNET_V6
-    )
+    return ip in ipaddress.ip_network(TAILNET_V4) or ip in ipaddress.ip_network(TAILNET_V6)
 
 
 def _tailnet_ips_for_bare_nodes(ctx: Context, settings: Settings) -> dict[str, str]:
@@ -137,9 +129,7 @@ def _tailnet_ips_for_bare_nodes(ctx: Context, settings: Settings) -> dict[str, s
                 if result.returncode != 0:
                     stderr = result.stderr.decode(errors="replace").strip().splitlines()
                     detail = stderr[0] if stderr else "no output"
-                    missing.append(
-                        f"{name} (talosctl exited {result.returncode}: {detail})"
-                    )
+                    missing.append(f"{name} (talosctl exited {result.returncode}: {detail})")
                     continue
                 ip = inspect.tailnet_ipv4(result.stdout.decode(errors="replace"))
                 if ip is None:
@@ -251,11 +241,7 @@ def rewrite_talosconfig(data: bytes, endpoints: Sequence[str], node: str) -> byt
 def rewrite_kubeconfig_server(data: bytes, server: str) -> bytes:
     doc = _load_mapping(data, "kubeconfig")
     clusters = doc.get("clusters")
-    entries = (
-        [c.get("cluster") for c in clusters if isinstance(c, Mapping)]
-        if isinstance(clusters, list)
-        else []
-    )
+    entries = [c.get("cluster") for c in clusters if isinstance(c, Mapping)] if isinstance(clusters, list) else []
     targets = [cluster for cluster in entries if isinstance(cluster, Mapping)]
     if not targets:
         raise ValidationError("kubeconfig has no clusters to update")
@@ -281,9 +267,7 @@ def check_can_enable(repo: Repo) -> Settings:
     return settings
 
 
-def enable(
-    ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = None
-) -> list[str]:
+def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = None) -> list[str]:
     """Step 1: auth-key patch + extension in every used schematic. Addresses stay unchanged,
     so a running cluster can still be upgraded and configured via LAN."""
     repo = ctx.repo
@@ -304,41 +288,31 @@ def enable(
     )
     atomic_write(patch, encrypted)
     repo.write_settings(settings)
-    notes = [
-        f"node network for the firewall rules: {cidr} (change with `talkub tailscale lockdown --node-cidr`)"
-    ]
+    notes = [f"node network for the firewall rules: {cidr} (change with `talkub tailscale lockdown --node-cidr`)"]
     if is_bootstrapped(ctx):
         notes.append(
             "running cluster: `talkub apply` configures the extension (Talos accepts it before the "
             "extension exists), then `talkub upgrade talos` installs it; once `tailscale status` lists "
             "every node, run `talkub tailscale lockdown` (`--use-ips` if your client has no MagicDNS)"
         )
-    notes.append(
-        "use a tagged, reusable, pre-approved auth key and disable key expiry for these nodes"
-    )
+    notes.append("use a tagged, reusable, pre-approved auth key and disable key expiry for these nodes")
     return notes
 
 
-def lockdown(
-    ctx: Context, *, node_cidr: str | None = None, use_ips: bool = False
-) -> list[str]:
+def lockdown(ctx: Context, *, node_cidr: str | None = None, use_ips: bool = False) -> list[str]:
     """Step 2: firewall patch, mgmt = <node>.<tailnet> (or the node's tailnet IP with
     `use_ips`, for clients without MagicDNS), client configs pointed at the tailnet."""
     repo = ctx.repo
     settings = repo.load_settings()
     if settings.tailscale is None:
-        raise ValidationError(
-            "tailscale is not enabled", hint="run `talkub tailscale enable` first"
-        )
+        raise ValidationError("tailscale is not enabled", hint="run `talkub tailscale enable` first")
     if is_locked_down(repo):
         raise ValidationError(
             f"{repo.rel(firewall_patch_path(repo))} already exists",
             hint="already locked down",
         )
     cidr = validate_cidr(node_cidr) if node_cidr else settings.tailscale.node_cidr
-    settings.tailscale = TailscaleSpec(
-        tailnet=settings.tailscale.tailnet, node_cidr=cidr, use_ips=use_ips
-    )
+    settings.tailscale = TailscaleSpec(tailnet=settings.tailscale.tailnet, node_cidr=cidr, use_ips=use_ips)
     outside = outside_node_network(settings, settings.tailscale.node_cidr)
     if outside:
         raise ValidationError(
@@ -359,9 +333,7 @@ def lockdown(
         }
     else:
         settings.nodes = {
-            name: node
-            if node.mgmt
-            else dataclasses.replace(node, mgmt=f"{name}.{tailnet}")
+            name: node if node.mgmt else dataclasses.replace(node, mgmt=f"{name}.{tailnet}")
             for name, node in settings.nodes.items()
         }
     endpoints = [settings.mgmt_address(name) for name in controlplanes(settings)]
@@ -381,18 +353,14 @@ def lockdown(
     # and the firewall.yaml marker (lockdown ⇔ its presence) is written last, so a failure
     # midway leaves a retryable, not-locked-down repo.
     talosconfig = ctx.sops.encrypt(
-        rewrite_talosconfig(
-            ctx.sops.decrypt(repo.talosconfig), endpoints, endpoints[0]
-        ),
+        rewrite_talosconfig(ctx.sops.decrypt(repo.talosconfig), endpoints, endpoints[0]),
         filename=repo.talosconfig.name,
         public_key=public,
     )
     kubeconfig = None
     if repo.kubeconfig.is_file():
         kubeconfig = ctx.sops.encrypt(
-            rewrite_kubeconfig_server(
-                ctx.sops.decrypt(repo.kubeconfig), admin_server(settings)
-            ),
+            rewrite_kubeconfig_server(ctx.sops.decrypt(repo.kubeconfig), admin_server(settings)),
             filename=repo.kubeconfig.name,
             public_key=public,
         )
@@ -412,9 +380,7 @@ def lockdown(
         ),
     ]
     non_tailnet = [
-        f"{name} ({node.mgmt})"
-        for name, node in settings.nodes.items()
-        if not is_tailnet_address(node.mgmt, tailnet)
+        f"{name} ({node.mgmt})" for name, node in settings.nodes.items() if not is_tailnet_address(node.mgmt, tailnet)
     ]
     if non_tailnet:
         notes.append(

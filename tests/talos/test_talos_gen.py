@@ -40,9 +40,7 @@ def test_parse_defaults_multidoc():
 
 
 def test_parse_defaults_legacy_v1alpha1():
-    assert gen.parse_defaults(LEGACY) == gen.Defaults(
-        "v1.9.0", "1.32.0", "ghcr.io/siderolabs/installer"
-    )
+    assert gen.parse_defaults(LEGACY) == gen.Defaults("v1.9.0", "1.32.0", "ghcr.io/siderolabs/installer")
 
 
 def test_parse_defaults_unknown_layout():

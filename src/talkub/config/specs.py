@@ -17,9 +17,7 @@ PLATFORMS = ("metal", "hcloud")
 ARCHES = ("amd64", "arm64")
 
 
-_INSTALLER = re.compile(
-    rf"^{re.escape(FACTORY_HOST)}/(?P<platform>[a-z0-9]+)-installer/(?P<id>[0-9a-f]+)$"
-)
+_INSTALLER = re.compile(rf"^{re.escape(FACTORY_HOST)}/(?P<platform>[a-z0-9]+)-installer/(?P<id>[0-9a-f]+)$")
 
 
 @dataclass(frozen=True)
@@ -51,9 +49,7 @@ class SchematicSpec:
 
     @property
     def is_current(self) -> bool:
-        return self.id is not None and self.hash == customization_hash(
-            self.extensions, self.kernel_args
-        )
+        return self.id is not None and self.hash == customization_hash(self.extensions, self.kernel_args)
 
 
 @dataclass(frozen=True)

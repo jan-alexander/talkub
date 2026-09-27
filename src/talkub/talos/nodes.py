@@ -49,25 +49,19 @@ class NodeOptions:
             except ValueError as err:
                 raise ValidationError(f"invalid address: {err}") from None
             if gateway not in interface.network:
-                raise ValidationError(
-                    f"gateway {gateway} is not in {interface.network}"
-                )
+                raise ValidationError(f"gateway {gateway} is not in {interface.network}")
             if self.mac is None:
                 warnings.append(
                     "no --mac given: the first physical Ethernet interface is configured; "
                     "nodes with several NICs need --mac"
                 )
         if self.mac is not None and not _MAC.fullmatch(self.mac.lower()):
-            raise ValidationError(
-                f"invalid MAC address {self.mac!r}", hint="e.g. aa:bb:cc:dd:ee:ff"
-            )
+            raise ValidationError(f"invalid MAC address {self.mac!r}", hint="e.g. aa:bb:cc:dd:ee:ff")
         for server in self.dns:
             try:
                 ipaddress.ip_address(server)
             except ValueError:
-                raise ValidationError(
-                    f"invalid DNS server {server!r}", hint="use an IP address"
-                ) from None
+                raise ValidationError(f"invalid DNS server {server!r}", hint="use an IP address") from None
         return warnings
 
 
@@ -81,11 +75,7 @@ def render_node_patch(node: str, options: NodeOptions = NodeOptions()) -> str:
         }
     ]
     if options.static is not None:
-        selector = (
-            f'mac(link.permanent_addr) == "{options.mac.lower()}"'
-            if options.mac
-            else FIRST_ETHERNET
-        )
+        selector = f'mac(link.permanent_addr) == "{options.mac.lower()}"' if options.mac else FIRST_ETHERNET
         docs.append(
             {
                 "apiVersion": "v1alpha1",
@@ -151,21 +141,14 @@ def validate_node_name(name: str) -> None:
 
 def validate_address(value: str, flag: str) -> None:
     """An IP or host name that is passed to talosctl as `-n`/`-e`."""
-    if (
-        not value
-        or value.startswith("-")
-        or "/" in value
-        or any(char.isspace() for char in value)
-    ):
+    if not value or value.startswith("-") or "/" in value or any(char.isspace() for char in value):
         raise ValidationError(
             f"invalid address for {flag}: {value!r}",
             hint="use an IP address or host name without prefix length",
         )
 
 
-def static_address_warning(
-    spec: NodeSpec, options: NodeOptions, fix: str = "add --mgmt {address}"
-) -> str | None:
+def static_address_warning(spec: NodeSpec, options: NodeOptions, fix: str = "add --mgmt {address}") -> str | None:
     """Warn when the node moves to its static address but plan/apply would still use `ip`."""
     if options.static is None or spec.mgmt is not None:
         return None
@@ -206,9 +189,7 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
             )
         else:
             # Locked down: talkub reaches nodes only via the tailnet (see tailscale.lockdown).
-            spec = dataclasses.replace(
-                spec, mgmt=f"{name}.{settings.tailscale.tailnet}"
-            )
+            spec = dataclasses.replace(spec, mgmt=f"{name}.{settings.tailscale.tailnet}")
     if locked_down and _outside(spec.ip, settings.tailscale.node_cidr):
         warnings.append(
             f"{spec.ip} is outside the node network {settings.tailscale.node_cidr}: the firewall will block "
@@ -218,13 +199,9 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         raise ValidationError(f"node '{name}' already exists")
     path = node_patch_path(repo, name)
     if path.exists():
-        raise ValidationError(
-            f"{repo.rel(path)} already exists", hint="remove it or choose another name"
-        )
+        raise ValidationError(f"{repo.rel(path)} already exists", hint="remove it or choose another name")
     settings.nodes[name] = spec
-    settings = Settings.from_dict(
-        settings.to_dict()
-    )  # validates role, platform and arch
+    settings = Settings.from_dict(settings.to_dict())  # validates role, platform and arch
     platform = settings.node_platform(name)
     if platform not in settings.schematics:
         source = settings.schematics.get(settings.platform, SchematicSpec())
@@ -236,13 +213,8 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
             f"platform '{platform}' is new: copied extensions from '{settings.platform}' "
             f"({', '.join(source.extensions) or 'none'}); adjust with talkub image add/remove --platform {platform}"
         )
-    if (
-        options.public_ingress
-        and not (repo.talos_dir / "patches" / "firewall.yaml").exists()
-    ):
-        warnings.append(
-            "--public-ingress has no effect without the Talos firewall (see `talkub tailscale lockdown`)"
-        )
+    if options.public_ingress and not (repo.talos_dir / "patches" / "firewall.yaml").exists():
+        warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale lockdown`)")
     atomic_write(path, render_node_patch(name, options).encode())
     repo.write_settings(settings)
     return warnings

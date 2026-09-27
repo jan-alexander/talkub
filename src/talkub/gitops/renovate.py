@@ -53,10 +53,7 @@ CONFIG: dict = {
 
 NOTES = [
     "enable the Renovate GitHub app for this repo: https://github.com/apps/renovate",
-    (
-        "chart PRs are rolled out by Argo CD as soon as they merge — run `talkub lint` on the "
-        "PR branch first"
-    ),
+    ("chart PRs are rolled out by Argo CD as soon as they merge — run `talkub lint` on the PR branch first"),
     (
         "Talos/Kubernetes PRs need `talkub upgrade talos` or `talkub upgrade k8s` after merge — "
         "merging alone does not change the nodes"
@@ -76,8 +73,6 @@ def init(repo: Repo, *, force: bool = False) -> Path:
     """
     path = repo.root / FILENAME
     if path.is_file() and not force:
-        raise ValidationError(
-            f"{FILENAME} already exists", hint="talkub renovate init --force"
-        )
+        raise ValidationError(f"{FILENAME} already exists", hint="talkub renovate init --force")
     atomic_write(path, render().encode())
     return path

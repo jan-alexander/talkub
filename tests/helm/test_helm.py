@@ -9,9 +9,7 @@ from talkub.kube.session import KubeSession
 
 
 def test_chart_ref_oci_is_a_single_reference():
-    chart = ChartSpec(
-        repo="oci://ghcr.io/argoproj/argo-helm/", chart="argo-cd", version="1"
-    )
+    chart = ChartSpec(repo="oci://ghcr.io/argoproj/argo-helm/", chart="argo-cd", version="1")
     assert chart_ref(chart) == ["oci://ghcr.io/argoproj/argo-helm/argo-cd"]
 
 

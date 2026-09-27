@@ -56,9 +56,7 @@ def test_default_node_cidr():
 
 def test_admin_server_uses_first_controlplane_mgmt():
     settings = sample_settings()
-    settings.nodes["w-01"] = NodeSpec(
-        ip="10.0.0.11", role="worker", mgmt="w-01.t.ts.net"
-    )
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker", mgmt="w-01.t.ts.net")
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     assert tailscale.controlplanes(settings) == ["cp-01"]
     assert tailscale.admin_server(settings) == "https://cp-01.t.ts.net:6443"
@@ -75,9 +73,7 @@ def test_extension_patch():
 
 
 def test_firewall_patch():
-    docs = [
-        d for d in yamlio.load_all(tailscale.render_firewall_patch("10.0.0.0/24")) if d
-    ]
+    docs = [d for d in yamlio.load_all(tailscale.render_firewall_patch("10.0.0.0/24")) if d]
     kinds = [(d["kind"], d.get("name")) for d in docs]
     assert kinds == [
         ("NetworkDefaultActionConfig", None),
@@ -102,9 +98,7 @@ def test_firewall_patch():
 
 def test_rewrite_talosconfig():
     doc = yamlio.load(
-        tailscale.rewrite_talosconfig(
-            TALOSCONFIG, ["cp-01.t.ts.net", "cp-02.t.ts.net"], "cp-01.t.ts.net"
-        ).decode()
+        tailscale.rewrite_talosconfig(TALOSCONFIG, ["cp-01.t.ts.net", "cp-02.t.ts.net"], "cp-01.t.ts.net").decode()
     )
     context = doc["contexts"]["test"]
     assert list(context["endpoints"]) == ["cp-01.t.ts.net", "cp-02.t.ts.net"]
@@ -115,17 +109,11 @@ def test_rewrite_talosconfig():
 
 
 def test_rewrite_kubeconfig_server():
-    doc = yamlio.load(
-        tailscale.rewrite_kubeconfig_server(
-            KUBECONFIG, "https://cp-01.t.ts.net:6443"
-        ).decode()
-    )
+    doc = yamlio.load(tailscale.rewrite_kubeconfig_server(KUBECONFIG, "https://cp-01.t.ts.net:6443").decode())
     assert doc["clusters"][0]["cluster"]["server"] == "https://cp-01.t.ts.net:6443"
     assert doc["clusters"][0]["cluster"]["certificate-authority-data"] == "Y2E="
     with pytest.raises(ValidationError):
-        tailscale.rewrite_kubeconfig_server(
-            b"kind: Config\nclusters: []\n", "https://x:6443"
-        )
+        tailscale.rewrite_kubeconfig_server(b"kind: Config\nclusters: []\n", "https://x:6443")
 
 
 @need("talosctl")
@@ -136,9 +124,7 @@ def test_patches_validate_with_talosctl(tmp_path):
         check=True,
         capture_output=True,
     )
-    (tmp_path / "ts.yaml").write_bytes(
-        tailscale.render_extension_patch("tskey-auth-abc")
-    )
+    (tmp_path / "ts.yaml").write_bytes(tailscale.render_extension_patch("tskey-auth-abc"))
     (tmp_path / "fw.yaml").write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
     out = tmp_path / "cp.yaml"
     subprocess.run(
@@ -175,9 +161,7 @@ def test_patches_validate_with_talosctl(tmp_path):
 
 def test_is_tailnet_address():
     assert tailscale.is_tailnet_address("cp-01.t.ts.net", "t.ts.net") is True
-    assert (
-        tailscale.is_tailnet_address("100.100.148.20", "t.ts.net") is True
-    )  # 100.64.0.0/10
+    assert tailscale.is_tailnet_address("100.100.148.20", "t.ts.net") is True  # 100.64.0.0/10
     assert tailscale.is_tailnet_address("fd7a:115c:a1e0::1", "t.ts.net") is True
     assert tailscale.is_tailnet_address("10.0.0.10", "t.ts.net") is False  # LAN IP
     assert tailscale.is_tailnet_address("cp-01.lan", "t.ts.net") is False

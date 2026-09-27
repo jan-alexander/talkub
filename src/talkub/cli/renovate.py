@@ -15,9 +15,7 @@ app = typer.Typer(
 @app.command("init")
 def init(
     ctx: typer.Context,
-    force: bool = typer.Option(
-        False, "--force", help="Overwrite an existing renovate.json."
-    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing renovate.json."),
 ) -> None:
     """Write renovate.json in the repo root."""
     path = renovate.init(ctx.obj.repo(), force=force)

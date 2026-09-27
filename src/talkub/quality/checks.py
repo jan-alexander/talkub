@@ -24,11 +24,7 @@ class Finding:
 
 
 def _repo_files(repo: Repo) -> list[Path]:
-    return [
-        path
-        for path in repo.root.rglob("*")
-        if path.is_file() and ".git" not in path.relative_to(repo.root).parts
-    ]
+    return [path for path in repo.root.rglob("*") if path.is_file() and ".git" not in path.relative_to(repo.root).parts]
 
 
 def _load_yaml(path: Path) -> object:
@@ -43,11 +39,7 @@ def _age_recipients(metadata: object) -> set[str]:
     entries = metadata.get("age") if isinstance(metadata, Mapping) else None
     if not isinstance(entries, list):
         return set()
-    return {
-        str(e["recipient"]).strip()
-        for e in entries
-        if isinstance(e, Mapping) and "recipient" in e
-    }
+    return {str(e["recipient"]).strip() for e in entries if isinstance(e, Mapping) and "recipient" in e}
 
 
 def _sops_config_keys(config: object) -> set[str]:
@@ -78,20 +70,14 @@ def run_checks(repo: Repo) -> list[Finding]:
         if not repo.sops_config.is_file():
             findings.append(Finding("error", ".sops.yaml is missing"))
         elif master_pub not in _sops_config_keys(_load_yaml(repo.sops_config)):
-            findings.append(
-                Finding("error", ".sops.yaml does not use the key in keys/master.pub")
-            )
+            findings.append(Finding("error", ".sops.yaml does not use the key in keys/master.pub"))
 
     for path in repo.sops_files():
         data = _load_yaml(path)
         if not isinstance(data, Mapping) or "sops" not in data:
             findings.append(Finding("error", f"{repo.rel(path)} is not SOPS-encrypted"))
         elif master_pub is not None and master_pub not in _age_recipients(data["sops"]):
-            findings.append(
-                Finding(
-                    "error", f"{repo.rel(path)} is not encrypted to keys/master.pub"
-                )
-            )
+            findings.append(Finding("error", f"{repo.rel(path)} is not encrypted to keys/master.pub"))
 
     if repo.gitops_dir.is_dir():
         for path in sorted(repo.gitops_dir.rglob("*")):
@@ -113,11 +99,7 @@ def run_checks(repo: Repo) -> list[Finding]:
     bootstrap_dir = repo.root / "bootstrap"
     if bootstrap_dir.is_dir():
         for path in sorted(bootstrap_dir.iterdir()):
-            if (
-                path.name.endswith(".sops.yaml")
-                or path.suffix not in (".yaml", ".yml")
-                or not path.is_file()
-            ):
+            if path.name.endswith(".sops.yaml") or path.suffix not in (".yaml", ".yml") or not path.is_file():
                 continue  # *.sops.yaml are checked for encryption above
             if SECRET_TYPE_LABEL.encode() in path.read_bytes():
                 findings.append(
@@ -129,15 +111,11 @@ def run_checks(repo: Repo) -> list[Finding]:
 
     for path in _repo_files(repo):
         if b"AGE-SECRET-KEY-" in path.read_bytes():
-            findings.append(
-                Finding("error", f"{repo.rel(path)} contains an age private key")
-            )
+            findings.append(Finding("error", f"{repo.rel(path)} contains an age private key"))
 
     for rel in PLAINTEXT_NAMES:
         if (repo.root / rel).exists():
-            findings.append(
-                Finding("error", f"{rel} is plaintext and must not be in the repo")
-            )
+            findings.append(Finding("error", f"{rel} is plaintext and must not be in the repo"))
 
     try:
         count = len(recipients_file.parse(repo.recipients_file.read_text()))
@@ -153,10 +131,6 @@ def run_checks(repo: Repo) -> list[Finding]:
             )
 
     if repo.master_next_age.exists():
-        findings.append(
-            Finding(
-                "warning", "keys/master.next.age exists: a key rotation was interrupted"
-            )
-        )
+        findings.append(Finding("warning", "keys/master.next.age exists: a key rotation was interrupted"))
 
     return findings
