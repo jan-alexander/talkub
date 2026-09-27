@@ -118,3 +118,14 @@ def test_save_refuses_to_touch_a_broken_file(global_file):
     with pytest.raises(ValidationError):
         user.save_global_shortcut(PODS, force=True)
     assert global_file.read_bytes() == before
+
+
+def test_save_follows_a_symlinked_pool(global_file, tmp_path):
+    target = tmp_path / "dotfiles" / "shortcuts.yaml"
+    target.parent.mkdir()
+    target.write_text("# synced\nshortcuts:\n  nodes:\n    run: [t, get, members]\n")
+    global_file.symlink_to(target)
+    user.save_global_shortcut(PODS)
+    assert global_file.is_symlink()
+    assert "# synced" in target.read_text()
+    assert set(user.load_global_shortcuts()) == {"nodes", "pods"}

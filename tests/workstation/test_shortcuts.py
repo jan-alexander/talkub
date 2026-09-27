@@ -507,3 +507,21 @@ def test_save_global_force_replaces(ctx):
     shortcuts.save_global(ctx.repo, "pods", force=True)
     assert user.load_global_shortcuts() == {"pods": SHORTCUTS["pods"]}
     assert "pods" not in ctx.repo.load_settings().shortcuts
+
+
+def test_save_global_keeps_comments_in_talkub_yaml(ctx):
+    path = ctx.repo.settings_file
+    text = path.read_text().replace("shortcuts:\n", "shortcuts:  # my shortcuts\n", 1)
+    path.write_text("# cluster settings\n" + text)
+    shortcuts.save_global(ctx.repo, "pods")
+    after = path.read_text()
+    assert "# cluster settings" in after and "# my shortcuts" in after
+    assert "pods" not in ctx.repo.load_settings().shortcuts
+
+
+def test_save_global_of_the_last_shortcut_drops_the_block(repo_with_configs):
+    settings = repo_with_configs.load_settings()
+    settings.shortcuts = {"pods": SHORTCUTS["pods"]}
+    repo_with_configs.write_settings(settings)
+    shortcuts.save_global(repo_with_configs, "pods")
+    assert "shortcuts" not in repo_with_configs.settings_file.read_text()

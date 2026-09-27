@@ -85,8 +85,7 @@ def save_global(repo: Repo, name: str, *, force: bool = False) -> Path:
         known = ", ".join(sorted(settings.shortcuts)) or "none"
         raise ValidationError(f"no shortcut {name!r} in {MARKER}", hint=f"project shortcuts: {known}")
     path = save_global_shortcut(shortcut, force=force)
-    settings.shortcuts = {key: s for key, s in settings.shortcuts.items() if key != name}
-    repo.write_settings(settings)
+    repo.remove_shortcut(name)
     return path
 
 

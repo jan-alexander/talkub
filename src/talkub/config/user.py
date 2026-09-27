@@ -90,5 +90,6 @@ def save_global_shortcut(shortcut: Shortcut, *, force: bool = False) -> Path:
     if root.get("shortcuts") is None:
         root["shortcuts"] = {}
     root["shortcuts"][shortcut.name] = shortcut_to_dict(shortcut)
-    atomic_write(path, yamlio.dump(root).encode())
+    # Write through a symlink (e.g. a pool kept in a dotfiles repo) instead of replacing it.
+    atomic_write(path.resolve(), yamlio.dump(root).encode())
     return path
