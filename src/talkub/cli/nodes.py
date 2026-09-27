@@ -6,6 +6,7 @@ import sys
 
 import typer
 
+from talkub.cli.volumes import volumes as volumes_command
 from talkub.config import NodeSpec
 from talkub.talos.nodes import NodeOptions, add_node, node_patch_path
 
@@ -81,3 +82,6 @@ def add(
         f"next: boot the node, then optionally `talkub node volumes {name}` (install disk, volumes) "
         f"and `talkub apply --insecure {name}`"
     )
+
+
+app.command("volumes")(volumes_command)

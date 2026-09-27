@@ -99,6 +99,13 @@ and only `run` shortcuts accept anything there.
     talkub plan                                   # Talos dry-run for all nodes
     talkub apply --mode no-reboot                 # asks per node; --yes to skip
 
+Once the node is booted (maintenance mode), `talkub node volumes w-01` lists its disks and asks for
+the install disk, an optional EPHEMERAL limit and user volumes (partition, raw or whole disk,
+optionally LUKS2 with a node-bound key). It suggests the most portable CEL selector that matches
+exactly the chosen disk, simulates where Talos will place each volume and how large it becomes,
+and writes the documents into `talos/nodes/w-01.yaml`. On an installed node it reads the disks via
+the talosconfig and only adds volumes.
+
 Machine configs are rendered on the fly from `talos/secrets.sops.yaml`, `talos/patches/*.yaml`
 (`controlplane*` / `worker*` are role-specific, `*.sops.yaml` patches are decrypted) and
 `talos/nodes/<node>.yaml`; they are never written to the repo.
