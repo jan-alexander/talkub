@@ -44,6 +44,8 @@ def _pick_disk(title: str, inventory: Inventory) -> Disk:
             if disk.readonly or disk.cdrom:
                 print(f"{disk.dev_path} is read-only or a CD-ROM")
                 continue
+            if disk.transport == "usb":
+                print(f"warning: {disk.dev_path} is a USB disk; the selector cannot exclude USB devices")
             return disk
         print(f"enter 1-{len(inventory.disks)}")
 
@@ -52,6 +54,8 @@ def _pick_selector(options: list[Selector], disk: Disk, *, allow_custom: bool) -
     choices = [(str(i), s.to_cel() + ("  (recommended)" if i == 0 else "")) for i, s in enumerate(options)]
     if allow_custom:
         choices.append(("custom", "own CEL expression (not verified against the disks)"))
+    if not options and allow_custom:
+        print(f"no selector matches only {disk.dev_path}; the disk has no serial or WWID - write your own expression")
     if not choices:
         raise ValidationError(f"no selector matches only {disk.dev_path}", hint="the disk has no serial or WWID")
     key = _menu(f"selector for {disk.dev_path}:", choices)
@@ -100,8 +104,6 @@ def _ask_encryption(installed: bool) -> bool:
 def _choose_install(inventory: Inventory) -> tuple[Disk, Selector]:
     print("\nInstall disk (becomes the system disk; the install wipes it)")
     disk = _pick_disk("install disk", inventory)
-    if disk.transport == "usb":
-        print("warning: installing to a USB disk; the selector cannot exclude USB devices")
     return disk, _pick_selector(suggest(inventory.disks, disk, None, install=True), disk, allow_custom=True)
 
 
@@ -158,6 +160,11 @@ def volumes(
     settings = context.repo.load_settings()
     settings.node(name)
     version = settings.talos_version
+    if not supports(version, "volumes"):
+        raise ValidationError(
+            f"node volumes needs Talos v1.11 or newer (talosVersion is {version})",
+            hint="raise talosVersion in .talkub.yaml",
+        )
     path = node_patch_path(context.repo, name)
     if not path.is_file():
         raise ValidationError(
@@ -165,10 +172,18 @@ def volumes(
         )
     mode = "insecure" if insecure else "installed" if installed else "auto"
     inventory = disks.read(context, name, mode)
+    if not any(not d.readonly and not d.cdrom for d in inventory.disks):
+        raise ValidationError(f"no usable disk on {name}")
     print(f"disks of {name} ({'installed' if inventory.installed else 'maintenance mode'}):")
     print(report.disk_table(inventory, inventory.system_disk))
 
-    existing_docs = read_node_documents(path)
+    # Non-mapping documents (e.g. JSON6902 patches) are not ours; upsert_documents keeps them.
+    existing_docs = [d for d in read_node_documents(path) if isinstance(d, dict)]
+    taken = {
+        str(d.get("name"))
+        for d in existing_docs
+        if d.get("kind") in ("UserVolumeConfig", "RawVolumeConfig", "ExistingVolumeConfig")
+    }
     new_docs: list[dict[str, object]] = []
     system, install_disk = inventory.system_disk, None
     if not inventory.installed:
@@ -185,6 +200,8 @@ def volumes(
     others = [s for s in specs if s.kind is not Kind.EPHEMERAL]
     if inventory.installed:
         print("note: EPHEMERAL is already provisioned; resizing it needs a wipe of EPHEMERAL")
+    elif ephemeral is None and system is None:
+        print("note: the system disk is unknown here, so EPHEMERAL is not configured")
     elif ephemeral is None:
         while (ephemeral := _ask_ephemeral(version)) is not None:
             plan = simulate(inventory, [ephemeral, *others], system_disk=system, install_disk=install_disk)
@@ -208,7 +225,7 @@ def volumes(
     print("\n" + report.plan_text(planned([]), inventory, system))
     while typer.confirm("\nadd a volume?", default=False):
         try:
-            spec = _ask_volume(inventory, system, version, {s.name for s in [*others, *added]})
+            spec = _ask_volume(inventory, system, version, taken | {s.name for s in added})
         except ValidationError as err:
             print(f"error: {err}" + (f" ({err.hint})" if err.hint else ""))
             continue
@@ -217,7 +234,8 @@ def volumes(
         if spec.volume_id in plan.errors:
             print("volume not added")
             continue
-        if plan.warnings and not typer.confirm("keep this volume?", default=True):
+        own = [w for w in plan.warnings if w.startswith(f"{spec.volume_id}:")]
+        if own and not typer.confirm("keep this volume?", default=True):
             continue
         added.append(spec)
     new_docs += [render.volume_document(spec) for spec in added]

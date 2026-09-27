@@ -356,3 +356,14 @@ def test_upsert_documents_replaces_by_kind_and_name_and_keeps_the_rest(tmp_path)
     assert docs[2]["provisioning"]["diskSelector"]["match"] == "new"
     upsert_documents(path, [{"apiVersion": "v1alpha1", "kind": "UserVolumeConfig", "name": "data", "x": 1}])
     assert [d.get("x") for d in read_node_documents(path) if d["kind"] == "UserVolumeConfig"] == [1]
+
+
+def test_upsert_documents_keeps_non_mapping_documents(tmp_path):
+    from talkub.talos.nodes import read_node_documents, upsert_documents
+
+    path = tmp_path / "cp-01.yaml"
+    json6902 = [{"op": "add", "path": "/machine/network/hostname", "value": "cp-01"}]
+    path.write_text(render_node_patch("cp-01") + "---\n- op: add\n  path: /machine/network/hostname\n  value: cp-01\n")
+    volume = {"apiVersion": "v1alpha1", "kind": "UserVolumeConfig", "name": "data"}
+    upsert_documents(path, [volume])
+    assert read_node_documents(path)[-2:] == [json6902, volume]

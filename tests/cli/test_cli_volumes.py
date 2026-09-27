@@ -194,3 +194,144 @@ def test_flags_exclude_each_other(node_repo, capfd):
 
 def test_unknown_node(node_repo, capfd):
     assert _run(["--repo", str(node_repo.root), "node", "volumes", "nope"]) == 1
+
+
+def _set_version(repo, version):
+    settings = repo.load_settings()
+    settings.talos_version = version
+    repo.write_settings(settings)
+
+
+def _inventory(monkeypatch, *disk_list):
+    monkeypatch.setattr(disks, "read", lambda ctx, name, mode: Inventory(disk_list, (), None, installed=False))
+
+
+def test_without_install_step_the_system_disk_is_unknown_and_volumes_still_work(node_repo, monkeypatch, capfd):
+    _set_version(node_repo, "v1.13.0")
+    _answers(
+        monkeypatch,
+        "y",  # add a volume (no install and no EPHEMERAL question before v1.14)
+        "data",
+        "1",  # partition with filesystem
+        "2",  # disk sda
+        "1",  # recommended selector
+        "1",  # fixed size
+        "100GiB",
+        "1",  # xfs
+        "n",  # no encryption; the plan-wide "system disk unknown" warning asks nothing
+        "n",  # no more volumes
+        "y",  # write
+    )
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 0
+    out = capfd.readouterr().out
+    assert "no UnattendedInstallConfig" in out and "EPHEMERAL is not configured" in out
+    assert "system disk unknown: EPHEMERAL" in out and "volume not added" not in out
+    docs = _kinds(node_repo)
+    assert ("UnattendedInstallConfig", None) not in docs and ("VolumeConfig", "EPHEMERAL") not in docs
+    assert docs[("UserVolumeConfig", "data")]["provisioning"]["maxSize"] == "100GiB"
+
+
+def test_talos_before_1_11_is_rejected_before_reading_disks(node_repo, read_calls, capfd):
+    _set_version(node_repo, "v1.10.5")
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 1
+    assert "needs Talos v1.11 or newer (talosVersion is v1.10.5)" in capfd.readouterr().err
+    assert read_calls == []
+
+
+def test_names_of_unparsed_volume_documents_are_taken(node_repo, monkeypatch, capfd):
+    path = node_repo.talos_dir / "nodes" / "cp-01.yaml"
+    path.write_text(
+        render_node_patch("cp-01")
+        + "---\napiVersion: v1alpha1\nkind: UserVolumeConfig\nname: scratch\nvolumeType: directory\n"
+    )
+    _answers(
+        monkeypatch,
+        "1",  # install disk: nvme0n1
+        "1",  # recommended selector
+        "1",  # EPHEMERAL: whole system disk
+        "y",  # add a volume
+        "scratch",  # rejected: a directory volume of that name exists
+        "bulk",
+        "1",  # partition with filesystem
+        "2",  # disk sda
+        "1",  # recommended selector
+        "1",  # fixed size
+        "10GiB",
+        "1",  # xfs
+        "n",  # no encryption
+        "n",  # no more volumes
+        "y",  # write
+    )
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 0
+    assert "volume 'scratch' already exists" in capfd.readouterr().out
+    docs = _kinds(node_repo)
+    assert docs[("UserVolumeConfig", "scratch")]["volumeType"] == "directory"
+    assert ("UserVolumeConfig", "bulk") in docs
+
+
+def test_usb_volume_disk_warns(node_repo, monkeypatch, capfd):
+    _answers(
+        monkeypatch,
+        "1",  # install disk: nvme0n1
+        "1",  # recommended selector
+        "1",  # EPHEMERAL: whole system disk
+        "y",  # add a volume
+        "stick",
+        "1",  # partition with filesystem
+        "3",  # disk sdb (USB)
+        "1",  # recommended selector
+        "1",  # fixed size
+        "10GiB",
+        "1",  # xfs
+        "n",  # no encryption
+        "n",  # no more volumes
+        "y",  # write
+    )
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 0
+    assert "warning: /dev/sdb is a USB disk" in capfd.readouterr().out
+    match = _kinds(node_repo)[("UserVolumeConfig", "stick")]["provisioning"]["diskSelector"]["match"]
+    assert 'disk.transport != "usb"' not in match
+
+
+def test_custom_selector_hint_and_keep_prompt_for_the_new_volume(node_repo, monkeypatch, capfd):
+    twin_a = Disk("sdc", "/dev/sdc", 1024 * GiB, transport="sata")
+    twin_b = Disk("sdd", "/dev/sdd", 1024 * GiB, transport="sata")
+    _inventory(monkeypatch, NVME, twin_a, twin_b)
+    _answers(
+        monkeypatch,
+        "1",  # install disk: nvme0n1
+        "1",  # recommended selector
+        "1",  # EPHEMERAL: whole system disk
+        "y",  # add a volume
+        "twin",
+        "1",  # partition with filesystem
+        "2",  # disk sdc: no unique selector
+        "1",  # own CEL expression (the only option)
+        'disk.dev_path == "/dev/sdc"',
+        "1",  # fixed size
+        "10GiB",
+        "1",  # xfs
+        "n",  # no encryption
+        "n",  # "custom selector, not simulated" concerns this volume: do not keep it
+        "n",  # no more volumes
+        "y",  # write
+    )
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 0
+    out = capfd.readouterr().out
+    assert "no selector matches only /dev/sdc; the disk has no serial or WWID" in out
+    assert "keep this volume?" in out
+    assert ("UserVolumeConfig", "twin") not in _kinds(node_repo)
+
+
+def test_no_usable_disk(node_repo, monkeypatch, capfd):
+    _inventory(monkeypatch, Disk("sr0", "/dev/sr0", GiB, transport="sata", readonly=True, cdrom=True))
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 1
+    assert "no usable disk on cp-01" in capfd.readouterr().err
+
+
+def test_non_mapping_documents_in_the_node_patch_are_ignored(node_repo, monkeypatch):
+    path = node_repo.talos_dir / "nodes" / "cp-01.yaml"
+    path.write_text(render_node_patch("cp-01") + "---\n- op: remove\n  path: /machine/install\n")
+    _answers(monkeypatch, "1", "1", "1", "n", "y")
+    assert _run(["--repo", str(node_repo.root), "node", "volumes", "cp-01"]) == 0
+    assert "- op: remove" in path.read_text()

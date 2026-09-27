@@ -166,6 +166,10 @@ def simulate(
         if found is not None:
             plan.allocations.append(found)
             continue
+        if volume.selector is None and system_disk is None:
+            # Talos knows its system disk; we do not (e.g. no install disk chosen here): skip, don't gate.
+            plan.warnings.append("system disk unknown: EPHEMERAL and system_disk selectors not simulated")
+            continue
         # LocateAndProvision only provisions once the previous wave is fully provisioned; if EPHEMERAL
         # (wave -1) cannot be placed, every wave-0 volume is stuck waiting for it forever.
         if volume.kind is not Kind.EPHEMERAL and "EPHEMERAL" in plan.errors:

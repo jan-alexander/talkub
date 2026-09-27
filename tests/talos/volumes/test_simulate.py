@@ -285,15 +285,28 @@ def test_existing_whole_disk_volume_recognized_by_matching_filesystem():
 
 
 def test_wave_zero_waits_when_ephemeral_cannot_be_provisioned():
+    ephemeral = VolumeSpec("EPHEMERAL", Kind.EPHEMERAL, None, parse_size("600GiB"), parse_size("600GiB"))
+    plan = simulate(
+        _inv(NVME, SSD),
+        [ephemeral, _vol("data", 'disk.transport == "sata"', min_size="1GiB")],
+        system_disk="nvme0n1",
+        install_disk="nvme0n1",
+    )
+    assert "not enough space" in plan.errors["EPHEMERAL"]
+    assert plan.errors["u-data"] == "waits for EPHEMERAL, which cannot be provisioned"
+    assert plan.allocations == []
+
+
+def test_unknown_system_disk_skips_ephemeral_without_gating_wave_zero():
     plan = simulate(
         _inv(SSD),
         [DEFAULT_EPHEMERAL, _vol("data", 'disk.transport == "sata"', min_size="1GiB")],
         system_disk=None,
         install_disk=None,
     )
-    assert plan.errors["EPHEMERAL"] == "system disk unknown"
-    assert plan.errors["u-data"] == "waits for EPHEMERAL, which cannot be provisioned"
-    assert plan.allocations == []
+    assert plan.errors == {}
+    assert plan.warnings == ["system disk unknown: EPHEMERAL and system_disk selectors not simulated"]
+    assert _sizes(plan) == {"u-data": ("sda", 1024 * GiB - 2 * MiB)}
 
 
 def test_gpt_tail_reserves_33_sectors_not_a_full_mib():

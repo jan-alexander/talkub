@@ -9,6 +9,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from talkub.config import NodeSpec, Repo, SchematicSpec, Settings
 from talkub.core import yamlio
@@ -136,7 +137,8 @@ def _split_header(text: str) -> tuple[str, str]:
     return header, text[len(header) :]
 
 
-def read_node_documents(path: Path) -> list[dict]:
+def read_node_documents(path: Path) -> list[Any]:
+    """All non-empty documents; usually mappings, but a JSON6902 patch is a list."""
     _, body = _split_header(path.read_text())
     return [doc for doc in yamlio.load_all(body) if doc]
 
@@ -151,7 +153,8 @@ def upsert_documents(path: Path, docs: Sequence[dict]) -> None:
     header comment and all other documents are kept."""
     header, body = _split_header(path.read_text())
     existing = [doc for doc in yamlio.load_all(body) if doc]
-    index = {_doc_key(doc): i for i, doc in enumerate(existing)}
+    # Non-mapping documents (JSON6902 patches) get no key, so they are never replaced.
+    index = {_doc_key(doc): i for i, doc in enumerate(existing) if isinstance(doc, dict)}
     for doc in docs:
         key = _doc_key(doc)
         if key in index:
