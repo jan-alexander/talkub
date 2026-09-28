@@ -151,6 +151,34 @@ def test_application_summary_defensive():
     assert inspect.application_summary('{"items": [{"status": {"health": 5}}]}') == {"Unknown/Unknown": 1}
 
 
+APPS_WITH_ERRORS = """{"items": [
+  {"metadata": {"name": "root"}, "status": {"conditions": [
+    {"type": "ComparisonError", "message": "failed to list refs: authentication required"},
+    {"type": "OrphanedResourceWarning", "message": "1 orphaned resource"}]}},
+  {"metadata": {"name": "coredns"}, "status": {"conditions": [
+    {"type": "SyncError", "message": "one or more objects failed to apply"}]}},
+  {"metadata": {"name": "argocd"}, "status": {}}
+]}"""
+
+
+def test_application_errors_lists_only_error_conditions():
+    assert inspect.application_errors(APPS_WITH_ERRORS) == [
+        ("root", "ComparisonError: failed to list refs: authentication required"),
+        ("coredns", "SyncError: one or more objects failed to apply"),
+    ]
+    assert inspect.application_errors('{"items": []}') == []
+    assert inspect.application_errors("not json") == []
+
+
+def test_application_errors_defensive():
+    assert inspect.application_errors('{"items": [{"status": {"conditions": "weird"}}]}') == []
+    assert inspect.application_errors('{"items": [{"status": {"conditions": [5, {"type": 3}]}}]}') == []
+    # a missing name or message must not drop the error
+    assert inspect.application_errors('{"items": [{"status": {"conditions": [{"type": "UnknownError"}]}}]}') == [
+        ("?", "UnknownError")
+    ]
+
+
 def test_redact_diff_hides_key_and_token_values():
     text = (
         "         key: LS0tLS1CRUdJTiBFRDI1NTE5IFBSSVZBVEUgS0VZLS0tLS0K\n"

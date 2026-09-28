@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from talkub.config import Settings
 from talkub.context import Context
@@ -34,6 +34,7 @@ class StatusReport:
     nodes: list[NodeStatus]
     kube: str  # "ok" | "not bootstrapped" | "unavailable"
     applications: dict[str, int] | None = None
+    application_errors: list[tuple[str, str]] = field(default_factory=list)  # (app, "<type>: <message>")
 
 
 def collect(ctx: Context) -> StatusReport:
@@ -101,7 +102,8 @@ def collect(ctx: Context) -> StatusReport:
     for node in nodes:
         node.kubelet = versions.get(node.name)
     applications = inspect.application_summary(apps.stdout.decode()) if apps.returncode == 0 else None
-    return StatusReport(settings, nodes, kube="ok", applications=applications)
+    errors = inspect.application_errors(apps.stdout.decode()) if apps.returncode == 0 else []
+    return StatusReport(settings, nodes, kube="ok", applications=applications, application_errors=errors)
 
 
 def _compare(actual: str | None, wanted: str | None, width: int | None = None) -> str:
@@ -149,4 +151,5 @@ def render(report: StatusReport) -> str:
     else:
         summary = ", ".join(f"{count} {state}" for state, count in sorted(report.applications.items()))
         lines.append(f"argocd: {summary}")
+        lines.extend(f"  {name}: {error}" for name, error in report.application_errors)
     return "\n".join(lines)

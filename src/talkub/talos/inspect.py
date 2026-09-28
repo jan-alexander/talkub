@@ -335,6 +335,30 @@ def application_summary(text: str) -> dict[str, int] | None:
     return dict(counts)
 
 
+def application_errors(text: str) -> list[tuple[str, str]]:
+    """(name, '<type>: <message>') for every `*Error` condition (ComparisonError, SyncError, …)
+    in `kubectl get applications -o json` — why an app is stuck at Unknown/OutOfSync. Warning
+    conditions are left out; empty if not parseable."""
+    docs = json_documents(text)
+    if len(docs) != 1 or not isinstance(docs[0], dict) or not isinstance(docs[0].get("items"), list):
+        return []
+    errors: list[tuple[str, str]] = []
+    for item in docs[0]["items"]:
+        if not isinstance(item, dict):
+            continue
+        name = _str(_dict(item.get("metadata")).get("name")) or "?"
+        conditions = _dict(item.get("status")).get("conditions")
+        for condition in conditions if isinstance(conditions, list) else []:
+            if not isinstance(condition, dict):
+                continue
+            kind = _str(condition.get("type"))
+            if not kind.endswith("Error"):
+                continue
+            message = _str(condition.get("message")).strip()
+            errors.append((name, f"{kind}: {message}" if message else kind))
+    return errors
+
+
 def _int(value: object) -> int | None:
     """An integer JSON value; bools are not sizes."""
     return value if isinstance(value, int) and not isinstance(value, bool) else None

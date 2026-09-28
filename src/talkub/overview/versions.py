@@ -1,7 +1,9 @@
 """talkub versions: target vs. running vs. latest for Talos, Kubernetes and every chart app.
 
 `collect` never raises for a network/cluster failure — each row falls back to "?" (or, with
-`offline=True`, "-" for LATEST everywhere) so one broken component does not hide the rest.
+`offline=True`, "-" for LATEST everywhere) so one broken component does not hide the rest. A chart
+app's RUNNING is "not deployed" when its Argo CD Application does not exist and "pending" when it
+exists but has not synced yet.
 """
 
 from __future__ import annotations
@@ -165,9 +167,10 @@ def _chart_running(ctx: Context, source: HelmSource, source_index: int | None) -
     except TalkubError:
         return "?"
     if result.returncode != 0:
-        return "?"
+        # NotFound: Argo CD has not created the Application (yet), e.g. the root app cannot sync.
+        return "not deployed" if b"(NotFound)" in (result.stderr or b"") else "?"
     revision = inspect.application_sync_revision(result.stdout.decode(), source_index=source_index)
-    return revision or "?"
+    return revision or "pending"  # the Application exists but has not synced yet
 
 
 def _app_version_note(ctx: Context, source: HelmSource, latest: str) -> str:

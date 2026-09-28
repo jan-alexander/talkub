@@ -204,7 +204,7 @@ Version skew: repos written by this talkub version (`schematics` instead of `ins
 ## Bootstrap, upgrades and status
 
     talkub bootstrap                 # etcd, kubeconfig, Sealed Secrets, Argo CD, root app (re-runnable)
-    talkub status                    # target vs. actual per node + Argo CD sync/health
+    talkub status                    # target vs. actual per node + Argo CD sync/health and app errors
     talkub upgrade talos             # nodes whose Talos version or schematic differs, one at a time
     talkub upgrade k8s               # shows the talosctl dry-run first
 
@@ -225,8 +225,10 @@ next write.
 
 The Argo CD app files (`gitops/apps/*.yaml`) are the single source of chart versions — `versions`
 reads `targetRevision` from them and shows it next to what is actually running (via `kubectl get
-application`) and the latest release upstream. `*` marks a row whose latest differs from its
-target. `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
+application`) and the latest release upstream. RUNNING is `not deployed` when Argo CD has not
+created the Application (often because the root app cannot sync — `talkub status` shows why),
+`pending` when it exists but has not synced yet, and `?` when the cluster cannot be queried. `*`
+marks a row whose latest differs from its target. `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
 (`helm show values` old vs. new) and the chart's `appVersion`, and asks for confirmation unless
 `--yes`; after it, commit and push `gitops/` so Argo CD picks it up. `versions set` only updates
 the target in `.talkub.yaml` — run

@@ -210,15 +210,43 @@ def test_chart_row_no_note_when_already_at_latest(repo_with_configs, spy, versio
     assert argocd.note == ""
 
 
-def test_chart_row_running_is_question_mark_when_app_missing(repo_with_configs, spy, version_http_stub):
+def test_chart_row_running_is_question_mark_on_kubectl_failure(repo_with_configs, spy, version_http_stub):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)
     kubectl = spy("kubectl")
-    kubectl.on("get", "application", "argocd", stdout="", rc=1)
+    kubectl.on("get", "application", "argocd", stdout="", stderr="Unable to connect to the server", rc=1)
     spy("helm").on("show", "chart", stdout=CHART_NEW)
     rows = versions.collect(Context.open(repo_with_configs))
     argocd = next(r for r in rows if r.component == "argocd")
     assert argocd.running == "?"
+
+
+def test_chart_row_running_is_not_deployed_when_app_missing(repo_with_configs, spy, version_http_stub):
+    _write_argocd_app(repo_with_configs)
+    _spy_talos_kube(spy)
+    kubectl = spy("kubectl")
+    kubectl.on(
+        "get",
+        "application",
+        "argocd",
+        stderr='Error from server (NotFound): applications.argoproj.io "argocd" not found',
+        rc=1,
+    )
+    spy("helm").on("show", "chart", stdout=CHART_NEW)
+    rows = versions.collect(Context.open(repo_with_configs))
+    argocd = next(r for r in rows if r.component == "argocd")
+    assert argocd.running == "not deployed"
+
+
+def test_chart_row_running_is_pending_before_the_first_sync(repo_with_configs, spy, version_http_stub):
+    _write_argocd_app(repo_with_configs)
+    _spy_talos_kube(spy)
+    kubectl = spy("kubectl")
+    kubectl.on("get", "application", "argocd", stdout='{"status": {"sync": {"status": "Unknown"}}}')
+    spy("helm").on("show", "chart", stdout=CHART_NEW)
+    rows = versions.collect(Context.open(repo_with_configs))
+    argocd = next(r for r in rows if r.component == "argocd")
+    assert argocd.running == "pending"
 
 
 def test_chart_row_latest_is_question_mark_on_helm_failure(repo_with_configs, spy, version_http_stub):

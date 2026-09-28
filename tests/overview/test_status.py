@@ -144,3 +144,30 @@ def test_undecryptable_kubeconfig_gives_unavailable(talos_repo, spy):
     talos_repo.kubeconfig.write_bytes(b"not: sops\n")
     report = status.collect(Context.open(talos_repo))
     assert report.kube == "unavailable"
+
+
+APPS_ROOT_ERROR = (
+    '{"items": [{"metadata": {"name": "root"}, "status": {"sync": {"status": "Unknown"}, '
+    '"health": {"status": "Healthy"}, "conditions": [{"type": "ComparisonError", '
+    '"message": "authentication required: Repository not found."}]}}]}'
+)
+
+
+def test_application_errors_are_shown_below_the_summary(talos_repo, spy):
+    _spies(spy)
+    spy("kubectl").on("get", "nodes", stdout=NODES).on("get", "applications.argoproj.io", stdout=APPS_ROOT_ERROR)
+    report = status.collect(Context.open(talos_repo))
+    assert report.application_errors == [
+        ("root", "ComparisonError: authentication required: Repository not found."),
+    ]
+    text = status.render(report)
+    assert text.endswith(
+        "argocd: 1 Unknown/Healthy\n  root: ComparisonError: authentication required: Repository not found."
+    )
+
+
+def test_no_error_lines_for_a_healthy_cluster(talos_repo, spy):
+    _spies(spy)
+    report = status.collect(Context.open(talos_repo))
+    assert report.application_errors == []
+    assert status.render(report).endswith("argocd: 1 Synced/Healthy")
