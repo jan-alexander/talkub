@@ -92,7 +92,7 @@ usage: talkub run                                       list the shortcuts (proj
 
 Shortcuts come from .talkub.yaml and the global pool ($XDG_CONFIG_HOME/talkub/shortcuts.yaml);
 a project shortcut hides a global one with the same name. Options go before <name>; arguments
-after it are passed on verbatim (run shortcuts only)."""
+after it are passed on verbatim (run and kubernetes shortcuts only)."""
 
 
 @app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})

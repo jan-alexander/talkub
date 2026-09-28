@@ -40,6 +40,21 @@ def kubectl(ctx: Context, args: Sequence[str]) -> int:
         return ctx.runner.call(["kubectl", *args], env={"KUBECONFIG": str(paths["kubeconfig"])})
 
 
+KUBECONFIG_PLACEHOLDER = "{kubeconfig}"
+
+
+def with_kubeconfig(ctx: Context, argv: Sequence[str], extra: Sequence[str] = ()) -> int:
+    """Run any program with the decrypted kubeconfig in KUBECONFIG. In `argv` (not in `extra`),
+    every occurrence of {kubeconfig} is replaced by the file's path."""
+    program, *args = argv
+    require_tool(program)
+    source = _existing(ctx, ctx.repo.kubeconfig, KUBECONFIG_HINT)
+    with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
+        kubeconfig = str(paths["kubeconfig"])
+        filled = [arg.replace(KUBECONFIG_PLACEHOLDER, kubeconfig) for arg in args]
+        return ctx.runner.call([program, *filled, *extra], env={"KUBECONFIG": kubeconfig})
+
+
 def shell(ctx: Context, program: str | None = None) -> int:
     if active := os.environ.get("TALKUB_SESSION"):
         raise ValidationError(f"already inside a talkub shell for '{active}'", hint="exit it first")

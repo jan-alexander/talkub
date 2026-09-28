@@ -24,6 +24,7 @@ from talkub.kube.session import KubeSession, kube_session
 from talkub.workstation import access, clipboard
 
 _KUBECTL = ("k", "kubectl")
+_TAKES_EXTRA = ("run", "kubernetes")
 _JOB_NAME_MAX = 63
 _OUTCOMES = ("Complete", "Failed")
 
@@ -155,7 +156,7 @@ def run(
         hint = f"known: {known}" if known else f"define shortcuts in {_sources()}"
         raise ValidationError(f"unknown shortcut {name!r}", hint=hint)
     shortcut, _ = entries[name]
-    if extra and shortcut.kind != "run":
+    if extra and shortcut.kind not in _TAKES_EXTRA:
         raise ValidationError(f"shortcut {name} ({shortcut.kind}) takes no extra arguments")
     if print_value and shortcut.kind != "secret":
         raise ValidationError(f"--print only applies to secret shortcuts, {name} is {shortcut.kind}")
@@ -170,6 +171,8 @@ def run(
         tool, *args = shortcut.argv
         passthrough = access.kubectl if tool in _KUBECTL else access.talosctl
         return passthrough(ctx, [*args, *extra])
+    if shortcut.kind == "kubernetes":
+        return access.with_kubeconfig(ctx, shortcut.argv, extra)
     return _port_forward(ctx, shortcut)
 
 

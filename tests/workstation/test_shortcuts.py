@@ -7,6 +7,7 @@ import dataclasses
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -16,9 +17,9 @@ from helpers import need
 
 from talkub.config import Shortcut, user
 from talkub.context import Context
-from talkub.core.errors import CommandFailed, ValidationError
+from talkub.core.errors import CommandFailed, ToolMissing, ValidationError
 from talkub.core.runner import Runner
-from talkub.workstation import shortcuts
+from talkub.workstation import access, shortcuts
 
 pytestmark = need("age", "age-keygen", "sops")
 
@@ -49,6 +50,7 @@ SHORTCUTS = {
         service="grafana",
         ports=("3000:3000", "8080"),
     ),
+    "ui": Shortcut(name="ui", kind="kubernetes", argv=("fake-ui", "--config={kubeconfig}", "{{.x}}")),
 }
 
 
@@ -369,6 +371,41 @@ def test_run_routes_talosctl(ctx, spy):
     talosctl = spy("talosctl")
     assert shortcuts.run(ctx, "members", ["--nodes", "10.0.0.10"]) == 0
     assert talosctl.argvs == [["get", "members", "--nodes", "10.0.0.10"]]
+
+
+UI_REPORT = """for arg in "$@"; do printf 'arg:%s\\n' "$arg"; done
+printf 'env:%s\\n' "$KUBECONFIG"
+[ -f "$KUBECONFIG" ] && cat "$KUBECONFIG"
+exit 3
+"""
+
+
+def test_kubernetes_runs_program_with_decrypted_kubeconfig(ctx, fake_bin, capfd):
+    fake_bin("fake-ui", UI_REPORT)
+    assert shortcuts.run(ctx, "ui", ["--x={kubeconfig}"]) == 3
+    out = capfd.readouterr().out
+    kubeconfig = out.split("env:")[1].splitlines()[0]
+    assert kubeconfig
+    # Placeholder replaced only in the configured arguments; extra arguments stay verbatim.
+    assert f"arg:--config={kubeconfig}\narg:{{{{.x}}}}\narg:--x={{kubeconfig}}\n" in out
+    assert "kube: marker" in out
+    assert not os.path.exists(kubeconfig)
+
+
+def test_kubernetes_missing_program_reported_before_decrypting(ctx, monkeypatch, tmp_path):
+    # No identity available: decrypting first would raise NoIdentity instead.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
+    with pytest.raises(ToolMissing) as exc:
+        shortcuts.run(ctx, "ui", [])
+    assert "fake-ui" in str(exc.value)
+
+
+def test_kubernetes_without_kubeconfig_explains(ctx, fake_bin):
+    fake_bin("fake-ui", UI_REPORT)
+    ctx.repo.kubeconfig.unlink()
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.run(ctx, "ui", [])
+    assert exc.value.hint == access.KUBECONFIG_HINT
 
 
 def test_port_forward_argv(ctx, spy):

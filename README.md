@@ -96,6 +96,8 @@ shortcuts:
     run: [k, -n, argocd, get, applications]
   grafana:
     portForward: {namespace: monitoring, service: grafana, ports: ["3000:80"]}
+  k9s:
+    kubernetes: [k9s, --readonly]
 ```
 
     talkub run                              # list: name, kind, description, origin
@@ -120,9 +122,16 @@ Each shortcut has exactly one kind:
 - `run`: `k`/`kubectl` or `t`/`talosctl` with the configured arguments, as with `talkub k`/`talkub t`;
   further arguments (including options like `-f`) are appended.
 - `portForward`: `kubectl port-forward svc/<service> <ports...>` until Ctrl-C.
+- `kubernetes`: any program (e.g. `k9s`, `helm`, `stern`) with the configured arguments and the
+  decrypted kubeconfig in `KUBECONFIG`; `{kubeconfig}` in a configured argument is replaced by its
+  path (e.g. `[mytool, --config={kubeconfig}]`), appended arguments are passed on verbatim. The
+  kubeconfig is removed when the program exits, so it must run in the foreground (GUI apps that
+  detach, like `open -a Lens`, do not work). Such a shortcut hands cluster credentials to the
+  program it names, from `.talkub.yaml` as well as from the global pool: check shortcuts in repos
+  you did not write.
 
 `--print` and `--follow` go before the name; everything after the name belongs to the shortcut,
-and only `run` shortcuts accept anything there.
+and only `run` and `kubernetes` shortcuts accept anything there.
 
 ### Global shortcuts
 

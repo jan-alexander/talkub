@@ -299,6 +299,7 @@ def test_shortcuts_full_example_roundtrip(tmp_path):
             service="grafana",
             ports=("3000:3000", "8080"),
         ),
+        "k9s": Shortcut(name="k9s", kind="kubernetes", argv=("k9s", "--kubeconfig={kubeconfig}")),
     }
     repo = Repo(tmp_path)
     repo.write_settings(settings)
@@ -308,6 +309,7 @@ def test_shortcuts_full_example_roundtrip(tmp_path):
     assert "job:" in text
     assert "run:" in text
     assert "portForward:" in text
+    assert "kubernetes:" in text
     assert "follow: true" in text
 
 
@@ -416,6 +418,20 @@ def test_shortcut_run_field_rules(run):
     with pytest.raises(ValidationError) as exc:
         Settings.from_dict(_shortcuts_data(backup={"run": run}))
     assert "shortcuts.backup.run" in str(exc.value)
+
+
+@pytest.mark.parametrize("argv", [[], "k9s", ["k9s", 1], [""], [" ", "x"]])
+def test_shortcut_kubernetes_field_rules(argv):
+    with pytest.raises(ValidationError) as exc:
+        Settings.from_dict(_shortcuts_data(backup={"kubernetes": argv}))
+    assert "shortcuts.backup.kubernetes" in str(exc.value)
+
+
+def test_shortcut_kubernetes_accepts_any_program_and_empty_arguments():
+    settings = Settings.from_dict(_shortcuts_data(ui={"kubernetes": ["/opt/bin/k9s", "", "{{.name}}"]}))
+    shortcut = settings.shortcuts["ui"]
+    assert shortcut.kind == "kubernetes"
+    assert shortcut.argv == ("/opt/bin/k9s", "", "{{.name}}")
 
 
 @pytest.mark.parametrize(

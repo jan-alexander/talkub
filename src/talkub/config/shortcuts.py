@@ -21,7 +21,7 @@ _SECRET_KEY = re.compile(r"^[-._a-zA-Z0-9]+$")
 _RUN_TOOLS = ("k", "kubectl", "t", "talosctl")
 
 
-_SHORTCUT_KINDS = ("secret", "job", "run", "portForward")
+_SHORTCUT_KINDS = ("secret", "job", "run", "portForward", "kubernetes")
 
 
 _PORT_SPEC = re.compile(r"^(\d{1,5})(?::(\d{1,5}))?$")
@@ -37,14 +37,14 @@ def _valid_port_spec(value: str) -> bool:
 @dataclass(frozen=True)
 class Shortcut:
     name: str
-    kind: str  # "secret" | "job" | "run" | "portForward"
+    kind: str  # "secret" | "job" | "run" | "portForward" | "kubernetes"
     description: str | None = None
     namespace: str | None = None  # secret, job, portForward
     secret: str | None = None  # secret: Secret name
     key: str | None = None  # secret
     cronjob: str | None = None  # job
     follow: bool = False  # job
-    argv: tuple[str, ...] = ()  # run
+    argv: tuple[str, ...] = ()  # run, kubernetes
     service: str | None = None  # portForward
     ports: tuple[str, ...] = ()  # portForward
 
@@ -106,6 +106,14 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
             raise ValidationError(f"{MARKER}: {where}.run must start with one of: {', '.join(_RUN_TOOLS)}")
         return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
 
+    if kind == "kubernetes":
+        raw = spec["kubernetes"]
+        if not isinstance(raw, list) or not raw or not all(isinstance(item, str) for item in raw):
+            raise ValidationError(f"{MARKER}: {where}.kubernetes must be a non-empty list of strings")
+        if not raw[0].strip():
+            raise ValidationError(f"{MARKER}: {where}.kubernetes must start with a program")
+        return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
+
     raw = spec["portForward"]
     if not isinstance(raw, Mapping):
         raise ValidationError(f"{MARKER}: {where}.portForward must be a mapping")
@@ -144,6 +152,8 @@ def shortcut_to_dict(shortcut: Shortcut) -> dict:
         data["job"] = job
     elif shortcut.kind == "run":
         data["run"] = list(shortcut.argv)
+    elif shortcut.kind == "kubernetes":
+        data["kubernetes"] = list(shortcut.argv)
     else:
         data["portForward"] = {
             "namespace": shortcut.namespace,
