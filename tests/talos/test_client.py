@@ -7,6 +7,12 @@ from talkub.core.errors import ValidationError
 from talkub.talos.client import talos_session_from
 
 
+@pytest.fixture(autouse=True)
+def _talosctl_on_path(fake_bin):
+    """talos_session_from() checks that talosctl exists; the calls themselves go to FakeRunner."""
+    fake_bin("talosctl", "exit 0\n")
+
+
 def test_run_global_argv_has_endpoints_and_no_node_flag(tmp_path):
     talosconfig = tmp_path / "talosconfig"
     talosconfig.write_text("marker\n")
