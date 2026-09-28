@@ -24,7 +24,7 @@ Or straight from source:
 
     uv tool install git+https://github.com/jan-alexander/talkub.git
 
-    # needs: age, sops, talosctl, helm (and kubectl, kubeseal later)
+    # needs: age, sops, talosctl (v1.14 or newer; init refuses older), helm (and kubectl, kubeseal later)
     # optional: age-plugin-yubikey, age-plugin-se
 
 Releases are created by the manually triggered `Release` workflow (Actions tab, or

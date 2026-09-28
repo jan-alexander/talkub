@@ -162,6 +162,17 @@ def test_failed_helm_lookup_writes_nothing(tmp_path, software_identity, fake_bin
     assert not target.exists()
 
 
+def test_old_talosctl_refused_before_anything_runs(tmp_path, software_identity, fake_bin):
+    log = tmp_path / "helm.log"
+    fake_bin("helm", f"echo called >> {log}\n")
+    fake_bin("talosctl", "printf 'Client:\\n\\tTag:         v1.9.0\\n'\n")
+    target = tmp_path / "demo"
+    with pytest.raises(ValidationError, match=r"talosctl v1\.9\.0 is too old"):
+        init_cluster(_request(target, software_identity[1]), Runner())
+    assert not target.exists()
+    assert not log.exists()
+
+
 def test_failure_after_writing_cleans_up_and_can_be_retried(tmp_path, software_identity, fake_bin):
     fake_bin("helm", HELM)
     # Fails after keys/ has been written, so cleanup is really exercised.

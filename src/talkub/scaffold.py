@@ -61,6 +61,7 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
     if existed and {p.name for p in target.iterdir()} - ALLOWED_EXISTING:
         raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
 
+    gen.check_talosctl(runner)
     # Network lookups first: nothing is written if they fail.
     chart_specs = charts.resolve_defaults(runner) | {"coredns": charts.resolve(runner, "coredns")}
     target.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 import re
 
 import pytest
-from helpers import need
+from helpers import FakeRunner, need
 
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
@@ -46,6 +46,38 @@ def test_parse_defaults_legacy_v1alpha1():
 def test_parse_defaults_unknown_layout():
     with pytest.raises(ValidationError):
         gen.parse_defaults("version: v1alpha1\n")
+
+
+CLIENT_VERSION = """Client:
+\tTag:         {tag}
+\tSHA:         undefined
+\tBuilt:       2026-09-03T06:04:55Z
+"""
+
+
+@pytest.mark.parametrize("tag", ["v1.14.0", "v1.14.2", "v1.15.0-alpha.1", "v2.0.0"])
+def test_check_talosctl_accepts_supported(tag):
+    runner = FakeRunner(outputs={"talosctl": CLIENT_VERSION.format(tag=tag).encode()})
+    gen.check_talosctl(runner)
+    assert runner.calls[0].argv == ["talosctl", "version", "--client"]
+
+
+@pytest.mark.parametrize("tag", ["v1.9.0", "v1.13.4"])
+def test_check_talosctl_rejects_old(tag):
+    runner = FakeRunner(outputs={"talosctl": CLIENT_VERSION.format(tag=tag).encode()})
+    with pytest.raises(ValidationError, match=rf"talosctl {tag} is too old") as info:
+        gen.check_talosctl(runner)
+    assert "v1.14" in (info.value.hint or "")
+
+
+def test_check_talosctl_unreadable_version():
+    with pytest.raises(ValidationError, match="cannot read talosctl version"):
+        gen.check_talosctl(FakeRunner(outputs={"talosctl": b"garbage"}))
+
+
+@need("talosctl")
+def test_check_talosctl_real():
+    gen.check_talosctl(Runner())
 
 
 @need("talosctl")

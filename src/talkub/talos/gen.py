@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,12 +11,39 @@ from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.runner import Runner
 
+MIN_TALOSCTL = (1, 14)
+_CLIENT_TAG = re.compile(
+    r"^Client:\s*$.*?^\s*Tag:\s*(?P<tag>v?(?P<major>\d+)\.(?P<minor>\d+)\S*)",
+    re.MULTILINE | re.DOTALL,
+)
+
 
 @dataclass(frozen=True)
 class Defaults:
     talos_version: str
     kubernetes_version: str
     install_image: str
+
+
+def check_talosctl(runner: Runner) -> None:
+    """Refuse a talosctl older than MIN_TALOSCTL.
+
+    `init` takes Talos/Kubernetes versions and the Image Factory installer from `talosctl gen config`,
+    so an old talosctl would scaffold an outdated cluster (and emits a non-factory installer image).
+    """
+    output = runner.run(["talosctl", "version", "--client"]).stdout.decode()
+    match = _CLIENT_TAG.search(output)
+    if match is None:
+        raise ValidationError(
+            "cannot read talosctl version from `talosctl version --client`",
+            hint="check that talosctl works",
+        )
+    major, minor = MIN_TALOSCTL
+    if (int(match["major"]), int(match["minor"])) < MIN_TALOSCTL:
+        raise ValidationError(
+            f"talosctl {match['tag']} is too old",
+            hint=f"install talosctl v{major}.{minor} or newer (e.g. brew upgrade siderolabs/tap/talosctl)",
+        )
 
 
 def gen_secrets(runner: Runner, workdir: Path) -> Path:
