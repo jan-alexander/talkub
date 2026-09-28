@@ -213,6 +213,23 @@ def test_git_init_on_broken_git_dir_only_warns(tmp_path):
     assert warnings and "origin" in warnings[0]
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_enclosing_repo_finds_the_work_tree_above(tmp_path):
+    subprocess.run(["git", "init", "-q", "-b", "develop", str(tmp_path)], check=True)
+    assert gitrepo.enclosing_repo(tmp_path, Runner()) == tmp_path.resolve()
+    assert gitrepo.enclosing_repo(tmp_path / "sub" / "not-yet-created", Runner()) == tmp_path.resolve()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="missing tools: git")
+def test_enclosing_repo_none_outside_a_repo(tmp_path):
+    assert gitrepo.enclosing_repo(tmp_path / "new", Runner()) is None
+
+
+def test_enclosing_repo_none_without_git(tmp_path, monkeypatch):
+    monkeypatch.setattr(gitrepo.shutil, "which", lambda name: None)
+    assert gitrepo.enclosing_repo(tmp_path, Runner()) is None
+
+
 def test_git_init_without_git_warns(tmp_path, monkeypatch):
     monkeypatch.setattr(gitrepo.shutil, "which", lambda name: None)
     [warning] = gitrepo.git_init(tmp_path, NEW, Runner())

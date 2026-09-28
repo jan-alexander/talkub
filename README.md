@@ -62,6 +62,11 @@ Tailscale): [docs/getting-started.md](docs/getting-started.md).
     talkub admin add age1... --name backup
     talkub check && git init && git add -A && git commit -m "init cluster repo"
 
+The target must be empty (a `.git` is fine) and the root of its own git repository: `init` runs
+`git init -b main` only when there is none yet, leaves an existing repo's checked-out branch alone, and
+refuses a directory inside another git repository, since Argo CD reads `gitops/apps` relative to the
+repo root.
+
 ## Daily use
 
     talkub t get members               # talosctl, config decrypted only for this call

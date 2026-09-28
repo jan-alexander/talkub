@@ -154,6 +154,17 @@ def test_existing_git_dir_is_allowed(tmp_path, software_identity, fake_bin):
     assert (target / ".talkub.yaml").is_file()
 
 
+@need("git")
+def test_subdirectory_of_a_git_repo_refused(tmp_path, software_identity):
+    subprocess.run(["git", "init", "-q", "-b", "develop", str(tmp_path)], check=True)
+    target = tmp_path / "demo"
+    with pytest.raises(ValidationError) as exc:
+        init_cluster(_request(target, software_identity[1]), Runner())
+    assert "inside the git repository" in str(exc.value)
+    assert "gitops/apps" in (exc.value.hint or "")
+    assert not target.exists()
+
+
 def test_failed_helm_lookup_writes_nothing(tmp_path, software_identity, fake_bin):
     fake_bin("helm", "echo 'network unreachable' >&2; exit 1\n")
     target = tmp_path / "demo"

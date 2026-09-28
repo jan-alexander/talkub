@@ -76,6 +76,19 @@ def classify_url(url: str) -> GitUrl:
     raise ValidationError("unsupported git URL (ssh or https only)", hint=URL_HINT)
 
 
+def enclosing_repo(path: Path, runner: Runner) -> Path | None:
+    """Top level of the git work tree that contains `path` (which need not exist yet), or None."""
+    if shutil.which("git") is None:
+        return None
+    existing = path.resolve()
+    while not existing.is_dir():
+        existing = existing.parent
+    proc = runner.run(["git", "rev-parse", "--show-toplevel"], cwd=existing, check=False)
+    if proc.returncode != 0:
+        return None
+    return Path(proc.stdout.decode(errors="replace").strip()).resolve()
+
+
 def git_init(root: Path, url: str, runner: Runner) -> list[str]:
     """`git init -b main` and `origin` = url where missing. Problems become warnings, not errors."""
     if shutil.which("git") is None:

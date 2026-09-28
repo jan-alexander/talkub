@@ -26,7 +26,7 @@ from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
 from talkub.core.runner import Runner
 from talkub.gitops import coredns
-from talkub.gitops.gitrepo import classify_url
+from talkub.gitops.gitrepo import classify_url, enclosing_repo
 from talkub.helm import charts
 from talkub.quality.lint import DEFAULT_YAMLLINT
 from talkub.secrets.keyring import Keyring
@@ -60,6 +60,13 @@ def init_cluster(request: InitRequest, runner: Runner) -> Repo:
         raise ValidationError(f"{target} exists and is not a directory", hint="choose a new directory")
     if existed and {p.name for p in target.iterdir()} - ALLOWED_EXISTING:
         raise ValidationError(f"{target} is not empty", hint="use a new directory or a fresh git clone")
+    enclosing = enclosing_repo(target, runner)
+    if enclosing is not None and enclosing != target.resolve():
+        raise ValidationError(
+            f"{target} is inside the git repository {enclosing}",
+            hint="the cluster repo must be the root of its own git repository (Argo CD reads "
+            "gitops/apps relative to it); use a new directory outside it or a fresh git clone",
+        )
 
     gen.check_talosctl(runner)
     # Network lookups first: nothing is written if they fail.
