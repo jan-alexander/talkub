@@ -206,12 +206,28 @@ def test_lockdown_refuses_when_a_node_is_not_reachable_via_the_tailnet(repo, tal
     before_settings = repo.settings_file.read_bytes()
     with pytest.raises(ValidationError) as exc:
         tailscale.lockdown(Context.open(repo))
-    assert "not reachable via the tailnet yet: cp-02 (cp-02.t.ts.net)" in str(exc.value)
+    assert "not reachable via the tailnet yet: cp-02 (cp-02.t.ts.net): connection refused" in str(exc.value)
     assert "cp-01" not in str(exc.value)
     assert "tailscale status" in exc.value.hint
+    assert "--use-ips" not in exc.value.hint
     assert not tailscale.firewall_patch_path(repo).exists()
     assert repo.settings_file.read_bytes() == before_settings
     assert repo.talosconfig.read_bytes() == before_talosconfig
+
+
+def test_lockdown_suggests_use_ips_when_talosctl_cannot_resolve_magicdns(repo, talosctl):
+    # talosctl (Go resolver) may not see the MagicDNS names the OS resolver does, e.g. on macOS.
+    stderr = (
+        "error getting version from node cp-01.t.ts.net: rpc error: code = Unavailable "
+        "desc = name resolver error: produced zero addresses"
+    )
+    talosctl.on("cp-01.t.ts.net", "version", rc=1, stderr=stderr)
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    with pytest.raises(ValidationError) as exc:
+        tailscale.lockdown(Context.open(repo))
+    assert "produced zero addresses" in str(exc.value)
+    assert "--use-ips" in exc.value.hint
+    assert not tailscale.firewall_patch_path(repo).exists()
 
 
 def test_lockdown_before_bootstrap_does_not_probe(repo, talosctl):

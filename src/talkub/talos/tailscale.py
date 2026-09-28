@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import ipaddress
 import re
+import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -127,9 +128,7 @@ def _tailnet_ips_for_bare_nodes(ctx: Context, settings: Settings) -> dict[str, s
                 address = settings.mgmt_address(name)
                 result = session.run(address, ["get", "addresses"], check=False)
                 if result.returncode != 0:
-                    stderr = result.stderr.decode(errors="replace").strip().splitlines()
-                    detail = stderr[0] if stderr else "no output"
-                    missing.append(f"{name} (talosctl exited {result.returncode}: {detail})")
+                    missing.append(f"{name} (talosctl exited {result.returncode}: {_first_error_line(result)})")
                     continue
                 ip = inspect.tailnet_ipv4(result.stdout.decode(errors="replace"))
                 if ip is None:
@@ -144,16 +143,27 @@ def _tailnet_ips_for_bare_nodes(ctx: Context, settings: Settings) -> dict[str, s
     return found
 
 
+def _first_error_line(result: subprocess.CompletedProcess[bytes]) -> str:
+    stderr = result.stderr.decode(errors="replace").strip().splitlines()
+    return stderr[0] if stderr else "no output"
+
+
 def unreachable_via_tailnet(ctx: Context, settings: Settings) -> list[str]:
-    """`name (mgmt)` of the nodes that do not answer `talosctl version` at their management
-    address, using the current talosconfig (the client certificates do not change)."""
+    """`name (mgmt): talosctl error` of the nodes that do not answer `talosctl version` at their
+    management address, using the current talosconfig (the client certificates do not change)."""
     failed = []
     with talos_session(ctx) as session:
         for name in settings.nodes:
             address = settings.mgmt_address(name)
-            if session.run(address, ["version"], check=False).returncode != 0:
-                failed.append(f"{name} ({address})")
+            result = session.run(address, ["version"], check=False)
+            if result.returncode != 0:
+                failed.append(f"{name} ({address}): {_first_error_line(result)}")
     return failed
+
+
+# talosctl resolves names with Go's resolver, which can miss MagicDNS names the OS resolves
+# (seen on macOS); the nodes' tailnet IPs avoid DNS entirely.
+_RESOLVER_ERRORS = ("name resolver error", "no such host")
 
 
 def admin_server(settings: Settings) -> str:
@@ -343,11 +353,17 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None, use_ips: bool = Fals
         # After `apply` the nodes answer only via the tailnet: refuse unless they already do.
         unreachable = unreachable_via_tailnet(ctx, settings)
         if unreachable:
-            raise ValidationError(
-                f"not reachable via the tailnet yet: {', '.join(unreachable)}",
-                hint="finish `talkub upgrade talos` and `talkub apply` after `tailscale enable`, "
-                "check `tailscale status`, then run lockdown again",
-            )
+            if not use_ips and any(e in line for line in unreachable for e in _RESOLVER_ERRORS):
+                hint = (
+                    "talosctl cannot resolve the MagicDNS names on this machine, even if `tailscale status` "
+                    "and the OS resolver can; run `talkub tailscale lockdown --use-ips` to use the tailnet IPs"
+                )
+            else:
+                hint = (
+                    "finish `talkub upgrade talos` and `talkub apply` after `tailscale enable`, "
+                    "check `tailscale status`, then run lockdown again"
+                )
+            raise ValidationError(f"not reachable via the tailnet yet: {'; '.join(unreachable)}", hint=hint)
     public = ctx.keyring.public_key()
     # Everything is computed in memory first; files are written only once all of it worked,
     # and the firewall.yaml marker (lockdown ⇔ its presence) is written last, so a failure
