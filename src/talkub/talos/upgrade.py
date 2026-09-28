@@ -116,15 +116,20 @@ def _wait_rebooted(session: TalosSession, address: str, name: str, version: str,
         time.sleep(POLL_INTERVAL)
 
 
-def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm) -> list[str]:
-    """Upgrade nodes whose Talos version or schematic differs from the target, one at a time."""
+def talos(ctx: Context, names: Sequence[str], *, confirm: Confirm, skip_precheck: bool = False) -> list[str]:
+    """Upgrade nodes whose Talos version or schematic differs from the target, one at a time.
+
+    `skip_precheck` skips the health check before the first upgrade: a node whose boot never
+    finishes (e.g. an extension without its configuration) is only fixed by the upgrade itself."""
     settings = ctx.repo.load_settings()
     order = ordered_nodes(settings, names)
     ensure_images(ctx, settings, order)
     rolling = is_bootstrapped(ctx)
     upgraded: list[str] = []
     with talos_session(ctx) as session, kube_session(ctx) if rolling else nullcontext() as kube:
-        precheck = health_precheck(session, settings, enabled=rolling)
+        precheck = health_precheck(
+            session, settings, enabled=rolling and not skip_precheck, override="talkub upgrade talos --force-unhealthy"
+        )
         for index, name in enumerate(order):
             address = settings.mgmt_address(name)
             platform = settings.node_platform(name)

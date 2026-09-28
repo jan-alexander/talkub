@@ -117,8 +117,11 @@ Afterwards, continue with `talkub apply --insecure cp-01` as above; it no longer
 **Keep the image and upgrade afterwards.** Answer yes (or `--yes`), run `talkub bootstrap`, then
 `talkub upgrade talos`. It installs the target version and schematic and reboots. `talkub status`
 shows the mismatch until then, e.g. `7d4c31cbd96d (want 376567988ad3)`. A reboot alone does not
-help, because the node boots the same image again. This way is fine if the image on the disk boots
-cleanly. With an unconfigured extension like `tailscale`, rewrite the disk instead.
+help, because the node boots the same image again. If the node never finishes booting (an
+unconfigured extension like `tailscale`), `bootstrap` waits until its health check times out, and
+`upgrade talos` refuses because the cluster is unhealthy (`waiting for all nodes to finish boot
+sequence: … booting`). Then run `talkub upgrade talos --force-unhealthy`: it skips that check,
+and Talos lets the upgrade take over the stuck boot.
 
 ## 3. Install charts
 

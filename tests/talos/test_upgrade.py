@@ -222,6 +222,22 @@ def test_upgrade_precheck_failure_changes_nothing(talos_repo, spy):
     assert "upgrade" not in _actions(talosctl)
 
 
+def test_upgrade_skip_precheck_upgrades_an_unhealthy_cluster(talos_repo, spy):
+    """A node stuck booting (e.g. an unconfigured extension) never passes `talosctl health`;
+    the upgrade that removes the extension is the fix."""
+    talosctl = _talosctl(spy).on("health", rc=1)
+    assert upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True, skip_precheck=True) == ["cp-01"]
+    assert "health" not in _actions(talosctl)
+    assert "upgrade" in _actions(talosctl)
+
+
+def test_upgrade_precheck_failure_hint_names_the_upgrade_flag(talos_repo, spy):
+    _talosctl(spy).on("health", rc=1)
+    with pytest.raises(CommandFailed) as exc:
+        upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True)
+    assert "`talkub upgrade talos --force-unhealthy`" in exc.value.hint
+
+
 def test_up_to_date_or_declined_runs_do_not_precheck(talos_repo, spy):
     talosctl = _talosctl(spy, tag="v1.14.0")
     upgrade.talos(Context.open(talos_repo), [], confirm=lambda q: True)

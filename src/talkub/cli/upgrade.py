@@ -25,9 +25,14 @@ def talos(
     ctx: typer.Context,
     nodes: list[str] = typer.Argument(None, help="Nodes (default: all, control planes first)."),
     yes: bool = YES,
+    force_unhealthy: bool = typer.Option(
+        False,
+        "--force-unhealthy",
+        help="Skip the pre-upgrade health check (use when the upgrade is what fixes the cluster).",
+    ),
 ) -> None:
     """Upgrade nodes whose Talos version or schematic differs (one at a time)."""
-    upgrade_flow.talos(ctx.obj.context(), nodes or [], confirm=_confirm(yes))
+    upgrade_flow.talos(ctx.obj.context(), nodes or [], confirm=_confirm(yes), skip_precheck=force_unhealthy)
 
 
 @app.command("k8s")

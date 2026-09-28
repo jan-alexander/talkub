@@ -116,8 +116,10 @@ def wait_healthy(talos: TalosSession, address: str, *, settle: float = 0.0) -> N
         )
 
 
-def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool) -> Callable[[], None]:
-    """A callable that checks cluster health once, right before the first disruptive change."""
+def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool, override: str) -> Callable[[], None]:
+    """A callable that checks cluster health once, right before the first disruptive change.
+
+    `override` is the command that skips the check, named in the hint."""
     done = not enabled
 
     def check() -> None:
@@ -132,7 +134,7 @@ def health_precheck(talos: TalosSession, settings: Settings, *, enabled: bool) -
             raise CommandFailed(
                 "the cluster is not healthy; nothing was changed",
                 hint=f"{err} ({err.hint}); fix the cluster first (`talkub status`), "
-                "or `talkub apply --force-unhealthy` if the pending change is the fix",
+                f"or `{override}` if the pending change is the fix",
             ) from None
 
     return check
@@ -206,7 +208,9 @@ def apply(
     settle = apply_settle_seconds() if rolling else 0.0
     applied: list[str] = []
     with talos_session(ctx) as talos:
-        precheck = health_precheck(talos, settings, enabled=rolling and not skip_precheck)
+        precheck = health_precheck(
+            talos, settings, enabled=rolling and not skip_precheck, override="talkub apply --force-unhealthy"
+        )
         for index, name in enumerate(order):
             try:
                 _apply_one(
@@ -323,7 +327,7 @@ def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
             )
             print(
                 "         fix: write the boot media from `talkub image show` to the disk (see "
-                "docs/getting-started.md), or run `talkub upgrade talos` after the install"
+                "docs/getting-started.md), or run `talkub upgrade talos --force-unhealthy` after the install"
             )
             question = f"apply the config to {name} and keep the image on its disk?"
     if not confirm(question):

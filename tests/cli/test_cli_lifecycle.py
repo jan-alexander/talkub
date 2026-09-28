@@ -112,6 +112,16 @@ def test_apply_force_unhealthy_flag_reaches_lifecycle(talos_repo, talosctl_spy, 
     assert calls[0]["skip_precheck"] is True
 
 
+def test_upgrade_talos_force_unhealthy_flag_reaches_the_flow(talos_repo, talosctl_spy, monkeypatch):
+    from talkub.talos import upgrade
+
+    calls = []
+    monkeypatch.setattr(upgrade, "talos", lambda ctx, nodes, **kw: calls.append(kw) or [])
+    assert _run(["--repo", str(talos_repo.root), "upgrade", "talos", "--yes", "--force-unhealthy"]) == 0
+    assert _run(["--repo", str(talos_repo.root), "upgrade", "talos", "--yes"]) == 0
+    assert [call["skip_precheck"] for call in calls] == [True, False]
+
+
 def test_apply_without_force_unhealthy_defaults_to_precheck_enabled(talos_repo, talosctl_spy, monkeypatch):
     calls = []
     monkeypatch.setattr(lifecycle, "apply", lambda ctx, nodes, **kw: calls.append(kw) or [])
