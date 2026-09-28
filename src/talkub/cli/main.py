@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from talkub import __version__
-from talkub.cli import admin, check, image, keys, lint, secret, session, setup
+from talkub.cli import admin, check, completion, image, keys, lint, secret, session, setup
 from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import chart as chart_cli
 from talkub.cli import coredns as coredns_cli
@@ -25,7 +25,9 @@ from talkub.cli import tailscale as tailscale_cli
 from talkub.cli import upgrade as upgrade_cli
 from talkub.cli import versions as versions_cli
 from talkub.cli.state import State
-from talkub.core.errors import TalkubError
+from talkub.config import MARKER
+from talkub.config.user import display_path, global_shortcuts_file
+from talkub.core.errors import TalkubError, ValidationError
 from talkub.workstation import access, shortcuts
 
 app = typer.Typer(
@@ -76,41 +78,78 @@ app.add_typer(repo_cli.app, name="repo")
 app.add_typer(renovate_cli.app, name="renovate")
 app.add_typer(coredns_cli.app, name="coredns")
 app.command("rotate-ca")(rotate_cli.rotate_ca)
+app.command("completion")(completion.completion)
 
 RUN_USAGE = """\
-usage: talkub run                                       list the shortcuts in .talkub.yaml
+usage: talkub run                                       list the shortcuts (project and global)
        talkub run [--print] [--follow] <name> [args...]  run one
+       talkub run --save-global [--force] <name>         move a project shortcut to the global pool
 
-  --print   secret: write the value to stdout instead of the clipboard
-  --follow  job: wait for the pod, stream its logs, exit with the job's result
+  --print        secret: write the value to stdout instead of the clipboard
+  --follow       job: wait for the pod, stream its logs, exit with the job's result
+  --save-global  move <name> from .talkub.yaml to ~/.config/talkub/shortcuts.yaml
+  --force        with --save-global: replace a global shortcut of the same name
 
-Arguments after <name> are passed on verbatim (run shortcuts only)."""
+Shortcuts come from .talkub.yaml and the global pool ($XDG_CONFIG_HOME/talkub/shortcuts.yaml);
+a project shortcut hides a global one with the same name. Options go before <name>; arguments
+after it are passed on verbatim (run shortcuts only)."""
 
 
 @app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def _run_help() -> None:
-    """Run a shortcut from .talkub.yaml (secret, job, run, portForward); without a name, list them."""
+def _run_help(
+    # Declared only for --help and shell completion; run_shortcut() parses the real arguments.
+    name: str = typer.Argument(None, autocompletion=completion.shortcut_names, help="Shortcut to run."),
+    print_value: bool = typer.Option(False, "--print", help="secret: write the value to stdout."),
+    follow: bool = typer.Option(False, "--follow", help="job: stream the logs, exit with the job's result."),
+    save_global: bool = typer.Option(False, "--save-global", help="Move <name> to the global pool."),
+    force: bool = typer.Option(False, "--force", help="With --save-global: replace a global shortcut."),
+) -> None:
+    """Run a shortcut from .talkub.yaml or the global pool; without a name, list them."""
     # Never reached via main(), which handles `run` raw (like t/k) so options after the name pass through.
     print(RUN_USAGE)
 
 
+_RUN_FLAGS = ("--print", "--follow", "--save-global", "--force")
+
+
 def run_shortcut(state: State, args: list[str]) -> int:
-    """`talkub run [--print] [--follow] [<name> [args...]]`, parsed raw: flags only before the name."""
-    print_value = follow = False
+    """`talkub run [flags] [<name> [args...]]`, parsed raw: flags only before the name."""
+    flags: set[str] = set()
     index = 0
-    while index < len(args) and args[index] in ("--print", "--follow", "--help", "-h"):
+    while index < len(args) and args[index] in (*_RUN_FLAGS, "--help", "-h"):
         if args[index] in ("--help", "-h"):
             print(RUN_USAGE)
             return 0
-        print_value = print_value or args[index] == "--print"
-        follow = follow or args[index] == "--follow"
+        flags.add(args[index])
         index += 1
-    ctx = state.context()
+    save = "--save-global" in flags
+    if "--force" in flags and not save:
+        raise ValidationError("--force only applies to --save-global")
+    if save and flags & {"--print", "--follow"}:
+        raise ValidationError("--save-global cannot be combined with --print or --follow")
+
     if index == len(args):
-        lines = shortcuts.listing(ctx.repo.load_settings())
-        print("\n".join(lines) if lines else "no shortcuts defined in .talkub.yaml")
+        if save:
+            raise ValidationError("--save-global needs a shortcut name")
+        lines = shortcuts.listing(shortcuts.available(state.repo()))
+        where = display_path(global_shortcuts_file())
+        print("\n".join(lines) if lines else f"no shortcuts defined in {MARKER} or {where}")
         return 0
-    return shortcuts.run(ctx, args[index], args[index + 1 :], print_value=print_value, follow=follow)
+
+    name, extra = args[index], args[index + 1 :]
+    if save:
+        if extra:
+            raise ValidationError("--save-global takes only the shortcut name", hint="options go before the name")
+        path = shortcuts.save_global(state.repo(), name, force="--force" in flags)
+        print(f"moved {name} to {display_path(path)}")
+        return 0
+    return shortcuts.run(
+        state.context(),
+        name,
+        extra,
+        print_value="--print" in flags,
+        follow="--follow" in flags,
+    )
 
 
 PASSTHROUGH = {

@@ -81,6 +81,19 @@ class Repo:
     def write_settings(self, settings: Settings) -> None:
         atomic_write(self.settings_file, yamlio.dump(settings.to_dict()).encode())
 
+    def remove_shortcut(self, name: str) -> None:
+        """Drop shortcut `name` from .talkub.yaml in place, keeping the file's comments (unlike
+        write_settings, which re-serializes everything)."""
+        doc = yamlio.load(self.settings_file.read_text())
+        entries = doc.get("shortcuts") if isinstance(doc, dict) else None
+        if not isinstance(entries, dict) or name not in entries:
+            raise ValidationError(f"no shortcut {name!r} in {MARKER}")
+        del entries[name]
+        if not entries:
+            del doc["shortcuts"]
+        Settings.from_dict(doc)  # still valid before anything is written
+        atomic_write(self.settings_file, yamlio.dump(doc).encode())
+
     def sops_files(self) -> list[Path]:
         """All SOPS-encrypted files. `.sops.yaml` (the SOPS config) is not one of them."""
         return sorted(

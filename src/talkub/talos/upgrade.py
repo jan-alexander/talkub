@@ -10,7 +10,7 @@ from talkub.config import Settings
 from talkub.context import Context
 from talkub.core.errors import CommandFailed
 from talkub.kube.session import KubeSession, kube_session
-from talkub.talos import inspect
+from talkub.talos import inspect, tailscale
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.lifecycle import (
     Confirm,
@@ -188,6 +188,9 @@ def k8s(ctx: Context, *, confirm: Confirm) -> bool:
     first = ordered_nodes(settings, [])[0]
     address = settings.mgmt_address(first)
     target = ["upgrade-k8s", "--to", settings.kubernetes_version]
+    if tailscale.is_locked_down(ctx.repo):
+        # talosctl reaches the API through the cluster endpoint, firewalled from here (see `_drain`)
+        target += ["--endpoint", tailscale.admin_server(settings)]
     with talos_session(ctx) as session:
         print(
             "   running the Kubernetes upgrade dry-run (output follows when it finishes)",

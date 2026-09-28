@@ -10,6 +10,14 @@ the cluster repo and is installed with uv.
     # needs: age, sops, talosctl, helm (and kubectl, kubeseal later)
     # optional: age-plugin-yubikey, age-plugin-se
 
+Shell completion (commands, options and shortcut names for `talkub run`):
+
+    eval "$(talkub completion zsh)"     # in ~/.zshrc (after compinit)
+    eval "$(talkub completion bash)"    # in ~/.bashrc
+    talkub completion fish > ~/.config/fish/completions/talkub.fish
+
+Arguments after `talkub t`/`talkub k` and after a shortcut name are not completed.
+
 ## Key model
 
 - Every `*.sops.yaml` is encrypted to one **cluster master key**.
@@ -49,7 +57,8 @@ Inside `talkub shell`, `TALKUB_SESSION` holds the cluster name. zsh prompt examp
 
 ## Shortcuts
 
-Frequent commands can be named in `.talkub.yaml` and run with `talkub run`:
+Frequent commands can be named in `.talkub.yaml` (or in the global pool, see below) and run with
+`talkub run`:
 
 ```yaml
 shortcuts:
@@ -64,11 +73,12 @@ shortcuts:
     portForward: {namespace: monitoring, service: grafana, ports: ["3000:80"]}
 ```
 
-    talkub run                              # list: name, kind, description
+    talkub run                              # list: name, kind, description, origin
     talkub run db-password                  # copy the secret value to the clipboard
     talkub run --print db-password          # write it to stdout instead
     talkub run --follow backup              # start the job, stream its logs
     talkub run argocd-apps -o wide          # arguments after the name are passed on verbatim
+    talkub run --save-global argocd-apps    # move it from .talkub.yaml to the global pool
 
 Each shortcut has exactly one kind:
 
@@ -88,6 +98,24 @@ Each shortcut has exactly one kind:
 
 `--print` and `--follow` go before the name; everything after the name belongs to the shortcut,
 and only `run` shortcuts accept anything there.
+
+### Global shortcuts
+
+Shortcuts you use in every cluster live in `~/.config/talkub/shortcuts.yaml`
+(`$XDG_CONFIG_HOME/talkub/shortcuts.yaml` if set), in the same format:
+
+```yaml
+shortcuts:
+  pods:
+    description: all pods
+    run: [k, get, pods, -A]
+```
+
+`talkub run` lists and runs them in any cluster repo, always against that repo's cluster. A
+project shortcut hides a global one with the same name; the listing shows
+`project (overrides global)`. `talkub run --save-global <name>` moves a project shortcut into the
+pool (the file's comments are kept); `--force` replaces a global shortcut of the same name. Only
+`talkub run` reads the global file, so a broken one never blocks other commands.
 
 ## Nodes and machine configs
 
