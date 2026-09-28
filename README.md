@@ -11,6 +11,15 @@ From a GitHub release (built wheel, no build step on install):
     gh release download --repo jan-alexander/talkub --pattern '*.whl' --dir /tmp/talkub
     uv tool install --compile-bytecode /tmp/talkub/talkub-*.whl
 
+Or as a single compiled binary (Nuitka; no Python needed; macOS arm64, Linux amd64/arm64):
+
+    gh release download --repo jan-alexander/talkub --pattern 'talkub-*-darwin-arm64' --dir /tmp/talkub
+    install -m 755 /tmp/talkub/talkub-*-darwin-arm64 ~/.local/bin/talkub
+
+The binary unpacks itself once per build into `~/.cache/talkub/bin/` (the first start is slower). The
+Linux binaries need glibc 2.35 or newer. Build one locally with `scripts/build-binary.sh` (needs a C
+compiler; writes `dist/talkub-<version>-<os>-<arch>`).
+
 Or straight from source:
 
     uv tool install git+https://github.com/jan-alexander/talkub.git
@@ -20,8 +29,8 @@ Or straight from source:
 
 Releases are created by the manually triggered `Release` workflow (Actions tab, or
 `gh workflow run release.yml`): it takes the version from `pyproject.toml`, aborts if release
-`v<version>` already exists, runs lint and tests, then publishes wheel and sdist. Bump the version
-first with `uv version --bump patch|minor|major`.
+`v<version>` already exists, runs lint and tests, then publishes wheel, sdist, the binaries and
+`SHA256SUMS`. Bump the version first with `uv version --bump patch|minor|major`.
 
 Shell completion (commands, options and shortcut names for `talkub run`):
 
