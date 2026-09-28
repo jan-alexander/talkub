@@ -21,6 +21,7 @@ uv run --locked --group binary python -m nuitka \
   --include-package=talkub \
   --include-package-data=talkub \
   --include-package-data=yamllint \
+  --include-distribution-metadata=talkub \
   --output-dir=build/nuitka \
   --output-filename="$name" \
   --assume-yes-for-downloads \

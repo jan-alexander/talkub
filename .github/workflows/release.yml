@@ -111,7 +111,7 @@ jobs:
       - name: Smoke test binary
         run: |
           bin="$(ls dist/talkub-*-*-*)"
-          "$bin" --version
+          test "$("$bin" --version)" = "$(uv version --short)"
           "$bin" --help
 
       - uses: actions/upload-artifact@v4

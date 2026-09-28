@@ -294,3 +294,12 @@ def test_hidden_clipboard_clear_command_runs_the_clearer(monkeypatch):
     monkeypatch.setattr(clipboard_clear, "main", lambda: called.append(True))
     main([clipboard.CLEAR_COMMAND])
     assert called == [True]
+
+
+def test_version_comes_from_pyproject(capfd):
+    import tomllib
+    from pathlib import Path
+
+    pyproject = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())
+    assert _run(["--version"]) == 0
+    assert capfd.readouterr().out.strip() == pyproject["project"]["version"]
