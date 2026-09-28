@@ -60,7 +60,14 @@ jobs:
           uv run ruff check src tests
           uv run ruff format --check src tests
 
+      - name: Install test tools
+        run: |
+          ./scripts/install-ci-tools.sh "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Test
+        env:
+          TALKUB_TESTS_REQUIRE_TOOLS: "1"
         run: uv run pytest
 
       - name: Build

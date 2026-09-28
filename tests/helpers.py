@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -15,8 +16,14 @@ from talkub.core.runner import Runner
 
 
 def need(*tools: str) -> pytest.MarkDecorator:
-    """Skip a test when one of the external binaries is not installed."""
+    """Skip a test when one of the external binaries is not installed.
+
+    With TALKUB_TESTS_REQUIRE_TOOLS set (CI), a missing tool fails the collection instead, so a
+    green run means the whole suite ran.
+    """
     missing = [tool for tool in tools if shutil.which(tool) is None]
+    if missing and os.environ.get("TALKUB_TESTS_REQUIRE_TOOLS"):
+        raise RuntimeError(f"missing tools: {', '.join(missing)} (TALKUB_TESTS_REQUIRE_TOOLS is set)")
     return pytest.mark.skipif(bool(missing), reason=f"missing tools: {', '.join(missing)}")
 
 
