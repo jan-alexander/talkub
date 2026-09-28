@@ -6,9 +6,22 @@ the cluster repo and is installed with uv.
 
 ## Install
 
-    uv tool install git+https://<your-git-host>/talkub.git
+From a GitHub release (built wheel, no build step on install):
+
+    gh release download --repo jan-alexander/talkub --pattern '*.whl' --dir /tmp/talkub
+    uv tool install --compile-bytecode /tmp/talkub/talkub-*.whl
+
+Or straight from source:
+
+    uv tool install git+https://github.com/jan-alexander/talkub.git
+
     # needs: age, sops, talosctl, helm (and kubectl, kubeseal later)
     # optional: age-plugin-yubikey, age-plugin-se
+
+Releases are created by the manually triggered `Release` workflow (Actions tab, or
+`gh workflow run release.yml`): it takes the version from `pyproject.toml`, aborts if release
+`v<version>` already exists, runs lint and tests, then publishes wheel and sdist. Bump the version
+first with `uv version --bump patch|minor|major`.
 
 Shell completion (commands, options and shortcut names for `talkub run`):
 
