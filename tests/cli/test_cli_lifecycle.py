@@ -58,12 +58,12 @@ def test_insecure_needs_exactly_one_node(talos_repo, talosctl_spy, capfd):
 def test_insecure_declined_exits_nonzero(talos_repo, talosctl_spy, monkeypatch):
     monkeypatch.setattr(sys, "stdin", io.StringIO("n\n"))
     assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01"]) == 1
-    assert _calls(talosctl_spy) == []
+    assert not any(call.startswith("call apply-config") for call in _calls(talosctl_spy))
 
 
 def test_insecure_yes(talos_repo, talosctl_spy):
     assert _run(["--repo", str(talos_repo.root), "apply", "--insecure", "cp-01", "--yes"]) == 0
-    assert "--insecure" in _calls(talosctl_spy)[0]
+    assert any(call.startswith("call apply-config --insecure") for call in _calls(talosctl_spy))
 
 
 def test_insecure_rejects_mode(talos_repo, talosctl_spy, capfd):

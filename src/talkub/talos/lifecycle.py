@@ -6,13 +6,14 @@ import os
 import sys
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from talkub.config import Settings
 from talkub.context import Context
 from talkub.core.ephemeral import private_file
 from talkub.core.errors import CommandFailed, ValidationError
-from talkub.core.runner import require_tool
+from talkub.core.runner import Runner, require_tool
 from talkub.talos import images, inspect
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.factory import FactoryClient
@@ -33,6 +34,7 @@ def ordered_nodes(settings: Settings, names: Sequence[str]) -> list[str]:
 
 
 HEALTH_TIMEOUT = "10m"
+PROBE_TIMEOUT = 15.0  # seconds per maintenance-API query before `apply --insecure`
 
 
 def ensure_images(ctx: Context, settings: Settings, order: Sequence[str]) -> None:
@@ -251,6 +253,44 @@ def _apply_one(
     applied.append(name)
 
 
+@dataclass(frozen=True)
+class OnDisk:
+    """The Talos installation a node in maintenance mode already has on its disk."""
+
+    version: str | None
+    schematic: str | None
+    extensions: tuple[str, ...]
+
+
+def installed_image(runner: Runner, address: str) -> OnDisk | None:
+    """What a node in maintenance mode already has installed, or None if its disks carry no Talos.
+
+    Talos installs `machine.install.image` only if no disk has a META partition (which is what
+    the `systemdisk` resource reports); otherwise apply-config keeps booting the image on disk,
+    e.g. a reused Hetzner snapshot or a node reset back into maintenance mode. Best effort:
+    unreadable answers count as "not installed", the unchanged pre-check behaviour."""
+
+    def get(*argv: str) -> str:
+        proc = runner.run(
+            ["talosctl", *argv, "--insecure", "-n", address, "-o", "json"], check=False, timeout=PROBE_TIMEOUT
+        )
+        return proc.stdout.decode(errors="replace") if proc.returncode == 0 else ""
+
+    if inspect.system_disk(get("get", "systemdisk")) is None:
+        return None
+    running = inspect.extensions(get("get", "extensions"))
+    version = runner.run(["talosctl", "version", "--insecure", "-n", address], check=False, timeout=PROBE_TIMEOUT)
+    return OnDisk(
+        version=inspect.server_version(version.stdout.decode(errors="replace")) if version.returncode == 0 else None,
+        schematic=running.pop("schematic", None) or None,
+        extensions=tuple(sorted(running)),
+    )
+
+
+def _schematic(schematic: str | None, extensions: Sequence[str]) -> str:
+    return f"schematic {(schematic or 'unknown')[:12]}: {', '.join(extensions) or 'no extensions'}"
+
+
 def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
     """First install of a node booted into maintenance mode (no talosconfig, node's `ip`)."""
     settings, _, configs = prepare(ctx, [name])
@@ -261,13 +301,34 @@ def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
             f"cannot determine installer image/install disk from the rendered config for '{name}'",
             hint="refusing to install; check talosctl version / the node patch",
         )
+    require_tool("talosctl")
+    on_disk = installed_image(ctx.runner, node.ip)
     print(f"node:      {name} at {node.ip} (maintenance mode)")
     print(f"installer: {image}")
     print(f"disk:      {disk}")
-    if not confirm(f"install Talos on {name}? The selected disk will be overwritten"):
+    question = f"install Talos on {name}? The selected disk will be overwritten"
+    if on_disk is not None:
+        wanted = settings.schematics[settings.node_platform(name)]
+        if (on_disk.version, on_disk.schematic) == (settings.talos_version, wanted.id):
+            print("installed: Talos is already on its disk, matches the target; the disk is not overwritten")
+            question = f"apply the config to {name}?"
+        else:
+            print(
+                f"warning: {name} already has Talos {on_disk.version or 'unknown'} on its disk "
+                f"({_schematic(on_disk.schematic, on_disk.extensions)})"
+            )
+            print(
+                f"         apply-config keeps that image instead of installing Talos {settings.talos_version} "
+                f"({_schematic(wanted.id, wanted.extensions)}); unconfigured extensions can stall the boot"
+            )
+            print(
+                "         fix: write the boot media from `talkub image show` to the disk (see "
+                "docs/getting-started.md), or run `talkub upgrade talos` after the install"
+            )
+            question = f"apply the config to {name} and keep the image on its disk?"
+    if not confirm(question):
         print("aborted, nothing was sent")
         return False
-    require_tool("talosctl")
     with private_file(f"{name}.yaml", configs[name]) as path:
         code = ctx.runner.call(
             [
@@ -285,5 +346,8 @@ def apply_insecure(ctx: Context, name: str, *, confirm: Confirm) -> bool:
             f"install failed for node '{name}'",
             hint=f"talosctl exited with {code}; is the node booted into maintenance mode at {node.ip}?",
         )
-    print(f"next: once {name} has rebooted, check it with `talkub plan {name}`")
+    if on_disk is None:
+        print(f"next: once {name} has installed Talos and rebooted, check it with `talkub plan {name}`")
+    else:
+        print(f"next: {name} boots on without a reboot; check it with `talkub plan {name}`")
     return True

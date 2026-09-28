@@ -163,6 +163,14 @@ Machine configs are rendered on the fly from `talos/secrets.sops.yaml`, `talos/p
 (`controlplane*` / `worker*` are role-specific, `*.sops.yaml` patches are decrypted) and
 `talos/nodes/<node>.yaml`; they are never written to the repo.
 
+Before `apply --insecure` sends anything, talkub asks the maintenance API whether Talos is already
+on the node's disk (`systemdisk`). If so, Talos does not install the installer image and keeps
+booting the image on disk, e.g. from a reused Hetzner snapshot. talkub then prints that image's
+version, schematic and extensions. If they differ from the target, it warns and asks
+`apply the config to <node> and keep the image on its disk?` (default no). Fix: rewrite the disk
+with the boot media, or run `upgrade talos` afterwards; see
+[getting started](docs/getting-started.md#2a-the-node-already-has-talos-on-its-disk).
+
 Once the cluster is bootstrapped, `apply --mode auto|try` and `upgrade talos` are rolling: they
 check `talosctl health` once before the first change (and change nothing if the cluster is
 unhealthy), then wait for health after each node before moving on. Health always runs through a

@@ -82,6 +82,44 @@ talkub k get nodes
 More nodes: `talkub node add w-01 --ip … --role worker`, then `talkub node volumes w-01 --insecure`
 and `talkub apply --insecure w-01` — one node at a time.
 
+### 2a. The node already has Talos on its disk
+
+Talos installs the installer image from the machine config only onto a disk that carries no Talos
+yet. A node that already has Talos on its disk keeps booting *that* image: a Hetzner server
+created from an older snapshot, or a node from an earlier cluster that was reset back into
+maintenance mode. Its extensions come along. An extension without its configuration, e.g.
+`tailscale` without an auth key, stalls the boot (`service "ext-tailscale" to be up`), and
+`bootstrap` then waits until its health check times out.
+
+`talkub apply --insecure` detects this. It prints the Talos version, schematic and extensions on the
+disk next to the target and asks `apply the config to cp-01 and keep the image on its disk?`.
+Answer no, then either:
+
+**Rewrite the disk** (clean, recommended). On Hetzner Cloud: in the Cloud Console, enable the
+rescue system (linux64) for the server and reboot it, then:
+
+```bash
+talkub image show --platform hcloud        # on your machine: copy the "boot media" URL
+                                           # (--arch arm64 for CAX servers)
+ssh root@$NODE_IP                          # rescue system
+wget -O /tmp/talos.raw.xz 'https://factory.talos.dev/image/<schematic>/<version>/hcloud-amd64.raw.xz'
+xz -d -c /tmp/talos.raw.xz | dd of=/dev/sda bs=4M status=progress && sync
+reboot                                     # boots Talos in maintenance mode, now with the right image
+```
+
+To reuse the image for more servers, run `poweroff` instead of `reboot` and create a snapshot of
+the server in the Cloud Console. Create a new snapshot whenever `talkub image` changes the
+extensions. Bare metal: boot any live Linux, wipe the disk (`wipefs -a /dev/sdX`), then boot the
+Talos ISO from `talkub image show`. It installs the configured image from scratch.
+
+Afterwards, continue with `talkub apply --insecure cp-01` as above; it no longer warns.
+
+**Keep the image and upgrade afterwards.** Answer yes (or `--yes`), run `talkub bootstrap`, then
+`talkub upgrade talos`. It installs the target version and schematic and reboots. `talkub status`
+shows the mismatch until then, e.g. `7d4c31cbd96d (want 376567988ad3)`. A reboot alone does not
+help, because the node boots the same image again. This way is fine if the image on the disk boots
+cleanly. With an unconfigured extension like `tailscale`, rewrite the disk instead.
+
 ## 3. Install charts
 
 There is no `chart add`: a chart is an Argo CD app file in `gitops/apps/`, which the root app picks

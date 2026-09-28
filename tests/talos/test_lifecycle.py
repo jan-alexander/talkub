@@ -156,8 +156,8 @@ def test_apply_rejects_unknown_mode_and_node(talos_repo, talosctl_spy):
 
 def test_apply_insecure(talos_repo, talosctl_spy, capfd):
     assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: True) is True
-    calls = _calls(talosctl_spy)
-    assert calls == [calls[0]]
+    calls = [call for call in _calls(talosctl_spy) if call.startswith("apply-config")]
+    assert len(calls) == 1
     assert calls[0].startswith("apply-config --insecure -n 10.0.0.10 --file ")
     assert "--talosconfig" not in calls[0]
     out = capfd.readouterr().out
@@ -167,7 +167,55 @@ def test_apply_insecure(talos_repo, talosctl_spy, capfd):
 
 def test_apply_insecure_declined_sends_nothing(talos_repo, talosctl_spy):
     assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: False) is False
-    assert _calls(talosctl_spy) == []
+    assert not any(call.startswith("apply-config") for call in _calls(talosctl_spy))
+
+
+def _extension(name, version):
+    return f'{{"spec": {{"metadata": {{"name": "{name}", "version": "{version}"}}}}}}\n'
+
+
+def _installed_node(spy, *, version, schematic, extensions=()):
+    """Fake maintenance-mode talosctl whose node already has Talos on its disk."""
+    running = "".join(_extension(name, "1.0") for name in extensions) + _extension("schematic", schematic)
+    return (
+        spy("talosctl")
+        .real("gen")
+        .real("validate")
+        .on("get", "systemdisk", "--insecure", stdout='{"spec": {"diskID": "sda"}}\n')
+        .on("get", "extensions", "--insecure", stdout=running)
+        .on("version", "--insecure", stdout=f"Client:\n\tTag: v1.14.0\nServer:\n\tNODE: x\n\tTag: {version}\n")
+    )
+
+
+def test_apply_insecure_warns_when_an_other_image_is_already_installed(talos_repo, spy, capfd):
+    talosctl = _installed_node(spy, version="v1.13.2", schematic="7d4c31cbd96d" + "0" * 52, extensions=["tailscale"])
+    asked = []
+    assert lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: asked.append(q)) is False
+    out = capfd.readouterr().out
+    assert "already has Talos v1.13.2 on its disk (schematic 7d4c31cbd96d: tailscale)" in out
+    assert "keeps that image instead of installing Talos v1.14.0 (schematic 376567988ad3: no extensions)" in out
+    assert "talkub image show" in out and "talkub upgrade talos" in out
+    assert asked == ["apply the config to cp-01 and keep the image on its disk?"]
+    assert not any("apply-config" in argv for argv in talosctl.argvs)
+
+
+def test_apply_insecure_installed_matching_image_does_not_warn(talos_repo, spy, capfd):
+    from helpers import DEFAULT_SCHEMATIC_ID
+
+    _installed_node(spy, version="v1.14.0", schematic=DEFAULT_SCHEMATIC_ID)
+    asked = []
+    lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: asked.append(q))
+    out = capfd.readouterr().out
+    assert "warning" not in out
+    assert "already on its disk, matches the target" in out
+    assert asked == ["apply the config to cp-01?"]
+
+
+def test_apply_insecure_without_installation_asks_to_overwrite(talos_repo, talosctl_spy):
+    asked = []
+    lifecycle.apply_insecure(Context.open(talos_repo), "cp-01", confirm=lambda q: asked.append(q))
+    assert asked == ["install Talos on cp-01? The selected disk will be overwritten"]
+    assert "get systemdisk --insecure -n 10.0.0.10 -o json" in _calls(talosctl_spy)
 
 
 def test_outdated_schematic_is_refreshed_before_render(talos_repo, talosctl_spy, factory_stub, capfd):
