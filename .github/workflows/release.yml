@@ -88,7 +88,7 @@ jobs:
     strategy:
       matrix:
         # Linux on 22.04: the binary needs at least the glibc it was built against (2.35).
-        runner: [ubuntu-22.04, ubuntu-22.04-arm, macos-latest]
+        runner: [macos-latest]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
