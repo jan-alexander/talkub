@@ -285,3 +285,12 @@ def test_run_help(capfd):
 def test_top_level_help_mentions_run(capfd):
     assert _run(["--help"]) == 0
     assert "Run a shortcut" in capfd.readouterr().out
+
+
+def test_hidden_clipboard_clear_command_runs_the_clearer(monkeypatch):
+    from talkub.workstation import clipboard, clipboard_clear
+
+    called = []
+    monkeypatch.setattr(clipboard_clear, "main", lambda: called.append(True))
+    main([clipboard.CLEAR_COMMAND])
+    assert called == [True]

@@ -17,6 +17,8 @@ from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.runner import Runner
 
 CLEAR_SECONDS_ENV = "TALKUB_CLIPBOARD_CLEAR_SECONDS"
+# Hidden first argument that makes a compiled talkub binary run the clearer (see cli.main.main).
+CLEAR_COMMAND = "__clipboard-clear"
 DEFAULT_CLEAR_SECONDS = 45.0
 
 
@@ -77,8 +79,19 @@ def copy(runner: Runner, value: bytes) -> ClipboardTool:
     return found
 
 
+def clearer_argv() -> list[str]:
+    """How to start the clearer: `python -I -m ...`, or the talkub binary itself when compiled.
+
+    Nuitka defines `__compiled__` in every compiled module. There `sys.executable` names a
+    `python3` that does not exist; `sys.argv[0]` is the absolute path of the onefile binary.
+    """
+    if "__compiled__" in globals():
+        return [sys.argv[0], CLEAR_COMMAND]
+    # -I: isolated mode, so the clearer's sys.path does not depend on the caller's cwd.
+    return [sys.executable, "-I", "-m", "talkub.workstation.clipboard_clear"]
+
+
 def schedule_clear(runner: Runner, value: bytes) -> None:
     """Spawn the detached clearer, handing it only the SHA-256 digest of `value` on stdin."""
     digest = hashlib.sha256(value).hexdigest().encode()
-    # -I: isolated mode, so the clearer's sys.path does not depend on the caller's cwd.
-    runner.spawn_detached([sys.executable, "-I", "-m", "talkub.workstation.clipboard_clear"], input=digest)
+    runner.spawn_detached(clearer_argv(), input=digest)

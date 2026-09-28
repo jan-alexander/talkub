@@ -28,7 +28,7 @@ from talkub.cli.state import State
 from talkub.config import MARKER
 from talkub.config.user import display_path, global_shortcuts_file
 from talkub.core.errors import TalkubError, ValidationError
-from talkub.workstation import access, shortcuts
+from talkub.workstation import access, clipboard, clipboard_clear, shortcuts
 
 app = typer.Typer(
     help="Administer a Talos cluster repo (ArgoCD, SOPS/age, Sealed Secrets).",
@@ -190,6 +190,10 @@ def _report(err: TalkubError, debug: bool) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv == [clipboard.CLEAR_COMMAND]:
+        # A compiled binary has no `python -m`; the detached clearer re-enters here instead.
+        clipboard_clear.main()
+        return
     state, rest = split_globals(argv)
     try:
         if rest and rest[0] in PASSTHROUGH:
