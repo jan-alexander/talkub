@@ -52,6 +52,9 @@ Arguments after `talkub t`/`talkub k` and after a shortcut name are not complete
 
 ## Quick start
 
+Step by step from a node in maintenance mode to a running cluster (repo, identity, charts,
+Tailscale): [docs/getting-started.md](docs/getting-started.md).
+
     talkub identity new --yubikey          # or --se / --software
     talkub init homelab --endpoint https://10.0.0.10:6443 \
         --node cp-01=10.0.0.10 --git-url https://git.example.com/homelab.git
