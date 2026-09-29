@@ -250,6 +250,12 @@ Version skew: repos written by this talkub version (`schematics` instead of `ins
     talkub status                    # target vs. actual per node + Argo CD sync/health and app errors
     talkub upgrade talos             # nodes whose Talos version or schematic differs, one at a time
     talkub upgrade k8s               # shows the talosctl dry-run first
+    talkub kubeconfig                # fetch a fresh admin kubeconfig, nothing else
+
+`kubeconfig` replaces `kubernetes/kubeconfig.sops.yaml` with a new admin kubeconfig from the first
+control plane that answers (after `tailscale lockdown` pointed at the tailnet, as `bootstrap` does).
+Use it when `talkub k` fails with `x509` or `Unauthorized` errors; unlike `bootstrap` it installs
+nothing. Commit `kubernetes/` afterwards.
 
 Chart versions live only in the Argo CD apps (`gitops/apps/<chart>.yaml`: `repoURL`, `chart`,
 `targetRevision`, `helm.valueFiles`, `destination.namespace`); `bootstrap` and `repo apply` install

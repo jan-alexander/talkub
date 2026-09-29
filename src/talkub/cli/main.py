@@ -14,6 +14,7 @@ from talkub.cli import bootstrap as bootstrap_cli
 from talkub.cli import chart as chart_cli
 from talkub.cli import coredns as coredns_cli
 from talkub.cli import hooks as hooks_cli
+from talkub.cli import kubeconfig as kubeconfig_cli
 from talkub.cli import lifecycle as lifecycle_cli
 from talkub.cli import nodes as nodes_cli
 from talkub.cli import renovate as renovate_cli
@@ -69,6 +70,7 @@ app.add_typer(hooks_cli.app, name="hooks")
 app.command("plan")(lifecycle_cli.plan)
 app.command("apply")(lifecycle_cli.apply)
 app.command("bootstrap")(bootstrap_cli.bootstrap)
+app.command("kubeconfig")(kubeconfig_cli.kubeconfig)
 app.add_typer(upgrade_cli.app, name="upgrade")
 app.add_typer(chart_cli.app, name="chart")
 app.command("status")(status_cli.status)

@@ -7,13 +7,12 @@ from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.ephemeral import decrypted
 from talkub.core.errors import CommandFailed, ValidationError
-from talkub.core.fsutil import atomic_write
 from talkub.core.runner import require_tool
 from talkub.gitops import gitrepo
 from talkub.helm.install import helm_install
 from talkub.kube import sealing
 from talkub.kube.session import KubeSession, kube_session
-from talkub.talos import tailscale
+from talkub.talos import kubeconfig
 from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.inspect import bootstrap_already_done, etcd_member_count
 from talkub.talos.lifecycle import ordered_nodes
@@ -70,10 +69,9 @@ def run(ctx: Context) -> None:
                 "the cluster did not become healthy",
                 hint=f"talosctl health exited with {code}",
             )
-        kubeconfig = talos.run(address, ["kubeconfig", "-", "--merge=false"]).stdout
-    if tailscale.is_locked_down(ctx.repo):
-        kubeconfig = tailscale.rewrite_kubeconfig_server(kubeconfig, tailscale.admin_server(settings))
-    _store_kubeconfig(ctx, kubeconfig)
+        _step("fetching the kubeconfig")
+        data = kubeconfig.fetch(talos, ctx.repo, settings)
+    kubeconfig.store(ctx, data)
 
     backup = sealing.key_backup_path(ctx.repo)
     had_backup = backup.is_file()
@@ -152,15 +150,3 @@ def _warn_if_restored_key_is_stale(ctx: Context, kube: KubeSession) -> None:
     proc = ctx.runner.run(["kubeseal", "--fetch-cert", *sealing.CONTROLLER], env=kube.env, check=False)
     if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
         sealing.warn_if_cert_changed(ctx.repo, proc.stdout)
-
-
-def _store_kubeconfig(ctx: Context, kubeconfig: bytes) -> None:
-    target = ctx.repo.kubeconfig
-    if target.is_file() and ctx.sops.decrypt(target) == kubeconfig:
-        print("   kubeconfig unchanged")
-        return
-    atomic_write(
-        target,
-        ctx.sops.encrypt(kubeconfig, filename=target.name, public_key=ctx.keyring.public_key()),
-    )
-    print(f"   wrote {ctx.repo.rel(target)}")
