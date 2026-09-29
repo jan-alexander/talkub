@@ -21,7 +21,7 @@ _SECRET_KEY = re.compile(r"^[-._a-zA-Z0-9]+$")
 _RUN_TOOLS = ("k", "kubectl", "t", "talosctl")
 
 
-_SHORTCUT_KINDS = ("secret", "job", "run", "portForward", "kubernetes")
+_SHORTCUT_KINDS = ("secret", "token", "job", "run", "portForward", "kubernetes")
 
 
 _PORT_SPEC = re.compile(r"^(\d{1,5})(?::(\d{1,5}))?$")
@@ -32,6 +32,15 @@ def _valid_port_spec(value: str) -> bool:
     if match is None:
         return False
     return all(1 <= int(group) <= 65535 for group in match.groups() if group is not None)
+
+
+# `kubectl create token --duration`: Go duration restricted to h/m/s blocks in that order, e.g. 8h or 1h30m.
+_DURATION = re.compile(r"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
+
+
+def _valid_duration(value: object) -> bool:
+    match = _DURATION.match(value) if isinstance(value, str) else None
+    return match is not None and any(group is not None and int(group) > 0 for group in match.groups())
 
 
 # `{node}` or `{node.<field>}` in a run/kubernetes argument; filled in at call time from the chosen node.
@@ -83,11 +92,13 @@ def _pipe(spec: Mapping, where: str) -> tuple[tuple[str, ...], ...]:
 @dataclass(frozen=True)
 class Shortcut:
     name: str
-    kind: str  # "secret" | "job" | "run" | "portForward" | "kubernetes"
+    kind: str  # "secret" | "token" | "job" | "run" | "portForward" | "kubernetes"
     description: str | None = None
-    namespace: str | None = None  # secret, job, portForward
+    namespace: str | None = None  # secret, token, job, portForward
     secret: str | None = None  # secret: Secret name
     key: str | None = None  # secret
+    service_account: str | None = None  # token
+    duration: str | None = None  # token: passed as --duration if set
     cronjob: str | None = None  # job
     follow: bool = False  # job
     argv: tuple[str, ...] = ()  # run, kubernetes
@@ -133,6 +144,24 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
             namespace=namespace,
             secret=secret_name,
             key=key,
+        )
+
+    if kind == "token":
+        raw = spec["token"]
+        if not isinstance(raw, Mapping):
+            raise ValidationError(f"{MARKER}: {where}.token must be a mapping")
+        namespace = label(raw.get("namespace"), f"{where}.token.namespace")
+        service_account = label(raw.get("serviceAccount"), f"{where}.token.serviceAccount")
+        duration = raw.get("duration")
+        if duration is not None and not _valid_duration(duration):
+            raise ValidationError(f"{MARKER}: {where}.token.duration must be a duration like 8h or 1h30m")
+        return Shortcut(
+            name=name,
+            kind=kind,
+            description=description,
+            namespace=namespace,
+            service_account=service_account,
+            duration=duration,
         )
 
     if kind == "job":
@@ -202,6 +231,11 @@ def shortcut_to_dict(shortcut: Shortcut) -> dict:
             "name": shortcut.secret,
             "key": shortcut.key,
         }
+    elif shortcut.kind == "token":
+        token: dict = {"namespace": shortcut.namespace, "serviceAccount": shortcut.service_account}
+        if shortcut.duration is not None:
+            token["duration"] = shortcut.duration
+        data["token"] = token
     elif shortcut.kind == "job":
         job: dict = {"namespace": shortcut.namespace, "cronjob": shortcut.cronjob}
         if shortcut.follow:

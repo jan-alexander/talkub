@@ -104,6 +104,7 @@ def test_invalid_pipe(pipe, message):
         {"secret": {"namespace": "a", "name": "b", "key": "c"}},
         {"job": {"namespace": "a", "cronjob": "b"}},
         {"portForward": {"namespace": "a", "service": "b", "ports": ["80"]}},
+        {"token": {"namespace": "a", "serviceAccount": "b"}},
     ],
 )
 def test_pipe_only_with_run_or_kubernetes(spec):
@@ -115,3 +116,54 @@ def test_pipe_only_with_run_or_kubernetes(spec):
 def test_node_only_in_pipe_needs_a_node():
     spec = {"run": ["k", "get", "pods", "-A", "-o", "wide"], "pipe": [["grep", "{node.name}"]]}
     assert needs_node(shortcut_from_dict("x", spec))
+
+
+def test_token_is_parsed_and_round_trips():
+    spec = {"description": "login", "token": {"namespace": "headlamp", "serviceAccount": "headlamp", "duration": "8h"}}
+    shortcut = shortcut_from_dict("hl", spec)
+    assert shortcut.kind == "token"
+    assert (shortcut.namespace, shortcut.service_account, shortcut.duration) == ("headlamp", "headlamp", "8h")
+    assert shortcut_to_dict(shortcut) == spec
+    assert shortcut_from_dict("hl", shortcut_to_dict(shortcut)) == shortcut
+
+
+def test_token_without_duration():
+    spec = {"token": {"namespace": "headlamp", "serviceAccount": "headlamp"}}
+    shortcut = shortcut_from_dict("hl", spec)
+    assert shortcut.duration is None
+    assert shortcut_to_dict(shortcut) == spec
+
+
+@pytest.mark.parametrize("duration", ["8h", "30m", "45s", "1h30m", "1h0m", "2h30m15s", "90m"])
+def test_valid_token_durations(duration):
+    spec = {"token": {"namespace": "a", "serviceAccount": "b", "duration": duration}}
+    assert shortcut_from_dict("x", spec).duration == duration
+
+
+@pytest.mark.parametrize("duration", ["8hours", "0h", "0h0m", "h", "8", "-1h", "", "1.5h", "30m1h", "8H", 30, True])
+def test_invalid_token_durations(duration):
+    spec = {"token": {"namespace": "a", "serviceAccount": "b", "duration": duration}}
+    with pytest.raises(ValidationError) as exc:
+        shortcut_from_dict("x", spec)
+    assert str(exc.value) == ".talkub.yaml: shortcuts.x.token.duration must be a duration like 8h or 1h30m"
+
+
+@pytest.mark.parametrize(
+    ("token", "message"),
+    [
+        ("headlamp", "shortcuts.x.token must be a mapping"),
+        ({"serviceAccount": "b"}, "shortcuts.x.token.namespace must be a valid DNS label"),
+        ({"namespace": "a"}, "shortcuts.x.token.serviceAccount must be a valid DNS label"),
+        ({"namespace": "a", "serviceAccount": "B_x"}, "shortcuts.x.token.serviceAccount must be a valid DNS label"),
+    ],
+)
+def test_invalid_token(token, message):
+    with pytest.raises(ValidationError) as exc:
+        shortcut_from_dict("x", {"token": token})
+    assert str(exc.value) == f".talkub.yaml: {message}"
+
+
+def test_token_is_one_of_the_kinds():
+    with pytest.raises(ValidationError) as exc:
+        shortcut_from_dict("x", {"token": {"namespace": "a", "serviceAccount": "b"}, "run": ["k", "get", "pods"]})
+    assert "token" in str(exc.value)
