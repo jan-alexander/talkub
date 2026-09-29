@@ -266,6 +266,9 @@ next write.
 
 Step by step, with version rules and troubleshooting: [upgrading](docs/upgrading.md).
 
+When something is broken, or a node got a new disk: [debugging Talos](docs/debugging-talos.md) and
+[debugging Kubernetes](docs/debugging-kubernetes.md).
+
     talkub versions                            # target vs. running vs. latest: Talos, Kubernetes, every chart app
     talkub versions --offline                  # skip the latest-version lookups (no network)
     talkub versions set talos v1.15.0          # then: talkub upgrade talos

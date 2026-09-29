@@ -31,8 +31,11 @@ git pull                                 # work on the latest repo state
 - Take an etcd snapshot from a control plane:
 
   ```bash
-  talkub talosctl -n cp-01 etcd snapshot homelab-etcd.snapshot   # keep it outside the repo
+  talkub talosctl -n 10.0.0.10 etcd snapshot homelab-etcd.snapshot   # keep it outside the repo
   ```
+
+  `-n` takes cp-01's address (`mgmt`, else `ip` in `.talkub.yaml`), not its name: talosctl does
+  not know the node names.
 
 - One kind of upgrade at a time. The recommended order is **Talos → Kubernetes → charts**: a new
   Talos release supports newer Kubernetes versions, and charts sometimes need a newer Kubernetes.
@@ -166,6 +169,6 @@ chart bumps and for Talos/Kubernetes bumps in `.talkub.yaml`.
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `the cluster is not healthy; nothing was changed` | Fix the cluster first (`talkub status`), or `--force-unhealthy` if the upgrade is the fix                                                                      |
 | `drain failed for node …`                         | A PodDisruptionBudget blocks the eviction (5 minutes timeout); scale the workload or relax the PDB, then retry. Uncordon with `talkub kubectl uncordon <node>` |
-| `node … did not come back on … within 600s`       | Look at the boot log: `talkub talosctl -n <node> dmesg`. The node may be booting the old image after a failed install                                          |
+| `node … did not come back on … within 600s`       | Look at the boot log: `talkub talosctl -n <node address> dmesg`. The node may be booting the old image after a failed install                                  |
 | `upgrade-k8s dry-run failed`                      | Usually a Kubernetes version the running Talos does not support, or skipping a minor version                                                                   |
 | Chart app `OutOfSync`/`Degraded` after a push     | `talkub status` shows the Argo CD error; fix the values or `git revert`                                                                                        |
