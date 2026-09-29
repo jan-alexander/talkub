@@ -89,8 +89,6 @@ Nicht-Ziele (YAGNI):
 **`workstation/shortcuts.py`**
 - `fill_node` auch für die `pipe`-Stufen; `pipe` an `access` durchreichen; Listing-Anzeige.
 
-**`tests/helpers.FakeRunner`**: `pipeline` zeichnet die Stufen auf.
-
 **README.md**: Abschnitt Shortcuts um `pipe:` ergänzen (Beispiel, Extras an die erste Stufe, Zugangsdaten nur
 in der ersten Stufe, pipefail mit SIGPIPE-Ausnahme, Hinweis auf `sh -c` im `kubernetes`-Shortcut).
 
