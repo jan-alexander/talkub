@@ -137,3 +137,9 @@ def test_invalid_placeholder_names_the_global_file(global_file):
         user.load_global_shortcuts()
     assert str(exc.value) == f"{user.display_path(global_file)}: shortcuts.ext.run: unknown placeholder {{node.adr}}"
     assert exc.value.hint.startswith("one of {node}")
+
+
+def test_pipe_survives_the_global_pool(global_file):
+    shortcut = Shortcut(name="ext", kind="run", argv=("t", "get", "extensions"), pipe=(("sort",), ("uniq", "-c")))
+    user.save_global_shortcut(shortcut)
+    assert user.load_global_shortcuts() == {"ext": shortcut}

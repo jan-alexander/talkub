@@ -60,3 +60,58 @@ def test_jsonpath_and_node_in_one_argument():
 def test_needs_node_only_for_argv_kinds():
     assert not needs_node(Shortcut(name="p", kind="run", argv=("k", "get", "pods")))
     assert not needs_node(Shortcut(name="s", kind="secret", namespace="{node}", secret="a", key="b"))
+
+
+def test_pipe_is_parsed_and_round_trips():
+    spec = {"run": ["t", "get", "extensions", "-o", "json"], "pipe": [["jq", "-r", ".spec.name"], ["sort"]]}
+    shortcut = shortcut_from_dict("ext", spec)
+    assert shortcut.pipe == (("jq", "-r", ".spec.name"), ("sort",))
+    assert shortcut_to_dict(shortcut) == spec
+    assert shortcut_from_dict("ext", shortcut_to_dict(shortcut)) == shortcut
+
+
+def test_pipe_with_kubernetes():
+    shortcut = shortcut_from_dict("x", {"kubernetes": ["stern", "app"], "pipe": [["grep", "ERROR"]]})
+    assert shortcut.pipe == (("grep", "ERROR"),)
+
+
+def test_without_pipe_nothing_is_written():
+    assert "pipe" not in shortcut_to_dict(shortcut_from_dict("p", {"run": ["k", "get", "pods"]}))
+
+
+@pytest.mark.parametrize(
+    ("pipe", "message"),
+    [
+        ([], "shortcuts.x.pipe must be a non-empty list of stages"),
+        ("sort", "shortcuts.x.pipe must be a non-empty list of stages"),
+        ([[]], "shortcuts.x.pipe[0] must be a non-empty list of strings"),
+        ([["sort"], "jq"], "shortcuts.x.pipe[1] must be a non-empty list of strings"),
+        ([["sort"], ["jq", 1]], "shortcuts.x.pipe[1] must be a non-empty list of strings"),
+        ([["  "]], "shortcuts.x.pipe[0] must be a non-empty list of strings"),
+        ([["sh", "-c", "cat {kubeconfig}"]], "shortcuts.x.pipe[0]: {kubeconfig} is only available in the first stage"),
+        ([["sort"], ["grep", "{node.adr}"]], "shortcuts.x.pipe[1]: unknown placeholder {node.adr}"),
+    ],
+)
+def test_invalid_pipe(pipe, message):
+    with pytest.raises(ValidationError) as exc:
+        shortcut_from_dict("x", {"run": ["k", "get", "pods"], "pipe": pipe})
+    assert str(exc.value) == f".talkub.yaml: {message}"
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {"secret": {"namespace": "a", "name": "b", "key": "c"}},
+        {"job": {"namespace": "a", "cronjob": "b"}},
+        {"portForward": {"namespace": "a", "service": "b", "ports": ["80"]}},
+    ],
+)
+def test_pipe_only_with_run_or_kubernetes(spec):
+    with pytest.raises(ValidationError) as exc:
+        shortcut_from_dict("x", {**spec, "pipe": [["sort"]]})
+    assert str(exc.value) == ".talkub.yaml: shortcuts.x.pipe is only allowed with run or kubernetes"
+
+
+def test_node_only_in_pipe_needs_a_node():
+    spec = {"run": ["k", "get", "pods", "-A", "-o", "wide"], "pipe": [["grep", "{node.name}"]]}
+    assert needs_node(shortcut_from_dict("x", spec))

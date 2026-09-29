@@ -53,6 +53,33 @@ def _check_placeholders(argv: list[str], where: str) -> None:
                 )
 
 
+# workstation.access replaces it in the first stage only; spelled out here because config sits below workstation.
+_KUBECONFIG_PLACEHOLDER = "{kubeconfig}"
+
+
+def _pipe(spec: Mapping, where: str) -> tuple[tuple[str, ...], ...]:
+    raw = spec.get("pipe")
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not raw:
+        raise ValidationError(f"{MARKER}: {where}.pipe must be a non-empty list of stages")
+    stages: list[tuple[str, ...]] = []
+    for index, stage in enumerate(raw):
+        at = f"{where}.pipe[{index}]"
+        if (
+            not isinstance(stage, list)
+            or not stage
+            or not all(isinstance(item, str) for item in stage)
+            or not stage[0].strip()
+        ):
+            raise ValidationError(f"{MARKER}: {at} must be a non-empty list of strings")
+        if any(_KUBECONFIG_PLACEHOLDER in arg for arg in stage):
+            raise ValidationError(f"{MARKER}: {at}: {_KUBECONFIG_PLACEHOLDER} is only available in the first stage")
+        _check_placeholders(stage, at)
+        stages.append(tuple(stage))
+    return tuple(stages)
+
+
 @dataclass(frozen=True)
 class Shortcut:
     name: str
@@ -66,11 +93,13 @@ class Shortcut:
     argv: tuple[str, ...] = ()  # run, kubernetes
     service: str | None = None  # portForward
     ports: tuple[str, ...] = ()  # portForward
+    pipe: tuple[tuple[str, ...], ...] = ()  # run, kubernetes: further stages fed by the first one's stdout
 
 
 def needs_node(shortcut: Shortcut) -> bool:
     """Whether running the shortcut needs a node: a run/kubernetes argument has a {node…} placeholder."""
-    return shortcut.kind in ("run", "kubernetes") and any(NODE_PLACEHOLDER.search(arg) for arg in shortcut.argv)
+    args = [*shortcut.argv, *(arg for stage in shortcut.pipe for arg in stage)]
+    return shortcut.kind in ("run", "kubernetes") and any(NODE_PLACEHOLDER.search(arg) for arg in args)
 
 
 def shortcut_from_dict(name: str, spec: object) -> Shortcut:
@@ -85,6 +114,8 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
         raise ValidationError(f"{MARKER}: {where} must have exactly one of: {', '.join(_SHORTCUT_KINDS)}")
     kind = present[0]
     description = optional_text(spec.get("description"), f"{where}.description")
+    if "pipe" in spec and kind not in ("run", "kubernetes"):
+        raise ValidationError(f"{MARKER}: {where}.pipe is only allowed with run or kubernetes")
 
     if kind == "secret":
         raw = spec["secret"]
@@ -129,7 +160,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
         if raw[0] not in _RUN_TOOLS:
             raise ValidationError(f"{MARKER}: {where}.run must start with one of: {', '.join(_RUN_TOOLS)}")
         _check_placeholders(raw, f"{where}.run")
-        return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
+        return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw), pipe=_pipe(spec, where))
 
     if kind == "kubernetes":
         raw = spec["kubernetes"]
@@ -138,7 +169,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
         if not raw[0].strip():
             raise ValidationError(f"{MARKER}: {where}.kubernetes must start with a program")
         _check_placeholders(raw, f"{where}.kubernetes")
-        return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
+        return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw), pipe=_pipe(spec, where))
 
     raw = spec["portForward"]
     if not isinstance(raw, Mapping):
@@ -186,4 +217,6 @@ def shortcut_to_dict(shortcut: Shortcut) -> dict:
             "service": shortcut.service,
             "ports": list(shortcut.ports),
         }
+    if shortcut.pipe:
+        data["pipe"] = [list(stage) for stage in shortcut.pipe]
     return data
