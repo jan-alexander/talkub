@@ -38,13 +38,14 @@ def _valid_port_spec(value: str) -> bool:
 # Anything else in braces (kubectl jsonpath, Go templates) is left alone.
 NODE_FIELDS = ("addr", "name", "ip", "mgmt", "role")
 NODE_PLACEHOLDER = re.compile(r"\{node(?:\.([a-z]+))?\}")
+# Wider than NODE_PLACEHOLDER, for load-time checks only: a typo like {node.mgmt_ip} is an error, not a literal.
+_NODE_FIELD_LIKE = re.compile(r"\{node\.([^{}]*)\}")
 
 
 def _check_placeholders(argv: list[str], where: str) -> None:
     for arg in argv:
-        for match in NODE_PLACEHOLDER.finditer(arg):
-            field = match.group(1)
-            if field is not None and field not in NODE_FIELDS:
+        for match in _NODE_FIELD_LIKE.finditer(arg):
+            if match.group(1) not in NODE_FIELDS:
                 known = ", ".join(["{node}", *(f"{{node.{name}}}" for name in NODE_FIELDS)])
                 raise ValidationError(
                     f"{MARKER}: {where}: unknown placeholder {match.group(0)}",

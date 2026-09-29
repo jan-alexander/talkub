@@ -47,8 +47,10 @@ Ein Argument darf mehrere Platzhalter enthalten und sie mit Text kombinieren (`-
 `{node.name}.log`).
 
 **Abgrenzung zu kubectl-Syntax.** jsonpath (`{.items[0].metadata.name}`) und Go-Templates
-(`{{.status}}`) enthalten ebenfalls geschweifte Klammern. Ersetzt bzw. geprüft wird deshalb ausschließlich
-das Muster `\{node(?:\.([a-z]+))?\}` (plus das bestehende `{kubeconfig}`); alles andere bleibt Literal.
+(`{{.status}}`) enthalten ebenfalls geschweifte Klammern. Ersetzt wird deshalb ausschließlich das Muster
+`\{node(?:\.([a-z]+))?\}` (plus das bestehende `{kubeconfig}`); alles andere bleibt Literal. Beim Laden
+wird jedes `{node.<irgendwas>}` geprüft, damit Tippfehler wie `{node.mgmt_ip}` oder `{node.ADDR}` nicht
+still als Literal bei talosctl landen.
 Bestehende Shortcuts bleiben ohne Änderung gültig.
 
 **Prüfung beim Laden.** Ein `{node.<feld>}` mit unbekanntem Feld ist ein `ValidationError` beim Laden

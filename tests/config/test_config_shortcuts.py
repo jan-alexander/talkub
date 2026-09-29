@@ -36,12 +36,20 @@ def test_unknown_field_in_kubernetes_is_rejected():
 
 @pytest.mark.parametrize(
     "arg",
-    ["-o=jsonpath={.items[0].metadata.name}", "{{.status}}", "{nodes}", "{Node}", "{node.ADDR}", "{kubeconfig}"],
+    ["-o=jsonpath={.items[0].metadata.name}", "{{.status}}", "{nodes}", "{Node}", "{kubeconfig}"],
 )
 def test_other_braces_are_literal(arg):
     shortcut = shortcut_from_dict("x", {"run": ["k", "get", "pods", arg]})
     assert shortcut.argv[-1] == arg
     assert not needs_node(shortcut)
+
+
+@pytest.mark.parametrize("arg", ["{node.ADDR}", "{node.mgmt_ip}", "{node.ip4}", "{node.}", "-n={node.Name}"])
+def test_any_malformed_node_field_is_rejected(arg):
+    # Typos must not slip through as literals and reach talosctl as `-n {node.mgmt_ip}`.
+    with pytest.raises(ValidationError) as exc:
+        shortcut_from_dict("x", {"run": ["t", "-n", arg]})
+    assert "unknown placeholder {node." in str(exc.value)
 
 
 def test_jsonpath_and_node_in_one_argument():
