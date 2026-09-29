@@ -51,6 +51,19 @@ def require_tool(name: str) -> str:
     return path
 
 
+SIGPIPE_EXIT = 128 + signal.SIGPIPE
+
+
+def pipe_status(codes: Sequence[int]) -> int:
+    """Exit code of a pipeline, like `set -o pipefail`: the rightmost non-zero stage code. A stage before
+    the last that died of SIGPIPE only saw its reader stop early (`… | head`), which is not a failure."""
+    if not codes:
+        raise ValueError("a pipeline needs at least one stage")
+    *front, last = codes
+    relevant = [0 if code == SIGPIPE_EXIT else code for code in front] + [last]
+    return next((code for code in reversed(relevant) if code != 0), 0)
+
+
 class Runner:
     def run(
         self,
@@ -210,6 +223,60 @@ class Runner:
                 proc.terminate()
                 proc.wait()
                 raise
+
+    def pipeline(
+        self,
+        stages: Sequence[Sequence[str]],
+        *,
+        env: Mapping[str, str] | None = None,
+        rest_env: Mapping[str, str] | None = None,
+    ) -> int:
+        """Run `stages` connected stdout → stdin like a shell pipe, with inherited stdin (first stage),
+        stdout (last stage) and stderr (all). Only the first stage gets `env`; the others get `rest_env`.
+        Returns pipe_status() of the stage codes; a stage killed by signal N counts as 128 + N."""
+        for stage in stages:
+            require_tool(stage[0])
+        procs: list[subprocess.Popen[bytes]] = []
+        previous = None
+        try:
+            for index, stage in enumerate(stages):
+                proc = subprocess.Popen(
+                    list(stage),
+                    stdin=previous,
+                    stdout=None if index == len(stages) - 1 else subprocess.PIPE,
+                    env=child_env(env if index == 0 else rest_env),
+                )
+                if previous is not None:
+                    previous.close()  # the child holds its own copy; ours would keep the writer from SIGPIPE
+                previous = proc.stdout
+                procs.append(proc)
+        except BaseException:
+            if previous is not None:
+                previous.close()
+            _stop(procs)
+            raise
+        codes: list[int] = []
+        for proc in procs:
+            while True:
+                try:
+                    code = proc.wait()
+                    break
+                except KeyboardInterrupt:
+                    # The stages got SIGINT too (same process group); let them decide when to exit.
+                    continue
+                except BaseException:
+                    _stop(procs)
+                    raise
+            codes.append(128 - code if code < 0 else code)
+        return pipe_status(codes)
+
+
+def _stop(procs: Sequence[subprocess.Popen[bytes]]) -> None:
+    for proc in procs:
+        if proc.poll() is None:
+            proc.terminate()
+    for proc in procs:
+        proc.wait()
 
 
 _HELD_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)

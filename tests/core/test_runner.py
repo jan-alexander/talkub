@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from talkub.core.errors import CommandFailed, ToolMissing
-from talkub.core.runner import Runner, child_env, require_tool
+from talkub.core.runner import Runner, child_env, pipe_status, require_tool
 
 
 def test_child_env_strips_key_material(monkeypatch):
@@ -244,3 +244,99 @@ def test_feed_passes_stderr_through_but_not_stdout(capfd):
     captured = capfd.readouterr()
     assert "reason on stderr" in captured.err
     assert "OUT" not in captured.out
+
+
+@pytest.mark.parametrize(
+    ("codes", "expected"),
+    [
+        ([0], 0),
+        ([3], 3),
+        ([0, 0], 0),
+        ([1, 0], 1),
+        ([0, 1], 1),
+        ([2, 3], 3),
+        ([2, 0, 0], 2),
+        ([141, 0], 0),
+        ([141, 1], 1),
+        ([0, 141], 141),
+        ([141, 141, 0], 0),
+    ],
+)
+def test_pipe_status(codes, expected):
+    assert pipe_status(codes) == expected
+
+
+def test_pipe_status_needs_a_stage():
+    with pytest.raises(ValueError):
+        pipe_status([])
+
+
+def _py(code: str) -> list[str]:
+    return [sys.executable, "-c", code]
+
+
+UPPER = "import sys; sys.stdout.write(sys.stdin.read().upper())"
+
+
+def test_pipeline_passes_output_through_the_stages(capfd):
+    stages = [_py("print('abc')"), _py(UPPER), _py("import sys; sys.stdout.write(sys.stdin.read() * 2)")]
+    assert Runner().pipeline(stages) == 0
+    assert capfd.readouterr().out == "ABC\nABC\n"
+
+
+def test_pipeline_single_stage_is_like_call(capfd):
+    assert Runner().pipeline([_py("print('x'); raise SystemExit(4)")]) == 4
+    assert capfd.readouterr().out == "x\n"
+
+
+def test_pipeline_first_stage_failure_is_not_hidden(capfd):
+    assert Runner().pipeline([_py("raise SystemExit(5)"), _py(UPPER)]) == 5
+
+
+def test_pipeline_rightmost_failure_wins(capfd):
+    assert Runner().pipeline([_py("raise SystemExit(2)"), _py("import sys; sys.stdin.read(); sys.exit(3)")]) == 3
+
+
+def test_pipeline_signal_death_maps_to_shell_code(capfd):
+    kill = "import os, signal, sys; sys.stdin.read(); os.kill(os.getpid(), signal.SIGTERM)"
+    assert Runner().pipeline([_py("print('x')"), _py(kill)]) == 143
+
+
+def test_pipeline_env_only_for_the_first_stage(monkeypatch, capfd):
+    monkeypatch.setenv("TALKUB_TEST_PARENT", "inherited")
+    first = "import os; print(os.environ.get('A'), os.environ.get('B'), os.environ.get('TALKUB_TEST_PARENT'))"
+    rest = "import os, sys; print(sys.stdin.read().strip(), os.environ.get('A'), os.environ.get('B'))"
+    assert Runner().pipeline([_py(first), _py(rest)], env={"A": "1"}, rest_env={"B": "2"}) == 0
+    assert capfd.readouterr().out == "1 None inherited None 2\n"
+
+
+def test_pipeline_early_close_by_the_reader_is_success():
+    # `yes` writes forever and dies of SIGPIPE once `head` exits: without closing the parent's pipe ends
+    # it never gets SIGPIPE and this hangs; its 141 must not count as failure. (A Python writer would not
+    # do: the interpreter ignores SIGPIPE and exits 1 with BrokenPipeError.) Run in a child process so a
+    # hang fails the test via the timeout instead of blocking the suite.
+    script = (
+        "from talkub.core.runner import Runner; raise SystemExit(Runner().pipeline([['yes'], ['head', '-n', '1']]))"
+    )
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, timeout=20)
+    assert proc.returncode == 0
+    assert proc.stdout == b"y\n"
+
+
+def test_pipeline_missing_tool_starts_nothing(tmp_path):
+    marker = tmp_path / "started"
+    with pytest.raises(ToolMissing):
+        Runner().pipeline([_py(f"open({str(marker)!r}, 'w')"), ["talkub-no-such-tool"]])
+    assert not marker.exists()
+
+
+def test_pipeline_waits_for_all_stages_on_ctrl_c(capfd):
+    slow = "import time; time.sleep(1); print('marker')"
+    start = time.monotonic()
+    timer = _send_later(signal.SIGINT)
+    try:
+        assert Runner().pipeline([_py(slow), _py(UPPER)]) == 0
+    finally:
+        timer.cancel()
+    assert time.monotonic() - start >= 1.0
+    assert capfd.readouterr().out == "MARKER\n"
