@@ -33,6 +33,15 @@ SHORTCUTS = {
         secret="db-creds",
         key="password",
     ),
+    "hl-token": Shortcut(
+        name="hl-token",
+        kind="token",
+        description="headlamp login",
+        namespace="headlamp",
+        service_account="headlamp",
+        duration="8h",
+    ),
+    "short-token": Shortcut(name="short-token", kind="token", namespace="apps", service_account="ci"),
     "backup": Shortcut(name="backup", kind="job", namespace="prod", cronjob="backup-job"),
     "backup-follow": Shortcut(
         name="backup-follow",
@@ -338,7 +347,7 @@ def test_pod_phases_and_job_outcome_parsing():
     assert shortcuts.job_outcome(b"{") is None
 
 
-@pytest.mark.parametrize("name", ["creds", "backup", "grafana"])
+@pytest.mark.parametrize("name", ["creds", "hl-token", "backup", "grafana"])
 def test_extra_arguments_rejected_for_non_run_kinds(ctx, spy, name):
     kubectl = spy("kubectl")
     with pytest.raises(ValidationError) as exc:
@@ -438,6 +447,8 @@ def test_listing(ctx):
     assert len(lines) == len(SHORTCUTS)
     creds = next(line for line in lines if line.startswith("creds"))
     assert creds.split() == ["creds", "secret", "db", "password", "project"]
+    token = next(line for line in lines if line.startswith("hl-token"))
+    assert token.split() == ["hl-token", "token", "headlamp", "login", "project"]
 
 
 def test_secret_counts_characters_not_bytes(ctx, spy, detached, capfd):
@@ -695,3 +706,77 @@ def test_kubernetes_shortcut_with_pipe(ctx, fake_bin, capfd):
     assert shortcuts.run(ctx, "ui-up", []) == 3  # fake-ui exits 3, tr 0: pipefail keeps the 3
     out = capfd.readouterr().out
     assert "ARG:--CONFIG=/" in out and "KUBE: MARKER" in out
+
+
+TOKEN = "eyJhbGciOiJSUzI1NiJ9.payload.signature"
+
+
+def test_token_goes_to_the_clipboard_without_the_newline(ctx, spy, detached, capfd):
+    kubectl = spy("kubectl").on("create", "token", stdout=TOKEN + "\n")
+    pbcopy = spy("pbcopy").on(read_stdin=True)
+
+    assert shortcuts.run(ctx, "hl-token", []) == 0
+
+    [create] = kubectl.calls
+    assert create["args"] == ["-n", "headlamp", "create", "token", "headlamp", "--duration=8h"]
+    assert create["kubeconfig"]
+    [copy] = pbcopy.calls
+    assert copy["stdin"] == TOKEN
+    [(argv, sent)] = detached
+    assert sent == hashlib.sha256(TOKEN.encode()).hexdigest().encode()
+    assert TOKEN not in " ".join(argv)
+    out, err = capfd.readouterr()
+    assert TOKEN not in out + err
+    assert out.strip() == f"copied hl-token ({len(TOKEN)} chars); the clipboard is cleared in 45 s"
+    for path in ctx.repo.root.rglob("*"):
+        if path.is_file():
+            assert TOKEN.encode() not in path.read_bytes()
+
+
+def test_token_without_duration_passes_no_flag(ctx, spy, detached):
+    kubectl = spy("kubectl").on("create", "token", stdout=TOKEN + "\n")
+    spy("pbcopy").on(read_stdin=True)
+    shortcuts.run(ctx, "short-token", [])
+    [create] = kubectl.calls
+    assert create["args"] == ["-n", "apps", "create", "token", "ci"]
+
+
+def test_token_print_writes_only_the_token(ctx, spy, detached, monkeypatch):
+    spy("kubectl").on("create", "token", stdout=TOKEN + "\n")
+    pbcopy = spy("pbcopy").on(read_stdin=True)
+    buffer = io.BytesIO()
+    fake_stdout = io.TextIOWrapper(buffer)
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+
+    assert shortcuts.run(ctx, "hl-token", [], print_value=True) == 0
+
+    fake_stdout.flush()
+    assert buffer.getvalue() == TOKEN.encode()  # not a terminal: no trailing newline
+    assert pbcopy.calls == []
+    assert detached == []
+
+
+def test_token_empty_output_is_an_error(ctx, spy, detached):
+    spy("kubectl").on("create", "token", stdout="\n")
+    pbcopy = spy("pbcopy").on(read_stdin=True)
+    with pytest.raises(CommandFailed) as exc:
+        shortcuts.run(ctx, "hl-token", [])
+    assert str(exc.value) == "kubectl printed no token for headlamp/headlamp"
+    assert pbcopy.calls == []
+
+
+def test_token_kubectl_failure_copies_nothing(ctx, spy, detached):
+    spy("kubectl").on("create", "token", stderr='serviceaccounts "headlamp" not found', rc=1)
+    pbcopy = spy("pbcopy").on(read_stdin=True)
+    with pytest.raises(CommandFailed) as exc:
+        shortcuts.run(ctx, "hl-token", [])
+    assert "not found" in (exc.value.hint or "")
+    assert pbcopy.calls == []
+    assert detached == []
+
+
+def test_print_message_names_secret_and_token(ctx, spy):
+    spy("kubectl")
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.run(ctx, "backup", [], print_value=True)
+    assert str(exc.value) == "--print only applies to secret and token shortcuts, backup is job"

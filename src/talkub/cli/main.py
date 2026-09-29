@@ -85,7 +85,7 @@ usage: talkub run                                                list the shortc
        talkub run [--print] [--follow] <name> [<node>] [args...]  run one
        talkub run --save-global [--force] <name>                  move a project shortcut to the global pool
 
-  --print        secret: write the value to stdout instead of the clipboard
+  --print        secret, token: write the value to stdout instead of the clipboard
   --follow       job: wait for the pod, stream its logs, exit with the job's result
   --save-global  move <name> from .talkub.yaml to ~/.config/talkub/shortcuts.yaml
   --force        with --save-global: replace a global shortcut of the same name
@@ -103,7 +103,7 @@ def _run_help(
     node: str = typer.Argument(
         None, autocompletion=completion.node_names, help="Node, for shortcuts with {node} placeholders."
     ),
-    print_value: bool = typer.Option(False, "--print", help="secret: write the value to stdout."),
+    print_value: bool = typer.Option(False, "--print", help="secret, token: write the value to stdout."),
     follow: bool = typer.Option(False, "--follow", help="job: stream the logs, exit with the job's result."),
     save_global: bool = typer.Option(False, "--save-global", help="Move <name> to the global pool."),
     force: bool = typer.Option(False, "--force", help="With --save-global: replace a global shortcut."),

@@ -96,6 +96,9 @@ shortcuts:
   db-password:
     description: password of the app database
     secret: {namespace: prod, name: db-creds, key: password}
+  headlamp-token:
+    description: fresh Headlamp login token
+    token: {namespace: headlamp, serviceAccount: headlamp, duration: 8h}
   backup:
     job: {namespace: prod, cronjob: backup, follow: true}
   argocd-apps:
@@ -116,6 +119,7 @@ shortcuts:
     talkub run                              # list: name, kind, description, origin
     talkub run db-password                  # copy the secret value to the clipboard
     talkub run --print db-password          # write it to stdout instead
+    talkub run headlamp-token               # copy a fresh ServiceAccount token to the clipboard
     talkub run --follow backup              # start the job, stream its logs
     talkub run argocd-apps -o wide          # arguments after the name are passed on verbatim
     talkub run extensions cp-01             # a {node} shortcut takes the node first
@@ -130,6 +134,9 @@ Each shortcut has exactly one kind:
   only on a terminal), e.g. `talkub run --print db-password | ...`. A missing key is reported with
   the names of the keys that exist. Clipboard history managers (e.g. Raycast, Maccy, Alfred) may
   keep their own copy of the value; use `--print`, or exclude talkub/the terminal in those tools.
+- `token`: creates a token for the ServiceAccount with `kubectl create token` (`--duration` only if
+  `duration` is set, e.g. `8h` or `1h30m`; otherwise the API server's default applies) and delivers it
+  like `secret`: to the clipboard, cleared after 45 s, or with `--print` to stdout.
 - `job`: creates `<cronjob>-manual-<UTC timestamp>` from the CronJob. With `follow: true` or
   `--follow`, waits (up to 5 min) for its pod to start, streams the logs and exits 0 only if the
   job completed; a failed job, or one still running a minute after the logs end, exits 1.

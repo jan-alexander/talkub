@@ -38,8 +38,8 @@ def _valid_port_spec(value: str) -> bool:
 _DURATION = re.compile(r"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
 
 
-def _valid_duration(value: object) -> bool:
-    match = _DURATION.match(value) if isinstance(value, str) else None
+def _valid_duration(value: str) -> bool:
+    match = _DURATION.match(value)
     return match is not None and any(group is not None and int(group) > 0 for group in match.groups())
 
 
@@ -153,7 +153,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
         namespace = label(raw.get("namespace"), f"{where}.token.namespace")
         service_account = label(raw.get("serviceAccount"), f"{where}.token.serviceAccount")
         duration = raw.get("duration")
-        if duration is not None and not _valid_duration(duration):
+        if duration is not None and (not isinstance(duration, str) or not _valid_duration(duration)):
             raise ValidationError(f"{MARKER}: {where}.token.duration must be a duration like 8h or 1h30m")
         return Shortcut(
             name=name,

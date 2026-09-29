@@ -1,7 +1,7 @@
 """Run the shortcuts defined in .talkub.yaml and in the global pool (`talkub run <name>`).
 
-A secret's value is decoded in memory only: it goes to the clipboard tool on stdin (or to stdout
-with --print) and never into argv, env, the terminal or a file.
+A secret's value or a fresh token is held in memory only: it goes to the clipboard tool on stdin
+(or to stdout with --print) and never into argv, env, the terminal or a file.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from talkub.workstation import access, clipboard
 
 _KUBECTL = ("k", "kubectl")
 _TAKES_EXTRA = ("run", "kubernetes")
+_DELIVERED = ("secret", "token")  # value goes to the clipboard or, with --print, to stdout
 _JOB_NAME_MAX = 63
 _OUTCOMES = ("Complete", "Failed")
 
@@ -205,8 +206,8 @@ def run(
     shortcut, _ = entries[name]
     if extra and shortcut.kind not in _TAKES_EXTRA:
         raise ValidationError(f"shortcut {name} ({shortcut.kind}) takes no extra arguments")
-    if print_value and shortcut.kind != "secret":
-        raise ValidationError(f"--print only applies to secret shortcuts, {name} is {shortcut.kind}")
+    if print_value and shortcut.kind not in _DELIVERED:
+        raise ValidationError(f"--print only applies to secret and token shortcuts, {name} is {shortcut.kind}")
     if follow and shortcut.kind != "job":
         raise ValidationError(f"--follow only applies to job shortcuts, {name} is {shortcut.kind}")
 
@@ -220,6 +221,8 @@ def run(
 
     if shortcut.kind == "secret":
         return _secret(ctx, shortcut, print_value)
+    if shortcut.kind == "token":
+        return _token(ctx, shortcut, print_value)
     if shortcut.kind == "job":
         return _job(ctx, shortcut, follow or shortcut.follow)
     if shortcut.kind == "run":
@@ -249,7 +252,23 @@ def _secret(ctx: Context, shortcut: Shortcut, print_value: bool) -> int:
         value = base64.b64decode(data[key], validate=True)
     except (binascii.Error, TypeError):
         raise ValidationError(f"key {key!r} of secret {ns}/{secret} is not valid base64") from None
+    return _deliver(ctx, shortcut.name, value, print_value)
 
+
+def _token(ctx: Context, shortcut: Shortcut, print_value: bool) -> int:
+    ns, account = shortcut.namespace, shortcut.service_account
+    args = ["-n", ns, "create", "token", account]
+    if shortcut.duration is not None:
+        args.append(f"--duration={shortcut.duration}")
+    with kube_session(ctx) as kube:
+        value = kube.kubectl(args).stdout.rstrip()
+    if not value:
+        raise CommandFailed(f"kubectl printed no token for {ns}/{account}")
+    return _deliver(ctx, shortcut.name, value, print_value)
+
+
+def _deliver(ctx: Context, name: str, value: bytes, print_value: bool) -> int:
+    """Write `value` to stdout (--print) or copy it to the clipboard and schedule the clearer."""
     if print_value:
         sys.stdout.flush()
         sys.stdout.buffer.write(value + (b"\n" if sys.stdout.isatty() else b""))
@@ -264,7 +283,7 @@ def _secret(ctx: Context, shortcut: Shortcut, print_value: bool) -> int:
         size = f"{len(value.decode())} chars"
     except UnicodeDecodeError:
         size = f"{len(value)} bytes"
-    print(f"copied {shortcut.name} ({size}); the clipboard is cleared in {clipboard.clear_seconds():g} s")
+    print(f"copied {name} ({size}); the clipboard is cleared in {clipboard.clear_seconds():g} s")
     return 0
 
 
