@@ -129,3 +129,11 @@ def test_save_follows_a_symlinked_pool(global_file, tmp_path):
     assert global_file.is_symlink()
     assert "# synced" in target.read_text()
     assert set(user.load_global_shortcuts()) == {"nodes", "pods"}
+
+
+def test_invalid_placeholder_names_the_global_file(global_file):
+    global_file.write_text("shortcuts:\n  ext:\n    run: [t, -n, '{node.adr}', get, extensions]\n")
+    with pytest.raises(ValidationError) as exc:
+        user.load_global_shortcuts()
+    assert str(exc.value) == f"{user.display_path(global_file)}: shortcuts.ext.run: unknown placeholder {{node.adr}}"
+    assert exc.value.hint.startswith("one of {node}")

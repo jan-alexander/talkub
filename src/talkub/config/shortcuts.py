@@ -34,6 +34,24 @@ def _valid_port_spec(value: str) -> bool:
     return all(1 <= int(group) <= 65535 for group in match.groups() if group is not None)
 
 
+# `{node}` or `{node.<field>}` in a run/kubernetes argument; filled in at call time from the chosen node.
+# Anything else in braces (kubectl jsonpath, Go templates) is left alone.
+NODE_FIELDS = ("addr", "name", "ip", "mgmt", "role")
+NODE_PLACEHOLDER = re.compile(r"\{node(?:\.([a-z]+))?\}")
+
+
+def _check_placeholders(argv: list[str], where: str) -> None:
+    for arg in argv:
+        for match in NODE_PLACEHOLDER.finditer(arg):
+            field = match.group(1)
+            if field is not None and field not in NODE_FIELDS:
+                known = ", ".join(["{node}", *(f"{{node.{name}}}" for name in NODE_FIELDS)])
+                raise ValidationError(
+                    f"{MARKER}: {where}: unknown placeholder {match.group(0)}",
+                    hint=f"one of {known}",
+                )
+
+
 @dataclass(frozen=True)
 class Shortcut:
     name: str
@@ -47,6 +65,11 @@ class Shortcut:
     argv: tuple[str, ...] = ()  # run, kubernetes
     service: str | None = None  # portForward
     ports: tuple[str, ...] = ()  # portForward
+
+
+def needs_node(shortcut: Shortcut) -> bool:
+    """Whether running the shortcut needs a node: a run/kubernetes argument has a {node…} placeholder."""
+    return shortcut.kind in ("run", "kubernetes") and any(NODE_PLACEHOLDER.search(arg) for arg in shortcut.argv)
 
 
 def shortcut_from_dict(name: str, spec: object) -> Shortcut:
@@ -104,6 +127,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
             raise ValidationError(f"{MARKER}: {where}.run must be a non-empty list of strings")
         if raw[0] not in _RUN_TOOLS:
             raise ValidationError(f"{MARKER}: {where}.run must start with one of: {', '.join(_RUN_TOOLS)}")
+        _check_placeholders(raw, f"{where}.run")
         return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
 
     if kind == "kubernetes":
@@ -112,6 +136,7 @@ def shortcut_from_dict(name: str, spec: object) -> Shortcut:
             raise ValidationError(f"{MARKER}: {where}.kubernetes must be a non-empty list of strings")
         if not raw[0].strip():
             raise ValidationError(f"{MARKER}: {where}.kubernetes must start with a program")
+        _check_placeholders(raw, f"{where}.kubernetes")
         return Shortcut(name=name, kind=kind, description=description, argv=tuple(raw))
 
     raw = spec["portForward"]
