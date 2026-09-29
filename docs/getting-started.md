@@ -85,7 +85,7 @@ and `talkub apply --insecure w-01` — one node at a time.
 ### 2a. The node already has Talos on its disk
 
 Talos installs the installer image from the machine config only onto a disk that carries no Talos
-yet. A node that already has Talos on its disk keeps booting *that* image: a Hetzner server
+yet. A node that already has Talos on its disk keeps booting _that_ image: a Hetzner server
 created from an older snapshot, or a node from an earlier cluster that was reset back into
 maintenance mode. Its extensions come along. An extension without its configuration, e.g.
 `tailscale` without an auth key, stalls the boot (`service "ext-tailscale" to be up`), and
@@ -176,7 +176,7 @@ talkub versions                          # target / running / latest per chart
 ```
 
 Argo CD syncs on its own after the push. Later updates: `talkub chart upgrade podinfo` (shows a
-values diff), then commit and push; `talkub renovate init` automates update PRs.
+values diff), then commit and push; `talkub renovate init` automates update PRs. Talos and Kubernetes upgrades: [upgrading](upgrading.md).
 
 ## 4. Tailscale as the only admin path
 

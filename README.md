@@ -95,12 +95,12 @@ Frequent commands can be named in `.talkub.yaml` (or in the global pool, see bel
 shortcuts:
   db-password:
     description: password of the app database
-    secret: {namespace: prod, name: db-creds, key: password}
+    secret: { namespace: prod, name: db-creds, key: password }
   headlamp-token:
     description: fresh Headlamp login token
-    token: {namespace: headlamp, serviceAccount: headlamp, duration: 8h}
+    token: { namespace: headlamp, serviceAccount: headlamp, duration: 8h }
   backup:
-    job: {namespace: prod, cronjob: backup, follow: true}
+    job: { namespace: prod, cronjob: backup, follow: true }
   argocd-apps:
     run: [k, -n, argocd, get, applications]
   extensions:
@@ -111,7 +111,7 @@ shortcuts:
       - [jq, -r, .spec.metadata.name]
       - [sort]
   grafana:
-    portForward: {namespace: monitoring, service: grafana, ports: ["3000:80"]}
+    portForward: { namespace: monitoring, service: grafana, ports: ["3000:80"] }
   k9s:
     kubernetes: [k9s, --readonly]
 ```
@@ -258,6 +258,8 @@ next write.
 
 ## Versions and updates
 
+Step by step, with version rules and troubleshooting: [upgrading](docs/upgrading.md).
+
     talkub versions                            # target vs. running vs. latest: Talos, Kubernetes, every chart app
     talkub versions --offline                  # skip the latest-version lookups (no network)
     talkub versions set talos v1.15.0          # then: talkub upgrade talos
@@ -284,7 +286,7 @@ Generates a Renovate config that opens PRs for chart bumps (via the `argocd` man
 `gitops/apps/*.yaml`) and for Talos/Kubernetes bumps (via two custom regex managers, matching
 `.talkub.yaml`). After writing it, commit `renovate.json` and enable the Renovate GitHub app for
 this repo: <https://github.com/apps/renovate>. Argo CD rolls out a merged chart PR as soon as it
-merges, so run `talkub lint` on the PR branch *before* merging it; a merged Talos/Kubernetes PR
+merges, so run `talkub lint` on the PR branch _before_ merging it; a merged Talos/Kubernetes PR
 only updates `.talkub.yaml` — run `talkub upgrade talos` or `talkub upgrade k8s` afterwards to
 apply it to the nodes.
 
@@ -462,9 +464,9 @@ Three checks, in order, each key-free:
 - every Argo CD Application's Helm chart rendered with `helm template` and validated the same way
   (skipped entirely with `--offline`, or a `skipped:` line if `helm` is not installed).
 
-    talkub hooks install            # install .git/hooks/pre-commit
-    talkub hooks install --force    # overwrite a pre-commit hook not managed by talkub
-    talkub hooks uninstall          # remove it again
+  talkub hooks install # install .git/hooks/pre-commit
+  talkub hooks install --force # overwrite a pre-commit hook not managed by talkub
+  talkub hooks uninstall # remove it again
 
 The hook runs `talkub check && talkub lint --offline` before every commit; `talkub init` installs
 it automatically. Bypass it once with `git commit --no-verify`.
@@ -488,22 +490,22 @@ Enable the pre-commit hook (import layers, ruff check, ruff format) once per clo
 `src/talkub/` is split by domain. `cli/` holds one thin module per command group and calls into
 the packages below it. Each package's `__init__.py` says what it covers.
 
-| Package | What lives there |
-|---|---|
-| `cli/` | Typer commands, argument parsing, prompts, console output |
-| `scaffold.py` | `talkub init`: writes a new cluster repo from `templates/` |
-| `overview/` | `status`, `versions`: read-only views across the cluster |
-| `gitops/` | Flows that change what Argo CD deploys: bootstrap, chart upgrade, git repo, CoreDNS, Tailscale operator, Renovate |
-| `workstation/` | The admin's machine: credential shells, shortcuts, clipboard |
-| `quality/` | `lint`, `check`, pre-commit hook |
-| `helm/` | Chart catalog and `helm` command lines |
-| `talos/` | Machine configs, node lifecycle, upgrades, CA rotation, installer images, Tailscale on the hosts |
-| `argocd/` | Rendering, parsing and editing `gitops/apps/*.yaml` |
-| `kube/` | kubectl/helm sessions, kubeseal |
-| `context.py` | `Context`: repo + runner + keys, passed to every flow |
-| `secrets/` | age identities, recipients, master key, SOPS |
-| `config/` | The repo on disk and `.talkub.yaml` (`Repo`, `Settings`, specs) |
-| `core/` | Errors, running tools, YAML, atomic writes, temp files |
+| Package        | What lives there                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `cli/`         | Typer commands, argument parsing, prompts, console output                                                         |
+| `scaffold.py`  | `talkub init`: writes a new cluster repo from `templates/`                                                        |
+| `overview/`    | `status`, `versions`: read-only views across the cluster                                                          |
+| `gitops/`      | Flows that change what Argo CD deploys: bootstrap, chart upgrade, git repo, CoreDNS, Tailscale operator, Renovate |
+| `workstation/` | The admin's machine: credential shells, shortcuts, clipboard                                                      |
+| `quality/`     | `lint`, `check`, pre-commit hook                                                                                  |
+| `helm/`        | Chart catalog and `helm` command lines                                                                            |
+| `talos/`       | Machine configs, node lifecycle, upgrades, CA rotation, installer images, Tailscale on the hosts                  |
+| `argocd/`      | Rendering, parsing and editing `gitops/apps/*.yaml`                                                               |
+| `kube/`        | kubectl/helm sessions, kubeseal                                                                                   |
+| `context.py`   | `Context`: repo + runner + keys, passed to every flow                                                             |
+| `secrets/`     | age identities, recipients, master key, SOPS                                                                      |
+| `config/`      | The repo on disk and `.talkub.yaml` (`Repo`, `Settings`, specs)                                                   |
+| `core/`        | Errors, running tools, YAML, atomic writes, temp files                                                            |
 
 The table is ordered top to bottom by layer: a package may import the ones below it, never the
 ones above. `uv run lint-imports` enforces this (contract in `pyproject.toml`).
