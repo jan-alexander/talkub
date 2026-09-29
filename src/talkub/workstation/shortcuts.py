@@ -9,14 +9,16 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from talkub.config import MARKER, Repo, Shortcut
+from talkub.config import MARKER, Repo, Settings, Shortcut
+from talkub.config.shortcuts import NODE_PLACEHOLDER, needs_node
 from talkub.config.user import display_path, global_shortcuts_file, load_global_shortcuts, save_global_shortcut
 from talkub.context import Context
 from talkub.core.errors import CommandFailed, TalkubError, ValidationError
@@ -63,14 +65,15 @@ def _sources() -> str:
 
 
 def listing(entries: Mapping[str, tuple[Shortcut, Origin]]) -> list[str]:
-    """One aligned line per shortcut: name, kind, description, origin."""
+    """One aligned line per shortcut: name (with `<node>` if it takes one), kind, description, origin."""
     if not entries:
         return []
-    width = max(len(name) for name in entries)
+    shown = {name: f"{name} <node>" if needs_node(s) else name for name, (s, _) in entries.items()}
+    width = max(len(text) for text in shown.values())
     kind_width = max(len(s.kind) for s, _ in entries.values())
     text_width = max(len(s.description or "") for s, _ in entries.values())
     return [
-        f"{name:<{width}}  {s.kind:<{kind_width}}  {s.description or '':<{text_width}}  {_ORIGIN_LABELS[origin]}"
+        f"{shown[name]:<{width}}  {s.kind:<{kind_width}}  {s.description or '':<{text_width}}  {_ORIGIN_LABELS[origin]}"
         for name, (s, origin) in sorted(entries.items())
     ]
 
@@ -88,6 +91,47 @@ def save_global(repo: Repo, name: str, *, force: bool = False) -> Path:
     path = save_global_shortcut(shortcut, force=force)
     repo.remove_shortcut(name)
     return path
+
+
+NO_NODES_HINT = "add one with talkub node add"
+
+
+def _node_hint(settings: Settings) -> str:
+    return f"one of {', '.join(settings.nodes)}" if settings.nodes else NO_NODES_HINT
+
+
+def pick_node(settings: Settings, shortcut_name: str, extra: Sequence[str]) -> tuple[str, list[str]]:
+    """The node for a shortcut with {node…} placeholders and the remaining extra arguments: the first
+    argument unless it is an option (node names never start with '-'), else the only node."""
+    if extra and not extra[0].startswith("-"):
+        name, *rest = extra
+        if name not in settings.nodes:
+            raise ValidationError(f"unknown node {name!r}", hint=_node_hint(settings))
+        return name, rest
+    if len(settings.nodes) == 1:
+        return next(iter(settings.nodes)), list(extra)
+    raise ValidationError(f"shortcut {shortcut_name} needs a node", hint=_node_hint(settings))
+
+
+def fill_node(argv: Sequence[str], settings: Settings, node: str) -> list[str]:
+    """`argv` with every {node…} placeholder replaced by the value of `node`."""
+    spec = settings.node(node)
+    values = {
+        None: settings.mgmt_address(node),
+        "addr": settings.mgmt_address(node),
+        "name": node,
+        "ip": spec.ip,
+        "mgmt": spec.mgmt,
+        "role": spec.role,
+    }
+
+    def value(match: re.Match[str]) -> str:
+        filled = values[match.group(1)]
+        if filled is None:
+            raise ValidationError(f"node {node} has no mgmt address", hint="use {node.addr} or set mgmt on the node")
+        return filled
+
+    return [NODE_PLACEHOLDER.sub(value, arg) for arg in argv]
 
 
 def job_name(cronjob: str, now: datetime) -> str:
@@ -163,16 +207,23 @@ def run(
     if follow and shortcut.kind != "job":
         raise ValidationError(f"--follow only applies to job shortcuts, {name} is {shortcut.kind}")
 
+    argv = shortcut.argv
+    if needs_node(shortcut):
+        # Resolved from .talkub.yaml alone, so a wrong node is reported before anything is decrypted.
+        settings = ctx.repo.load_settings()
+        node, extra = pick_node(settings, name, extra)
+        argv = tuple(fill_node(argv, settings, node))
+
     if shortcut.kind == "secret":
         return _secret(ctx, shortcut, print_value)
     if shortcut.kind == "job":
         return _job(ctx, shortcut, follow or shortcut.follow)
     if shortcut.kind == "run":
-        tool, *args = shortcut.argv
+        tool, *args = argv
         passthrough = access.kubectl if tool in _KUBECTL else access.talosctl
         return passthrough(ctx, [*args, *extra])
     if shortcut.kind == "kubernetes":
-        return access.with_kubeconfig(ctx, shortcut.argv, extra)
+        return access.with_kubeconfig(ctx, argv, extra)
     return _port_forward(ctx, shortcut)
 
 

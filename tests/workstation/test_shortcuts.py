@@ -51,6 +51,11 @@ SHORTCUTS = {
         ports=("3000:3000", "8080"),
     ),
     "ui": Shortcut(name="ui", kind="kubernetes", argv=("fake-ui", "--config={kubeconfig}", "{{.x}}")),
+    "ext": Shortcut(name="ext", kind="run", argv=("t", "-n", "{node}", "get", "extensions")),
+    "node-ui": Shortcut(
+        name="node-ui", kind="kubernetes", argv=("fake-ui", "--node={node.name}", "--config={kubeconfig}")
+    ),
+    "mgmt": Shortcut(name="mgmt", kind="run", argv=("t", "-n", "{node.mgmt}", "version")),
 }
 
 
@@ -562,3 +567,68 @@ def test_save_global_of_the_last_shortcut_drops_the_block(repo_with_configs):
     repo_with_configs.write_settings(settings)
     shortcuts.save_global(repo_with_configs, "pods")
     assert "shortcuts" not in repo_with_configs.settings_file.read_text()
+
+
+def _add_nodes(ctx):
+    from talkub.config import NodeSpec
+
+    settings = ctx.repo.load_settings()
+    settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.tail.ts.net")
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.20", role="worker")
+    ctx.repo.write_settings(settings)
+
+
+def test_node_shortcut_with_explicit_node_and_extras(ctx, spy):
+    _add_nodes(ctx)
+    talosctl = spy("talosctl")
+    assert shortcuts.run(ctx, "ext", ["w-01", "-o", "yaml"]) == 0
+    assert talosctl.argvs == [["-n", "10.0.0.20", "get", "extensions", "-o", "yaml"]]
+
+
+def test_node_shortcut_uses_mgmt_address(ctx, spy):
+    _add_nodes(ctx)
+    talosctl = spy("talosctl")
+    shortcuts.run(ctx, "ext", ["cp-01"])
+    assert talosctl.argvs == [["-n", "cp-01.tail.ts.net", "get", "extensions"]]
+
+
+def test_node_shortcut_single_node_default_with_options(ctx, spy):
+    talosctl = spy("talosctl")
+    shortcuts.run(ctx, "ext", ["-o", "yaml"])
+    assert talosctl.argvs == [["-n", "10.0.0.10", "get", "extensions", "-o", "yaml"]]
+
+
+def test_node_shortcut_needs_a_node_among_several(ctx, spy):
+    _add_nodes(ctx)
+    talosctl = spy("talosctl")
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.run(ctx, "ext", [])
+    assert str(exc.value) == "shortcut ext needs a node"
+    assert talosctl.calls == []
+
+
+def test_node_errors_come_before_decrypting(ctx, monkeypatch, tmp_path):
+    # No identity available: decrypting first would raise NoIdentity instead.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.run(ctx, "mgmt", [])
+    assert str(exc.value) == "node cp-01 has no mgmt address"
+    with pytest.raises(ValidationError) as exc:
+        shortcuts.run(ctx, "ext", ["cp-9"])
+    assert str(exc.value) == "unknown node 'cp-9'"
+
+
+def test_kubernetes_shortcut_with_node_and_kubeconfig(ctx, fake_bin, capfd):
+    fake_bin("fake-ui", UI_REPORT)
+    assert shortcuts.run(ctx, "node-ui", ["cp-01", "--x={node}"]) == 3
+    out = capfd.readouterr().out
+    kubeconfig = out.split("env:")[1].splitlines()[0]
+    # Extras stay verbatim, including a literal {node}.
+    assert f"arg:--node=cp-01\narg:--config={kubeconfig}\narg:--x={{node}}\n" in out
+
+
+def test_global_node_shortcut_runs_against_the_project_nodes(ctx, spy):
+    user.save_global_shortcut(Shortcut(name="version", kind="run", argv=("t", "-n", "{node}", "version")))
+    talosctl = spy("talosctl")
+    shortcuts.run(ctx, "version", [])
+    assert talosctl.argvs == [["-n", "10.0.0.10", "version"]]
