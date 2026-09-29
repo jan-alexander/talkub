@@ -56,6 +56,11 @@ SHORTCUTS = {
         name="node-ui", kind="kubernetes", argv=("fake-ui", "--node={node.name}", "--config={kubeconfig}")
     ),
     "mgmt": Shortcut(name="mgmt", kind="run", argv=("t", "-n", "{node.mgmt}", "version")),
+    "ext-up": Shortcut(name="ext-up", kind="run", argv=("t", "get", "extensions"), pipe=(("tr", "a-z", "A-Z"),)),
+    "pods-grep": Shortcut(name="pods-grep", kind="run", argv=("k", "get", "pods"), pipe=(("grep", "{node.name}"),)),
+    "ui-up": Shortcut(
+        name="ui-up", kind="kubernetes", argv=("fake-ui", "--config={kubeconfig}"), pipe=(("tr", "a-z", "A-Z"),)
+    ),
 }
 
 
@@ -632,3 +637,61 @@ def test_global_node_shortcut_runs_against_the_project_nodes(ctx, spy):
     talosctl = spy("talosctl")
     shortcuts.run(ctx, "version", [])
     assert talosctl.argvs == [["-n", "10.0.0.10", "version"]]
+
+
+LATER_STAGE_CONFIGS = (
+    'cat >/dev/null; for f in "$KUBECONFIG" "$TALOSCONFIG"; do [ -n "$f" ] && [ ! -e "$f" ] && echo missing; done'
+)
+
+
+def test_run_pipes_the_output(ctx, spy, capfd):
+    talosctl = spy("talosctl").on("extensions", stdout="gvisor\n")
+    assert shortcuts.run(ctx, "ext-up", ["-o", "yaml"]) == 0
+    assert talosctl.argvs == [["get", "extensions", "-o", "yaml"]]  # extras go to the first stage
+    assert capfd.readouterr().out == "GVISOR\n"
+
+
+def test_first_stage_failure_is_the_exit_code(ctx, spy, capfd):
+    spy("talosctl").on("extensions", rc=5)
+    assert shortcuts.run(ctx, "ext-up", []) == 5
+
+
+def test_node_placeholder_in_pipe_is_filled(ctx, spy, capfd):
+    spy("kubectl").on("pods", stdout="a on cp-01\nb on w-01\n")
+    assert shortcuts.run(ctx, "pods-grep", ["cp-01"]) == 0
+    assert capfd.readouterr().out == "a on cp-01\n"
+
+
+def test_missing_pipe_tool_reported_before_decrypting(ctx, spy, monkeypatch, tmp_path):
+    spy("kubectl")  # the first stage's tool exists; only the pipe stage is missing
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-identities"))
+    settings = ctx.repo.load_settings()
+    settings.shortcuts["broken"] = Shortcut(
+        name="broken", kind="run", argv=("k", "get", "pods"), pipe=(("talkub-no-such-tool",),)
+    )
+    ctx.repo.write_settings(settings)
+    with pytest.raises(ToolMissing) as exc:
+        shortcuts.run(ctx, "broken", [])
+    assert "talkub-no-such-tool" in str(exc.value)
+
+
+def test_later_stages_get_no_usable_cluster_config(ctx, spy, capfd, monkeypatch, tmp_path):
+    own = tmp_path / "own-kubeconfig"
+    own.write_text("the user's own cluster\n")
+    monkeypatch.setenv("KUBECONFIG", str(own))
+    monkeypatch.setenv("TALOSCONFIG", str(own))
+    spy("kubectl").on("pods", stdout="x\n")
+    settings = ctx.repo.load_settings()
+    settings.shortcuts["probe"] = Shortcut(
+        name="probe", kind="run", argv=("k", "get", "pods"), pipe=(("sh", "-c", LATER_STAGE_CONFIGS),)
+    )
+    ctx.repo.write_settings(settings)
+    assert shortcuts.run(ctx, "probe", []) == 0
+    assert capfd.readouterr().out == "missing\nmissing\n"
+
+
+def test_kubernetes_shortcut_with_pipe(ctx, fake_bin, capfd):
+    fake_bin("fake-ui", UI_REPORT)
+    assert shortcuts.run(ctx, "ui-up", []) == 3  # fake-ui exits 3, tr 0: pipefail keeps the 3
+    out = capfd.readouterr().out
+    assert "ARG:--CONFIG=/" in out and "KUBE: MARKER" in out

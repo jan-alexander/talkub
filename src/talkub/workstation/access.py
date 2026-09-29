@@ -26,33 +26,60 @@ def _existing(ctx: Context, path: Path, hint: str) -> Path:
     return path
 
 
-def talosctl(ctx: Context, args: Sequence[str]) -> int:
+PIPE_NO_CREDENTIALS = "no-credentials-in-pipe"
+
+
+def _require_stages(pipe: Sequence[Sequence[str]]) -> None:
+    for stage in pipe:
+        require_tool(stage[0])
+
+
+def _launch(
+    ctx: Context, argv: Sequence[str], env: dict[str, str], pipe: Sequence[Sequence[str]], workdir: Path
+) -> int:
+    """Run `argv` with `env`; with pipe stages, feed its output through them. The stages get no credentials,
+    and KUBECONFIG/TALOSCONFIG point at a missing file so a kubectl or talosctl there fails instead of
+    silently using the caller's own default cluster."""
+    if not pipe:
+        return ctx.runner.call(argv, env=env)
+    missing = str(workdir / PIPE_NO_CREDENTIALS)
+    return ctx.runner.pipeline([argv, *pipe], env=env, rest_env={"KUBECONFIG": missing, "TALOSCONFIG": missing})
+
+
+def talosctl(ctx: Context, args: Sequence[str], pipe: Sequence[Sequence[str]] = ()) -> int:
     require_tool("talosctl")
+    _require_stages(pipe)
     source = _existing(ctx, ctx.repo.talosconfig, TALOSCONFIG_HINT)
     with decrypted(ctx.sops, {"talosconfig": source}) as paths:
-        return ctx.runner.call(["talosctl", *args], env={"TALOSCONFIG": str(paths["talosconfig"])})
+        talosconfig = paths["talosconfig"]
+        return _launch(ctx, ["talosctl", *args], {"TALOSCONFIG": str(talosconfig)}, pipe, talosconfig.parent)
 
 
-def kubectl(ctx: Context, args: Sequence[str]) -> int:
+def kubectl(ctx: Context, args: Sequence[str], pipe: Sequence[Sequence[str]] = ()) -> int:
     require_tool("kubectl")
+    _require_stages(pipe)
     source = _existing(ctx, ctx.repo.kubeconfig, KUBECONFIG_HINT)
     with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
-        return ctx.runner.call(["kubectl", *args], env={"KUBECONFIG": str(paths["kubeconfig"])})
+        kubeconfig = paths["kubeconfig"]
+        return _launch(ctx, ["kubectl", *args], {"KUBECONFIG": str(kubeconfig)}, pipe, kubeconfig.parent)
 
 
 KUBECONFIG_PLACEHOLDER = "{kubeconfig}"
 
 
-def with_kubeconfig(ctx: Context, argv: Sequence[str], extra: Sequence[str] = ()) -> int:
-    """Run any program with the decrypted kubeconfig in KUBECONFIG. In `argv` (not in `extra`),
+def with_kubeconfig(
+    ctx: Context, argv: Sequence[str], extra: Sequence[str] = (), pipe: Sequence[Sequence[str]] = ()
+) -> int:
+    """Run any program with the decrypted kubeconfig in KUBECONFIG. In `argv` (not in `extra` or `pipe`),
     every occurrence of {kubeconfig} is replaced by the file's path."""
     program, *args = argv
     require_tool(program)
+    _require_stages(pipe)
     source = _existing(ctx, ctx.repo.kubeconfig, KUBECONFIG_HINT)
     with decrypted(ctx.sops, {"kubeconfig": source}) as paths:
-        kubeconfig = str(paths["kubeconfig"])
-        filled = [arg.replace(KUBECONFIG_PLACEHOLDER, kubeconfig) for arg in args]
-        return ctx.runner.call([program, *filled, *extra], env={"KUBECONFIG": kubeconfig})
+        kubeconfig = paths["kubeconfig"]
+        filled = [arg.replace(KUBECONFIG_PLACEHOLDER, str(kubeconfig)) for arg in args]
+        return _launch(ctx, [program, *filled, *extra], {"KUBECONFIG": str(kubeconfig)}, pipe, kubeconfig.parent)
 
 
 def shell(ctx: Context, program: str | None = None) -> int:

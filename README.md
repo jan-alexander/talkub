@@ -102,6 +102,11 @@ shortcuts:
     run: [k, -n, argocd, get, applications]
   extensions:
     run: [t, -n, "{node}", get, extensions]
+  extension-names:
+    run: [t, -n, "{node}", get, extensions, -o, json]
+    pipe:
+      - [jq, -r, .spec.metadata.name]
+      - [sort]
   grafana:
     portForward: {namespace: monitoring, service: grafana, ports: ["3000:80"]}
   k9s:
@@ -147,6 +152,17 @@ is the first argument after the shortcut name (`talkub run extensions cp-01 -o y
 left out in a cluster with a single node. Other braces, like kubectl's `-o jsonpath={.items[0]}`,
 are left alone; an unknown `{node.<field>}` is reported when the shortcuts are loaded. The listing
 shows such shortcuts as `extensions <node>`.
+
+`run` and `kubernetes` shortcuts can feed their output through further programs with `pipe:`, a list
+of stages in the same list form (`{node}` placeholders work there too). Arguments after the name go
+to the first stage. Only the first stage gets the cluster credentials: in the others `KUBECONFIG`
+and `TALOSCONFIG` point at a missing file, so a `kubectl` or `talosctl` there fails instead of
+reaching whatever cluster your own configuration selects; `{kubeconfig}` is not allowed in `pipe:`.
+If a later stage really needs the cluster, use a `kubernetes` shortcut with `[sh, -c, "…"]`. The
+exit code is that of the rightmost failing stage (like `set -o pipefail`); an earlier stage that
+stops only because a later one closed its input (`… | head`) does not count as failing. The listing
+shows such shortcuts with the kind `run |` or `kubernetes |`. For one-off pipes, pipe
+`talkub run <name>` in your own shell.
 
 `--print` and `--follow` go before the name; everything after the name belongs to the shortcut,
 and only `run` and `kubernetes` shortcuts accept anything there.

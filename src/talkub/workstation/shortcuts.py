@@ -65,15 +65,18 @@ def _sources() -> str:
 
 
 def listing(entries: Mapping[str, tuple[Shortcut, Origin]]) -> list[str]:
-    """One aligned line per shortcut: name (with `<node>` if it takes one), kind, description, origin."""
+    """One aligned line per shortcut: name (with `<node>` if it takes one), kind (with `|` if piped),
+    description, origin."""
     if not entries:
         return []
     shown = {name: f"{name} <node>" if needs_node(s) else name for name, (s, _) in entries.items()}
+    kinds = {name: f"{s.kind} |" if s.pipe else s.kind for name, (s, _) in entries.items()}
     width = max(len(text) for text in shown.values())
-    kind_width = max(len(s.kind) for s, _ in entries.values())
+    kind_width = max(len(text) for text in kinds.values())
     text_width = max(len(s.description or "") for s, _ in entries.values())
     return [
-        f"{shown[name]:<{width}}  {s.kind:<{kind_width}}  {s.description or '':<{text_width}}  {_ORIGIN_LABELS[origin]}"
+        f"{shown[name]:<{width}}  {kinds[name]:<{kind_width}}  "
+        f"{s.description or '':<{text_width}}  {_ORIGIN_LABELS[origin]}"
         for name, (s, origin) in sorted(entries.items())
     ]
 
@@ -207,12 +210,13 @@ def run(
     if follow and shortcut.kind != "job":
         raise ValidationError(f"--follow only applies to job shortcuts, {name} is {shortcut.kind}")
 
-    argv = shortcut.argv
+    argv, pipe = shortcut.argv, shortcut.pipe
     if needs_node(shortcut):
         # Resolved from .talkub.yaml alone, so a wrong node is reported before anything is decrypted.
         settings = ctx.repo.load_settings()
         node, extra = pick_node(settings, name, extra)
         argv = tuple(fill_node(argv, settings, node))
+        pipe = tuple(tuple(fill_node(stage, settings, node)) for stage in pipe)
 
     if shortcut.kind == "secret":
         return _secret(ctx, shortcut, print_value)
@@ -221,9 +225,9 @@ def run(
     if shortcut.kind == "run":
         tool, *args = argv
         passthrough = access.kubectl if tool in _KUBECTL else access.talosctl
-        return passthrough(ctx, [*args, *extra])
+        return passthrough(ctx, [*args, *extra], pipe)
     if shortcut.kind == "kubernetes":
-        return access.with_kubeconfig(ctx, argv, extra)
+        return access.with_kubeconfig(ctx, argv, extra, pipe)
     return _port_forward(ctx, shortcut)
 
 
