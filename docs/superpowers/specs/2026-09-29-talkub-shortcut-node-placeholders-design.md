@@ -62,8 +62,10 @@ Ob `mgmt` gesetzt ist, zeigt sich erst beim Aufruf.
 Ein Shortcut *braucht einen Node*, wenn mindestens eines seiner konfigurierten Argumente einen
 `{node…}`-Platzhalter enthält. Dann gilt beim Aufruf `talkub run <name> [args...]`:
 
-1. Ist das erste Extra-Argument vorhanden, ist es der Node-Name. Unbekannter Name →
-   `error: unknown node 'cp-9'`, `hint: one of cp-01, cp-02, w-01`.
+1. Ist das erste Extra-Argument vorhanden und beginnt es nicht mit `-`, ist es der Node-Name.
+   Unbekannter Name → `error: unknown node 'cp-9'`, `hint: one of cp-01, cp-02, w-01`.
+   Ein Argument mit führendem `-` ist eine Option (Node-Namen sind DNS-Labels und beginnen nie mit
+   `-`); dann gilt der Node als weggelassen, z. B. `talkub run ext -o yaml` im Ein-Node-Cluster.
 2. Fehlt es und hat der Cluster genau einen Node, wird dieser genommen.
 3. Fehlt es und hat der Cluster mehrere (oder keine) Nodes →
    `error: shortcut ext needs a node`, `hint: one of cp-01, cp-02, w-01`
