@@ -38,7 +38,8 @@ Shell completion (commands, options and shortcut names for `talkub run`):
     eval "$(talkub completion bash)"    # in ~/.bashrc
     talkub completion fish > ~/.config/fish/completions/talkub.fish
 
-Arguments after `talkub t`/`talkub k` and after a shortcut name are not completed.
+Arguments after `talkub t`/`talkub k` are not completed; after a shortcut name only the node of a
+shortcut with `{node}` placeholders is.
 
 ## Key model
 
@@ -99,6 +100,8 @@ shortcuts:
     job: {namespace: prod, cronjob: backup, follow: true}
   argocd-apps:
     run: [k, -n, argocd, get, applications]
+  extensions:
+    run: [t, -n, "{node}", get, extensions]
   grafana:
     portForward: {namespace: monitoring, service: grafana, ports: ["3000:80"]}
   k9s:
@@ -110,6 +113,7 @@ shortcuts:
     talkub run --print db-password          # write it to stdout instead
     talkub run --follow backup              # start the job, stream its logs
     talkub run argocd-apps -o wide          # arguments after the name are passed on verbatim
+    talkub run extensions cp-01             # a {node} shortcut takes the node first
     talkub run --save-global argocd-apps    # move it from .talkub.yaml to the global pool
 
 Each shortcut has exactly one kind:
@@ -134,6 +138,15 @@ Each shortcut has exactly one kind:
   detach, like `open -a Lens`, do not work). Such a shortcut hands cluster credentials to the
   program it names, from `.talkub.yaml` as well as from the global pool: check shortcuts in repos
   you did not write.
+
+`run` and `kubernetes` shortcuts can refer to a node without naming it, so they also work as
+global shortcuts. In the configured arguments, `{node}` (or `{node.addr}`) becomes the node's
+`mgmt` address, or its `ip` if `mgmt` is not set; `{node.name}`, `{node.ip}`, `{node.mgmt}` and
+`{node.role}` give the single field (`{node.mgmt}` is an error for a node without one). The node
+is the first argument after the shortcut name (`talkub run extensions cp-01 -o yaml`); it may be
+left out in a cluster with a single node. Other braces, like kubectl's `-o jsonpath={.items[0]}`,
+are left alone; an unknown `{node.<field>}` is reported when the shortcuts are loaded. The listing
+shows such shortcuts as `extensions <node>`.
 
 `--print` and `--follow` go before the name; everything after the name belongs to the shortcut,
 and only `run` and `kubernetes` shortcuts accept anything there.

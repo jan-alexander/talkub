@@ -81,9 +81,9 @@ app.command("rotate-ca")(rotate_cli.rotate_ca)
 app.command("completion")(completion.completion)
 
 RUN_USAGE = """\
-usage: talkub run                                       list the shortcuts (project and global)
-       talkub run [--print] [--follow] <name> [args...]  run one
-       talkub run --save-global [--force] <name>         move a project shortcut to the global pool
+usage: talkub run                                                list the shortcuts (project and global)
+       talkub run [--print] [--follow] <name> [<node>] [args...]  run one
+       talkub run --save-global [--force] <name>                  move a project shortcut to the global pool
 
   --print        secret: write the value to stdout instead of the clipboard
   --follow       job: wait for the pod, stream its logs, exit with the job's result
@@ -92,13 +92,17 @@ usage: talkub run                                       list the shortcuts (proj
 
 Shortcuts come from .talkub.yaml and the global pool ($XDG_CONFIG_HOME/talkub/shortcuts.yaml);
 a project shortcut hides a global one with the same name. Options go before <name>; arguments
-after it are passed on verbatim (run and kubernetes shortcuts only)."""
+after it are passed on verbatim (run and kubernetes shortcuts only). A shortcut with {node}
+placeholders takes the node name as its first argument (optional with a single node)."""
 
 
 @app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def _run_help(
     # Declared only for --help and shell completion; run_shortcut() parses the real arguments.
     name: str = typer.Argument(None, autocompletion=completion.shortcut_names, help="Shortcut to run."),
+    node: str = typer.Argument(
+        None, autocompletion=completion.node_names, help="Node, for shortcuts with {node} placeholders."
+    ),
     print_value: bool = typer.Option(False, "--print", help="secret: write the value to stdout."),
     follow: bool = typer.Option(False, "--follow", help="job: stream the logs, exit with the job's result."),
     save_global: bool = typer.Option(False, "--save-global", help="Move <name> to the global pool."),

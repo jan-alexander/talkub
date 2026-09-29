@@ -9,6 +9,7 @@ import typer
 from typer.completion import completion_init, get_completion_script
 
 from talkub.config import find_repo
+from talkub.config.shortcuts import needs_node
 from talkub.core.errors import TalkubError
 from talkub.workstation import shortcuts
 
@@ -48,4 +49,22 @@ def shortcut_names(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]
         (name, shortcut.description or shortcut.kind)
         for name, (shortcut, _) in sorted(entries.items())
         if name.startswith(incomplete)
+    ]
+
+
+def node_names(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
+    """Candidates for `talkub run <name> <TAB>`: node names, if <name> is a shortcut with {node} placeholders."""
+    name = ctx.params.get("name")
+    try:
+        repo = find_repo(Path.cwd(), _repo_option(ctx))
+        entry = shortcuts.available(repo).get(name) if name else None
+        if entry is None or not needs_node(entry[0]):
+            return []
+        nodes = repo.load_settings().nodes
+    except TalkubError:
+        return []
+    return [
+        (node, f"{spec.role} {spec.mgmt or spec.ip}")
+        for node, spec in sorted(nodes.items())
+        if node.startswith(incomplete)
     ]
