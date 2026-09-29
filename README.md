@@ -156,8 +156,10 @@ shows such shortcuts as `extensions <node>`.
 `run` and `kubernetes` shortcuts can feed their output through further programs with `pipe:`, a list
 of stages in the same list form (`{node}` placeholders work there too). Arguments after the name go
 to the first stage. Only the first stage gets the cluster credentials: in the others `KUBECONFIG`
-and `TALOSCONFIG` point at a missing file, so a `kubectl` or `talosctl` there fails instead of
-reaching whatever cluster your own configuration selects; `{kubeconfig}` is not allowed in `pipe:`.
+and `TALOSCONFIG` point at a missing file, so a `kubectl` or `talosctl` there has no cluster
+configured (kubectl falls back to an unauthenticated `localhost:8080`, talosctl finds no endpoints)
+instead of reaching whatever cluster your own configuration selects; `{kubeconfig}` is not allowed
+in `pipe:`.
 If a later stage really needs the cluster, use a `kubernetes` shortcut with `[sh, -c, "…"]`. The
 exit code is that of the rightmost failing stage (like `set -o pipefail`); an earlier stage that
 stops only because a later one closed its input (`… | head`) does not count as failing. The listing
