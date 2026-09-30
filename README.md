@@ -199,6 +199,9 @@ pool (the file's comments are kept); `--force` replaces a global shortcut of the
 
 ## Nodes and machine configs
 
+Adding control planes, replacing a machine, changing an address, removing a node:
+[nodes](docs/nodes.md).
+
     talkub node add w-01 --ip 10.0.0.11 --role worker \
         --static 10.0.0.11/24 --gateway 10.0.0.1 --mac aa:bb:cc:dd:ee:ff
     talkub image add siderolabs/intel-ucode      # extensions per platform (metal, hcloud)
@@ -271,6 +274,9 @@ Step by step, with version rules and troubleshooting: [upgrading](docs/upgrading
 
 When something is broken, or a node got a new disk: [debugging Talos](docs/debugging-talos.md) and
 [debugging Kubernetes](docs/debugging-kubernetes.md).
+
+Backups (repo, etcd snapshots, app data) and rebuilding a node or the whole cluster:
+[backup and recovery](docs/backup-and-recovery.md).
 
     talkub versions                            # target vs. running vs. latest: Talos, Kubernetes, every chart app
     talkub versions --offline                  # skip the latest-version lookups (no network)

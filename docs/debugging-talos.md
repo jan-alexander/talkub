@@ -53,7 +53,7 @@ How to read `talkub status`:
 
 | Column      | Value              | Meaning                                                                              |
 | ----------- | ------------------ | ------------------------------------------------------------------------------------ |
-| `TALOS`     | `unreachable`      | talosctl got no answer from the node's address, see [2](#2-node-unreachable)         |
+| `TALOS`     | `unreachable`      | talosctl got no answer from the node's address, see [3](#3-node-unreachable)         |
 | `TALOS`     | `v1.14.2 (want …)` | the node runs another version than `.talkub.yaml`: `talkub upgrade talos`            |
 | `SCHEMATIC` | `abc… (want def…)` | other extensions than the target: `talkub upgrade talos` rolls them out              |
 | `CONFIG`    | `changes`          | the rendered config differs from the node's: `talkub plan <node>` shows the diff     |
