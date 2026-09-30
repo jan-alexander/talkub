@@ -51,6 +51,9 @@ shortcut with `{node}` placeholders is.
   → `TALKUB_IDENTITY` → `~/.config/talkub/identities/`.
 - Keep at least two recipients (e.g. YubiKey + offline backup key). There is no passphrase recovery.
 
+Admins, SOPS files, Sealed Secrets, rotation and what to do when a key leaks:
+[handling secrets](docs/secrets.md).
+
 ## Quick start
 
 Step by step from a node in maintenance mode to a running cluster (repo, identity, charts,
@@ -307,6 +310,7 @@ apply it to the nodes.
 
 Sealing uses the controller's live certificate and falls back to `bootstrap/sealed-secrets.pem`
 when the cluster is unreachable.
+Prefer `--prompt` or `--from-file` over `--from-literal`; more in [handling secrets](docs/secrets.md).
 
 ## Tailscale as the only admin path
 
