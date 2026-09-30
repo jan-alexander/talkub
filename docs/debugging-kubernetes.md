@@ -113,8 +113,8 @@ Things to check, in this order:
    errors, `talkub k -n argocd logs statefulset/argocd-application-controller` for sync errors.
 
 A bad change is undone with `git revert` and a push. `prune: true` removes resources that were
-deleted from the repo; an app whose file is removed from `gitops/apps` is deleted with its
-resources.
+deleted from the repo. An app whose file is removed from `gitops/apps` takes its resources with it
+only if it has the `resources-finalizer.argocd.argoproj.io` finalizer; see [apps](apps.md#7-remove-an-app).
 
 ## 5. Sealed Secrets
 

@@ -71,6 +71,20 @@ The target must be empty (a `.git` is fine) and the root of its own git reposito
 refuses a directory inside another git repository, since Argo CD reads `gitops/apps` relative to the
 repo root.
 
+## Guides
+
+| Guide                                                | For                                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------------------- |
+| [Getting started](docs/getting-started.md)           | from a node in maintenance mode to a running cluster                    |
+| [Apps](docs/apps.md)                                 | Helm charts and manifests with Argo CD: add, update, reach, remove      |
+| [Handling secrets](docs/secrets.md)                  | admins, SOPS files, Sealed Secrets, rotation, leaks                     |
+| [Nodes](docs/nodes.md)                               | add workers and control planes, replace, re-address, remove nodes       |
+| [Tailscale](docs/tailscale.md)                       | the tailnet as the only admin path; the operator for ingress and egress |
+| [Upgrading](docs/upgrading.md)                       | Talos, Kubernetes and chart upgrades                                    |
+| [Backup and recovery](docs/backup-and-recovery.md)   | etcd snapshots, app data, rebuilding a node or the cluster              |
+| [Debugging Talos](docs/debugging-talos.md)           | nodes, boot, disks, etcd                                                |
+| [Debugging Kubernetes](docs/debugging-kubernetes.md) | pods, Argo CD, Sealed Secrets, storage, DNS                             |
+
 ## Daily use
 
     talkub t get members               # talosctl, config decrypted only for this call
@@ -318,26 +332,23 @@ Sealing uses the controller's live certificate and falls back to `bootstrap/seal
 when the cluster is unreachable.
 Prefer `--prompt` or `--from-file` over `--from-literal`; more in [handling secrets](docs/secrets.md).
 
-## Tailscale as the only admin path
+## Tailscale
 
     talkub init homelab … --tailscale --tailnet tail1234.ts.net     # new cluster: both steps at once
-    # existing cluster:
-    talkub tailscale enable --tailnet tail1234.ts.net   # auth key via prompt or --authkey-file
+    talkub tailscale enable --tailnet tail1234.ts.net   # existing cluster: extension + auth key
     talkub apply && talkub upgrade talos                # configures, then installs the extension (via LAN)
-    talkub tailscale lockdown                           # firewall + tailnet names for talosctl/kubectl
-    talkub tailscale lockdown --use-ips                 # …or tailnet IPs, for clients without MagicDNS
+    talkub tailscale lockdown [--use-ips]               # firewall + tailnet addresses for talosctl/kubectl
     talkub apply                                        # activates the firewall (via the tailnet)
 
-The nodes keep their LAN/public cluster endpoint and do not use Tailscale DNS; only admin
-clients go through the tailnet. Use a tagged, reusable, pre-approved auth key.
-On a running cluster, `lockdown` first checks that every node answers via its tailnet
-name, and refuses if one does not, showing talosctl's error. talosctl resolves names itself
-and can miss MagicDNS names that `tailscale status` and the OS see (e.g. on macOS); if the
-error is a name resolution failure, use `--use-ips`. `lockdown --node-cidr` must cover every node's IP.
+    talkub tailscale operator enable [--rotate-credentials]           # the operator (needs the CoreDNS takeover)
+    talkub tailscale expose grafana --service monitoring/grafana --port 80   # https://grafana.<tailnet>
+    talkub tailscale unexpose grafana
+    talkub tailscale egress add db --fqdn db.tail1234.ts.net           # pods reach tailnet hosts
+    talkub tailscale egress remove db
 
-Rollback: delete `talos/patches/firewall.yaml`, reset `mgmt` in `.talkub.yaml` to the
-LAN addresses (or remove the entries), point the talosconfig endpoints/nodes and the
-kubeconfig `server` back at the LAN with `talkub sops edit`, then run `talkub apply` via LAN.
+After `lockdown` and `apply`, the Talos and Kubernetes APIs are reachable only via the tailnet; the
+nodes keep their LAN/public addresses for cluster traffic. Admin console setup, what the firewall
+allows, rollback, the operator, ingress, egress and troubleshooting: [Tailscale](docs/tailscale.md).
 
 ## CoreDNS
 
@@ -361,78 +372,6 @@ running `talkub apply` or `talkub upgrade` again: Talos health fails while both 
 deployments exist. `talkub tailscale operator enable` also
 requires the takeover to be done first (it extends the CoreDNS values with a stub zone for the
 tailnet).
-
-## Tailscale operator
-
-    talkub tailscale operator enable                      # OAuth client via prompt, --client-id, --client-secret-file
-    talkub tailscale operator enable --rotate-credentials  # replace the OAuth client, keep everything else
-
-Prerequisites: `talkub tailscale enable` (the tailnet is known) and `talkub coredns takeover`
-(Argo CD manages CoreDNS, so its values can carry the operator's stub zone).
-
-In the Tailscale admin console, create an OAuth client with scopes Devices Core, Auth Keys and
-Services (write), tagged `tag:k8s-operator`, and add to the tailnet ACL:
-
-    "tagOwners": {"tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"]}
-
-`operator enable` seals the OAuth client into
-`gitops/manifests/tailscale/operator-oauth.sealed.yaml` and writes the Helm release
-(`tailscale-operator`), its manifests directory app and a `DNSConfig` that points the CoreDNS
-stub zone for `<tailnet>` at the operator's nameserver. Run it again without
-`--rotate-credentials` and it refuses ("already enabled"); with it, only the sealed secret is
-replaced. The `tailscale` namespace runs with `pod-security.kubernetes.io/enforce: privileged`
-because the operator's egress/ingress proxy pods need a privileged init container and NET_ADMIN
-(only that namespace).
-
-### Egress
-
-    talkub tailscale egress add db --fqdn db.tail1234.ts.net
-    talkub tailscale egress add db --ip 100.64.1.2 --namespace app   # namespace must already exist
-    talkub tailscale egress remove db
-
-Writes (or removes) `gitops/manifests/tailscale/egress/<name>.yaml`: an `ExternalName` Service
-annotated `tailscale.com/tailnet-fqdn` (or `tailscale.com/tailnet-ip`), which the operator points
-at the tailnet target. After commit, push and sync, pods reach it both by its MagicDNS name
-(`db.tail1234.ts.net`, resolved via the CoreDNS stub zone) and via the cluster Service
-(`db.tailscale.svc.cluster.local`). The operator rewrites the Services' `spec.externalName`, so
-the `tailscale-operator-config` app ignores that field (`ignoreDifferences`) instead of reverting it.
-
-If the cluster Service works but the MagicDNS name still returns NXDOMAIN after the egress proxy is
-running, the operator's nameserver may have missed the update of its records (observed with
-operator 1.102.4: it read an empty `dnsrecords` ConfigMap and did not reload). Check the records
-with `talkub k -n tailscale get cm dnsrecords -o yaml`; if the name is listed, restart the
-nameserver: `talkub k -n tailscale delete pod -l app=nameserver`.
-
-### Ingress
-
-    talkub tailscale expose grafana --service monitoring/grafana --port 80
-    talkub tailscale expose grafana --service monitoring/grafana --port 80 --path /api
-    talkub tailscale unexpose grafana
-
-Writes (or removes) `gitops/manifests/tailscale/ingress/<name>.yaml`: an Ingress
-(`ingressClassName: tailscale`) that publishes the Service at `https://<name>.<tailnet>`, either as
-a `defaultBackend` or, with `--path`, a single path-based rule. `--service` is `<namespace>/<service>`
-(a Service in another namespace than the Ingress's own is not supported by Kubernetes); `--port` is
-a number (1-65535) or the Service's named port. The backend must speak HTTP — the Tailscale proxy
-terminates TLS in front of it — and HTTPS certificates must be enabled for the tailnet in the admin
-console. After writing the file, commit and push `gitops/`.
-
-For an app installed via its own Helm chart (e.g. Argo CD itself), configure the ingress through the
-chart's values instead of `talkub tailscale expose`. Observed working with the Argo CD chart:
-
-    configs:
-      params:
-        server.insecure: true      # argocd-server would otherwise redirect HTTP to HTTPS and loop,
-                                    # since the Tailscale proxy terminates TLS and talks HTTP to it
-    server:
-      ingress:
-        enabled: true
-        ingressClassName: tailscale
-        hostname: argocd
-        tls: true
-
-See the operator's own docs for `tailscale.com/experimental-forward-cluster-traffic-via-ingress`
-if cluster-internal clients also need to reach the Ingress by its MagicDNS name.
 
 ## Rotating the Talos CA
 
@@ -490,9 +429,37 @@ Three checks, in order, each key-free:
 The hook runs `talkub check && talkub lint --offline` before every commit; `talkub init` installs
 it automatically. Bypass it once with `git commit --no-verify`.
 
-## Admin changes
+## Team and CI
 
-    talkub admin remove alice && talkub keys rotate
+A new admin runs `talkub identity new` and sends the printed public key; an existing admin runs
+`talkub admin add age1… --name <them>` and pushes `keys/`. When someone leaves:
+`talkub admin remove <name> && talkub keys rotate`, then change the secrets they knew. Details in
+[handling secrets](docs/secrets.md#3-admins).
+
+Everyone should run the same talkub version: newer versions can change the `.talkub.yaml` format
+(see _Version skew_ above), and the pre-commit hook runs whichever talkub is installed.
+
+`talkub check` and `talkub lint` need no key, so CI can run them on every push and pull request
+without any secret. The job needs talkub, `helm` and `kubeconform` (lint prints a `skipped:` line for
+a missing tool instead of failing, so install both), and network access for the chart repos and
+schemas:
+
+```yaml
+# .github/workflows/check.yml in the cluster repo
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: | # talkub (see Install), helm and kubeconform onto PATH
+          ...
+      - run: talkub check && talkub lint
+```
+
+This is also where Renovate PRs get linted before anyone merges them. Jobs that need the master
+key (e.g. `talkub sops decrypt`) get it via `SOPS_AGE_KEY` from a CI secret; keep them rare, since
+that key decrypts every SOPS file.
 
 ## Development
 

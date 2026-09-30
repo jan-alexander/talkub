@@ -200,7 +200,7 @@ git add -A && git commit -m "feat: tailscale lockdown" && git push
 - `lockdown` refuses if a node does not answer via the tailnet.
 - The nodes keep their LAN endpoint; only admin clients go through the tailnet.
 - For a new cluster, `talkub init … --tailscale --tailnet tail1234.ts.net` does 4a right away.
-- Rollback: see [Tailscale as the only admin path](../README.md#tailscale-as-the-only-admin-path).
+- Rollback, firewall rules and troubleshooting: [Tailscale](tailscale.md).
 
 ### 4b. Apps in the tailnet (optional, Tailscale operator)
 
@@ -221,5 +221,4 @@ git add gitops && git commit -m "feat: tailscale operator" && git push
 ```
 
 The operator needs the CoreDNS takeover (new repos have it; older ones run `talkub coredns takeover`).
-`expose` needs HTTPS certificates enabled for the tailnet. Details: [Tailscale
-operator](../README.md#tailscale-operator).
+`expose` needs HTTPS certificates enabled for the tailnet. Details: [Tailscale](tailscale.md#2-the-tailscale-operator).
