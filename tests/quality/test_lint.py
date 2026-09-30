@@ -22,6 +22,7 @@ from talkub.quality.lint import (
     LintReport,
     _probe_version,
     cache_dir,
+    generator_files,
     kubeconform_argv,
     lint_helm_apps,
     lint_manifests,
@@ -220,6 +221,42 @@ def test_manifest_files_empty_when_no_gitops_dirs(empty_repo):
     assert manifest_files(empty_repo) == []
 
 
+def test_manifest_files_skip_kustomize_generator_inputs(empty_repo):
+    app = empty_repo.root / "gitops" / "manifests" / "app"
+    (app / "daten").mkdir(parents=True)
+    (app / "kustomization.yaml").write_text(
+        "resources:\n"
+        "  - deployment.yaml\n"
+        "configMapGenerator:\n"
+        "  - name: cfg\n"
+        "    files:\n"
+        "      - config.yaml\n"
+        "      - app.yaml=daten/settings.yml\n"
+        "    envs:\n"
+        "      - env.yaml\n"
+        "secretGenerator:\n"
+        "  - name: sec\n"
+        "    env: secret.yaml\n"
+    )
+    for name in ("deployment.yaml", "config.yaml", "daten/settings.yml", "env.yaml", "secret.yaml"):
+        (app / name).write_text("x: 1\n")
+    files = [empty_repo.rel(p) for p in manifest_files(empty_repo)]
+    assert files == ["gitops/manifests/app/deployment.yaml", "gitops/manifests/app/kustomization.yaml"]
+
+
+def test_generator_files_tolerates_broken_or_odd_kustomization(tmp_path):
+    broken = tmp_path / "kustomization.yaml"
+    broken.write_text("resources: [\n")
+    assert generator_files(broken) == set()
+    odd = tmp_path / "Kustomization"
+    odd.write_text("- not\n- a mapping\n")
+    assert generator_files(odd) == set()
+    assert generator_files(tmp_path / "missing.yaml") == set()
+    sloppy = tmp_path / "kustomization.yml"
+    sloppy.write_text("configMapGenerator:\n  - name: x\n    files: [1, {a: b}]\n  - plain\n")
+    assert generator_files(sloppy) == set()
+
+
 def test_kubeconform_argv_contents(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     cache = tmp_path / "cache" / "talkub" / "kubeconform"
@@ -244,6 +281,30 @@ def test_kubeconform_argv_contents(monkeypatch, tmp_path):
             "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
         ),
     ]
+
+
+def test_kubeconform_argv_puts_local_schemas_first(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    argv = kubeconform_argv("1.30.0", tmp_path / "schemas")
+    i = argv.index("-schema-location")
+    assert argv[i + 1] == str(tmp_path / "schemas" / "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json")
+    assert argv[i + 2 : i + 4] == ["-schema-location", "default"]
+    assert argv[: argv.index("-cache")] == kubeconform_argv("1.30.0")[: argv.index("-cache")]
+
+
+def test_lint_manifests_uses_repo_schemas_dir_when_present(empty_repo, fake_bin, monkeypatch, tmp_path):
+    _manifest(empty_repo)
+    fake_bin("kubeconform", "true\n")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    runner = FakeRunner(outputs={"kubeconform": _kubeconform_json([]).encode()})
+    lint_manifests(Context.open(empty_repo, runner=runner), LintReport(), offline=False)
+    assert not any(str(empty_repo.schemas_dir) in arg for arg in runner.calls[1].argv)
+
+    empty_repo.schemas_dir.mkdir()
+    runner = FakeRunner(outputs={"kubeconform": _kubeconform_json([]).encode()})
+    lint_manifests(Context.open(empty_repo, runner=runner), LintReport(), offline=False)
+    argv = runner.calls[1].argv
+    assert argv[argv.index("-schema-location") + 1].startswith(str(empty_repo.schemas_dir))
 
 
 def _kubeconform_json(resources):

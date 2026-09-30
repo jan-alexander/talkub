@@ -12,12 +12,14 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ruamel.yaml.error import YAMLError
 from yamllint import linter
 from yamllint.config import YamlLintConfig, YamlLintConfigError
 
 from talkub.argocd.app_files import HelmSource, helm_sources
 from talkub.config import ChartSpec, Repo
 from talkub.context import Context
+from talkub.core import yamlio
 from talkub.core.ephemeral import private_tempdir
 from talkub.core.errors import ValidationError
 from talkub.core.findings import (
@@ -25,11 +27,14 @@ from talkub.core.findings import (
 )
 from talkub.helm.install import chart_ref
 
+# kubeconform's file-name template for CRD schemas: the same layout is used by the datree
+# catalog and by a cluster repo's own `gitops/schemas/` overrides.
+SCHEMA_TEMPLATE = "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+
 # CRD schemas not covered by the default (Kubernetes-owned) schema location.
-DATREE_LOCATION = (
-    "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
-    "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
-)
+DATREE_LOCATION = "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/" + SCHEMA_TEMPLATE
+
+KUSTOMIZATION_NAMES = ("kustomization.yaml", "kustomization.yml", "Kustomization")
 
 DEFAULT_YAMLLINT = """\
 # Managed by talkub. yamllint configuration for this cluster repo.
@@ -108,25 +113,78 @@ def cache_dir() -> Path:
     return root / "talkub" / "kubeconform"
 
 
-def manifest_files(repo: Repo) -> list[Path]:
-    """`gitops/apps/**` and `gitops/manifests/**` `*.y*ml`, excluding `*.sops.yaml`."""
+def _generator_paths(entries: object) -> list[str]:
+    """The `files`/`envs` (and legacy `env`) paths of one configMapGenerator/secretGenerator list.
+    A `files` entry may be `key=path`; only the path part is a file in the repo."""
+    paths: list[str] = []
+    if not isinstance(entries, list):
+        return paths
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for item in entry.get("files") or []:
+            if isinstance(item, str):
+                paths.append(item.split("=", 1)[1] if "=" in item else item)
+        for item in entry.get("envs") or []:
+            if isinstance(item, str):
+                paths.append(item)
+        if isinstance(entry.get("env"), str):
+            paths.append(entry["env"])
+    return paths
+
+
+def generator_files(kustomization: Path) -> set[Path]:
+    """Files a kustomization.yaml feeds into ConfigMaps/Secrets via its generators. They are data
+    (an app's YAML config, an env file), not Kubernetes manifests, so kubeconform must not see
+    them. An unreadable or malformed kustomization yields nothing; yamllint reports it anyway."""
+    try:
+        doc = yamlio.load(kustomization.read_text())
+    except (OSError, UnicodeDecodeError, YAMLError):
+        return set()
+    if not isinstance(doc, dict):
+        return set()
     files: set[Path] = set()
+    for key in ("configMapGenerator", "secretGenerator"):
+        for rel in _generator_paths(doc.get(key)):
+            files.add((kustomization.parent / rel).resolve())
+    return files
+
+
+def manifest_files(repo: Repo) -> list[Path]:
+    """`gitops/apps/**` and `gitops/manifests/**` `*.y*ml`, excluding `*.sops.yaml` and files a
+    kustomization.yaml in the same tree feeds into its configMap/secret generators."""
+    files: set[Path] = set()
+    excluded: set[Path] = set()
     for sub in ("apps", "manifests"):
         base = repo.gitops_dir / sub
         if not base.is_dir():
             continue
-        for path in base.rglob("*.y*ml"):
-            if path.is_file() and not path.name.endswith(".sops.yaml"):
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.name in KUSTOMIZATION_NAMES:
+                excluded |= generator_files(path)
+            if path.suffix in (".yaml", ".yml") and not path.name.endswith(".sops.yaml"):
                 files.add(path)
-    return sorted(files)
+    return sorted(path for path in files if path.resolve() not in excluded)
 
 
-def kubeconform_argv(version: str) -> list[str]:
-    """argv for `kubeconform -output json ...` (without the input files).
+def local_schemas(repo: Repo) -> Path | None:
+    """`gitops/schemas/` if the cluster repo has one: CRD schemas laid out like the datree catalog
+    (`<group>/<kind>_<version>.json`, kind in lower case) that win over the catalog, e.g. when the
+    catalog is outdated for the CRD version actually installed."""
+    return repo.schemas_dir if repo.schemas_dir.is_dir() else None
+
+
+def kubeconform_argv(version: str, schema_dir: Path | None = None) -> list[str]:
+    """argv for `kubeconform -output json ...` (without the input files). `schema_dir` (see
+    `local_schemas`) is consulted first; kubeconform falls through to the next location when a
+    schema file is missing there.
 
     Whether the check runs at all when offline (an empty schema cache skips it entirely) is
     decided by `lint_manifests`; kubeconform itself has no offline flag.
     """
+    local = ["-schema-location", str(schema_dir / SCHEMA_TEMPLATE)] if schema_dir is not None else []
     return [
         "kubeconform",
         "-output",
@@ -139,6 +197,7 @@ def kubeconform_argv(version: str) -> list[str]:
         version,
         "-cache",
         str(cache_dir()),
+        *local,
         "-schema-location",
         "default",
         "-schema-location",
@@ -292,7 +351,8 @@ def _run_kubeconform(
     """Run kubeconform once against `version` (already resolved by `_probe_version`) over `args`
     (repo-relative files, or `["-"]` with `input` on stdin). Shared by manifest linting (Task 2)
     and Helm-rendered app linting (Task 3)."""
-    result = ctx.runner.run(kubeconform_argv(version) + args, cwd=ctx.repo.root, check=False, input=input)
+    argv = kubeconform_argv(version, local_schemas(ctx.repo)) + args
+    result = ctx.runner.run(argv, cwd=ctx.repo.root, check=False, input=input)
     return parse_kubeconform(result.stdout.decode(), prefix, offline=offline)
 
 

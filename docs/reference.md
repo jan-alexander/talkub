@@ -390,7 +390,8 @@ Three checks, in order, each key-free:
   `*.yaml`/`*.yml` in the repo.
 - `gitops/apps/**` and `gitops/manifests/**` manifests validated with `kubeconform` (a `skipped:`
   line if `kubeconform` is not installed; `--offline` skips entirely if the local schema cache is
-  still empty).
+  still empty). Files a `kustomization.yaml` feeds into its `configMapGenerator`/`secretGenerator`
+  (`files`, `envs`) are data, not manifests, and are left to yamllint.
 - every Argo CD Application's Helm chart rendered with `helm template` and validated the same way
   (skipped entirely with `--offline`, or a `skipped:` line if `helm` is not installed).
 
@@ -400,6 +401,15 @@ Three checks, in order, each key-free:
 
 The hook runs `talkub check && talkub lint --offline` before every commit; `talkub init` installs
 it automatically. Bypass it once with `git commit --no-verify`.
+
+CRD schemas come from the [datree CRD catalog](https://github.com/datreeio/CRDs-catalog). When the
+catalog lags behind the CRD version your cluster runs (or lacks it), put the schema into
+`gitops/schemas/<group>/<kind>_<version>.json` (kind in lower case); that directory is consulted
+first and falls through to the catalog for everything else. Generate one from the installed CRD:
+
+    talkub k get crd imageupdaters.argocd-image-updater.argoproj.io -o json \
+      | jq '.spec.versions[] | select(.name == "v1alpha1") | .schema.openAPIV3Schema' \
+      > gitops/schemas/argocd-image-updater.argoproj.io/imageupdater_v1alpha1.json
 
 ## Team and CI
 

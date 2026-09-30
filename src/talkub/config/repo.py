@@ -66,6 +66,11 @@ class Repo:
     def gitops_dir(self) -> Path:
         return self.root / "gitops"
 
+    @property
+    def schemas_dir(self) -> Path:
+        """CRD JSON schemas for `talkub lint`, laid out like the datree catalog."""
+        return self.gitops_dir / "schemas"
+
     def rel(self, path: Path) -> str:
         return str(path.relative_to(self.root))
 
