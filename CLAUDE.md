@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 talkub is an admin CLI (Python 3.12+, Typer, ruamel.yaml, managed with uv) for a *separate* Talos Linux
 cluster repo: Argo CD app-of-apps, SOPS/age for infrastructure secrets, Sealed Secrets for app secrets.
 This repo holds only the tool; the cluster repo it manages is marked by `.talkub.yaml` and is scaffolded
-from `src/talkub/templates/repo/`. User-facing behavior of every command is documented in `README.md` —
-keep it in sync when behavior changes.
+from `src/talkub/templates/repo/`. User-facing behavior of every command is documented in `docs/reference.md`
+(the README is the overview; walkthroughs live in `docs/*.md`) — keep them in sync when behavior changes.
 
 ## Commands
 

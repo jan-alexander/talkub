@@ -13,7 +13,7 @@ The examples use cluster `homelab`, nodes `cp-01` and `w-01` and an app `podinfo
 `talkub k` (alias of `talkub kubectl`) runs kubectl with the decrypted kubeconfig; every argument is
 passed through. For many commands in a row, or for other tools (`k9s`, `stern`, `helm`), open
 `talkub shell`: it sets `KUBECONFIG` and `TALOSCONFIG` and removes both files on exit. Tools you use
-in every cluster fit into `kubernetes` shortcuts (see the README), e.g. `k9s: { kubernetes: [k9s] }`.
+in every cluster fit into `kubernetes` shortcuts (see the [reference](reference.md#shortcuts)), e.g. `k9s: { kubernetes: [k9s] }`.
 
 ## 1. First look
 
@@ -232,8 +232,8 @@ talkub k -n podinfo port-forward svc/podinfo 9898:9898          # bypass Ingress
   takeover is finished with `talkub coredns takeover --resume`.
 - **Service has no endpoints**: its `selector` does not match the pod labels, or no pod is `Ready`.
 - **Port-forward works, Ingress does not**: the problem is in front of the Service (Ingress,
-  Tailscale proxy, certificates). For Tailscale ingress/egress see the README's Tailscale operator
-  section.
+  Tailscale proxy, certificates). For Tailscale ingress/egress see
+  [Tailscale](tailscale.md#troubleshooting).
 - **Pods cannot reach anything, nodes `NotReady`**: the CNI (Flannel on Talos by default) is not
   running: `talkub k -n kube-system get pods -o wide | grep -i flannel` and its logs.
 

@@ -177,7 +177,7 @@ git add bootstrap/ && git commit -m "chore: back up sealed-secrets key" && git p
 
 ## 6. Reading secrets from the cluster
 
-For a value you need often, add a `secret` shortcut to `.talkub.yaml` (details in the README):
+For a value you need often, add a `secret` shortcut to `.talkub.yaml` (details in the [reference](reference.md#shortcuts)):
 
 ```yaml
 shortcuts:
@@ -225,7 +225,7 @@ ignores the plaintext names and `*.dec` files.
 | Admin leaves                          | `talkub admin remove <name> && talkub keys rotate`, commit everything; change the secret values they knew ([3](#3-admins)).                 |
 | Lost YubiKey / laptop (identity only) | Another admin (or the backup key) removes the lost recipient and adds your new one; `keys rotate` if the key could be used by someone else. |
 | Master key may have leaked            | `talkub keys rotate`, then change the secret values: old ciphertexts in git history are still readable.                                     |
-| Talos API CA or talosconfig exposed   | `talkub rotate-ca` (see the README).                                                                                                        |
+| Talos API CA or talosconfig exposed   | `talkub rotate-ca` (see the [reference](reference.md#rotating-the-talos-ca)).                                                               |
 | kubeconfig exposed                    | `talkub kubeconfig` fetches a fresh one; rotate the Kubernetes CA with Talos if the client cert must stop working.                          |
 | Repo deploy key / token exposed       | Revoke it at the git host, then `talkub repo credentials` and `talkub repo apply`.                                                          |
 | Tailscale auth key exposed            | Revoke it in the admin console, then `talkub sops edit talos/patches/tailscale.sops.yaml` and `talkub apply`.                               |

@@ -1,500 +1,176 @@
-# talkub
+# talkub 🛰️
 
-Admin CLI for a Talos Linux cluster repo: ArgoCD app-of-apps, SOPS/age for
-infrastructure secrets, Sealed Secrets for app secrets. The tool lives outside
-the cluster repo and is installed with uv.
+**Your whole Talos Kubernetes cluster in one git repo, and one CLI that runs it safely.**
 
-## Install
+talkub is an admin CLI for [Talos Linux](https://www.talos.dev) clusters that are run the GitOps
+way. One repo holds everything: machine configs, secrets, and every app Argo CD deploys. talkub
+takes care of the tedious and dangerous parts: key handling, rendering configs, bootstrapping,
+upgrades and access control. That leaves you with `git push` and a handful of commands you can
+remember.
 
-From a GitHub release (built wheel, no build step on install):
-
-    gh release download --repo jan-alexander/talkub --pattern '*.whl' --dir /tmp/talkub
-    uv tool install --compile-bytecode /tmp/talkub/talkub-*.whl
-
-Or as a single compiled binary (Nuitka; no Python needed; macOS arm64, Linux amd64/arm64):
-
-    gh release download --repo jan-alexander/talkub --pattern 'talkub-*-darwin-arm64' --dir /tmp/talkub
-    install -m 755 /tmp/talkub/talkub-*-darwin-arm64 ~/.local/bin/talkub
-
-The binary unpacks itself once per build into `~/.cache/talkub/bin/` (the first start is slower). The
-Linux binaries need glibc 2.35 or newer. Build one locally with `scripts/build-binary.sh` (needs a C
-compiler; writes `dist/talkub-<version>-<os>-<arch>`).
-
-Or straight from source:
-
-    uv tool install git+https://github.com/jan-alexander/talkub.git
-
-    # needs: age, sops, talosctl (v1.14 or newer; init refuses older), helm (and kubectl, kubeseal later)
-    # optional: age-plugin-yubikey, age-plugin-se
-
-Releases are created by the manually triggered `Release` workflow (Actions tab, or
-`gh workflow run release.yml`): it takes the version from `pyproject.toml`, aborts if release
-`v<version>` already exists, runs lint and tests, then publishes wheel, sdist, the binaries and
-`SHA256SUMS`. Bump the version first with `uv version --bump patch|minor|major`.
-
-Shell completion (commands, options and shortcut names for `talkub run`):
-
-    eval "$(talkub completion zsh)"     # in ~/.zshrc (after compinit)
-    eval "$(talkub completion bash)"    # in ~/.bashrc
-    talkub completion fish > ~/.config/fish/completions/talkub.fish
-
-Arguments after `talkub t`/`talkub k` are not completed; after a shortcut name only the node of a
-shortcut with `{node}` placeholders is.
-
-## Key model
-
-- Every `*.sops.yaml` is encrypted to one **cluster master key**.
-- `keys/master.age` holds that key, encrypted to all admins in `keys/recipients.txt`.
-- Each admin has a personal identity (software key, YubiKey or Secure Enclave)
-  in `~/.config/talkub/identities/`.
-- Lookup order: `SOPS_AGE_KEY` / `SOPS_AGE_KEY_FILE` (the master key itself, for CI)
-  → `TALKUB_IDENTITY` → `~/.config/talkub/identities/`.
-- Keep at least two recipients (e.g. YubiKey + offline backup key). There is no passphrase recovery.
-
-Admins, SOPS files, Sealed Secrets, rotation and what to do when a key leaks:
-[handling secrets](docs/secrets.md).
-
-## Quick start
-
-Step by step from a node in maintenance mode to a running cluster (repo, identity, charts,
-Tailscale): [docs/getting-started.md](docs/getting-started.md).
-
-    talkub identity new --yubikey          # or --se / --software
-    talkub init homelab --endpoint https://10.0.0.10:6443 \
-        --node cp-01=10.0.0.10 --git-url https://git.example.com/homelab.git
-    cd homelab
-    talkub admin add age1... --name backup
-    talkub check && git init && git add -A && git commit -m "init cluster repo"
-
-The target must be empty (a `.git` is fine) and the root of its own git repository: `init` runs
-`git init -b main` only when there is none yet, leaves an existing repo's checked-out branch alone, and
-refuses a directory inside another git repository, since Argo CD reads `gitops/apps` relative to the
-repo root.
-
-## Guides
-
-| Guide                                                | For                                                                     |
-| ---------------------------------------------------- | ----------------------------------------------------------------------- |
-| [Getting started](docs/getting-started.md)           | from a node in maintenance mode to a running cluster                    |
-| [Apps](docs/apps.md)                                 | Helm charts and manifests with Argo CD: add, update, reach, remove      |
-| [Handling secrets](docs/secrets.md)                  | admins, SOPS files, Sealed Secrets, rotation, leaks                     |
-| [Nodes](docs/nodes.md)                               | add workers and control planes, replace, re-address, remove nodes       |
-| [Tailscale](docs/tailscale.md)                       | the tailnet as the only admin path; the operator for ingress and egress |
-| [Upgrading](docs/upgrading.md)                       | Talos, Kubernetes and chart upgrades                                    |
-| [Backup and recovery](docs/backup-and-recovery.md)   | etcd snapshots, app data, rebuilding a node or the cluster              |
-| [Debugging Talos](docs/debugging-talos.md)           | nodes, boot, disks, etcd                                                |
-| [Debugging Kubernetes](docs/debugging-kubernetes.md) | pods, Argo CD, Sealed Secrets, storage, DNS                             |
-
-## Daily use
-
-    talkub t get members               # talosctl, config decrypted only for this call
-    talkub k get pods -A               # kubectl
-    talkub shell                       # subshell with TALOSCONFIG/KUBECONFIG, removed on exit
-    talkub sops edit talos/secrets.sops.yaml
-
-`talkub k` needs `kubernetes/kubeconfig.sops.yaml`. It will be created by
-`talkub bootstrap` (phase 2, not yet available); until then place a kubeconfig
-with `talkub sops edit kubernetes/kubeconfig.sops.yaml`.
-
-`talkub sops edit` decrypts into a private temp file and opens it in
-`$SOPS_EDITOR` or `$EDITOR` (default `vi`); the editor never sees the master key.
-
-Inside `talkub shell`, `TALKUB_SESSION` holds the cluster name. zsh prompt example:
-
-    PROMPT='${TALKUB_SESSION:+(talkub:$TALKUB_SESSION) }'$PROMPT
-
-## Shortcuts
-
-Frequent commands can be named in `.talkub.yaml` (or in the global pool, see below) and run with
-`talkub run`:
-
-```yaml
-shortcuts:
-  db-password:
-    description: password of the app database
-    secret: { namespace: prod, name: db-creds, key: password }
-  headlamp-token:
-    description: fresh Headlamp login token
-    token: { namespace: headlamp, serviceAccount: headlamp, duration: 8h }
-  backup:
-    job: { namespace: prod, cronjob: backup, follow: true }
-  argocd-apps:
-    run: [k, -n, argocd, get, applications]
-  extensions:
-    run: [t, -n, "{node}", get, extensions]
-  extension-names:
-    run: [t, -n, "{node}", get, extensions, -o, json]
-    pipe:
-      - [jq, -r, .spec.metadata.name]
-      - [sort]
-  grafana:
-    portForward: { namespace: monitoring, service: grafana, ports: ["3000:80"] }
-  k9s:
-    kubernetes: [k9s, --readonly]
+```bash
+talkub init homelab --endpoint https://10.0.0.10:6443 --node cp-01=10.0.0.10 --git-url git@github.com:me/homelab.git
+talkub apply --insecure cp-01     # install Talos on the node
+talkub bootstrap                  # etcd, kubeconfig, CoreDNS, Sealed Secrets, Argo CD, the root app
+git push                          # from now on, Argo CD deploys whatever is in gitops/
 ```
 
-    talkub run                              # list: name, kind, description, origin
-    talkub run db-password                  # copy the secret value to the clipboard
-    talkub run --print db-password          # write it to stdout instead
-    talkub run headlamp-token               # copy a fresh ServiceAccount token to the clipboard
-    talkub run --follow backup              # start the job, stream its logs
-    talkub run argocd-apps -o wide          # arguments after the name are passed on verbatim
-    talkub run extensions cp-01             # a {node} shortcut takes the node first
-    talkub run --save-global argocd-apps    # move it from .talkub.yaml to the global pool
+## 🤯 The problem
 
-Each shortcut has exactly one kind:
+Talos is a great OS for Kubernetes: immutable, minimal, API-driven. A cluster built on it still
+leaves you with a lot of loose ends:
 
-- `secret`: reads the Secret with kubectl and copies the base64-decoded key to the clipboard
-  (`pbcopy`, `wl-copy` or `xclip`, value on stdin only). A detached helper clears the clipboard
-  after 45 s (`TALKUB_CLIPBOARD_CLEAR_SECONDS`), but only if it still holds that value; the helper
-  gets only a SHA-256 digest of it. `--print` writes the bare value to stdout instead (a newline
-  only on a terminal), e.g. `talkub run --print db-password | ...`. A missing key is reported with
-  the names of the keys that exist. Clipboard history managers (e.g. Raycast, Maccy, Alfred) may
-  keep their own copy of the value; use `--print`, or exclude talkub/the terminal in those tools.
-- `token`: creates a token for the ServiceAccount with `kubectl create token` (`--duration` only if
-  `duration` is set, e.g. `8h` or `1h30m`; otherwise the API server's default applies) and delivers it
-  like `secret`: to the clipboard, cleared after 45 s, or with `--print` to stdout.
-- `job`: creates `<cronjob>-manual-<UTC timestamp>` from the CronJob. With `follow: true` or
-  `--follow`, waits (up to 5 min) for its pod to start, streams the logs and exits 0 only if the
-  job completed; a failed job, or one still running a minute after the logs end, exits 1.
-- `run`: `k`/`kubectl` or `t`/`talosctl` with the configured arguments, as with `talkub k`/`talkub t`;
-  further arguments (including options like `-f`) are appended.
-- `portForward`: `kubectl port-forward svc/<service> <ports...>` until Ctrl-C.
-- `kubernetes`: any program (e.g. `k9s`, `helm`, `stern`) with the configured arguments and the
-  decrypted kubeconfig in `KUBECONFIG`; `{kubeconfig}` in a configured argument is replaced by its
-  path (e.g. `[mytool, --config={kubeconfig}]`), appended arguments are passed on verbatim. The
-  kubeconfig is removed when the program exits, so it must run in the foreground (GUI apps that
-  detach, like `open -a Lens`, do not work). Such a shortcut hands cluster credentials to the
-  program it names, from `.talkub.yaml` as well as from the global pool: check shortcuts in repos
-  you did not write.
+- 🔑 **Secrets everywhere.** The secrets bundle, `talosconfig` and `kubeconfig` are keys to the
+  kingdom. They end up in `~/Downloads`, in shell history, or in git by accident.
+- 🧩 **Glue scripts.** `talosctl gen config`, patches per node, image factory schematics, Helm
+  installs before Argo CD exists: every cluster grows its own fragile `Makefile`.
+- 👥 **Sharing access.** A second admin means passing a file around. Revoking one means hoping
+  they deleted it.
+- 🎢 **Scary upgrades.** Which node runs which Talos version, schematic and config? What happens
+  if the second node does not come back?
+- 🌍 **Open ports.** The Talos and Kubernetes APIs listen on the internet, or you build a VPN setup
+  by hand.
 
-`run` and `kubernetes` shortcuts can refer to a node without naming it, so they also work as
-global shortcuts. In the configured arguments, `{node}` (or `{node.addr}`) becomes the node's
-`mgmt` address, or its `ip` if `mgmt` is not set; `{node.name}`, `{node.ip}`, `{node.mgmt}` and
-`{node.role}` give the single field (`{node.mgmt}` is an error for a node without one). The node
-is the first argument after the shortcut name (`talkub run extensions cp-01 -o yaml`); it may be
-left out in a cluster with a single node. Other braces, like kubectl's `-o jsonpath={.items[0]}`,
-are left alone; an unknown `{node.<field>}` is reported when the shortcuts are loaded. The listing
-shows such shortcuts as `extensions <node>`.
+## ✨ What talkub gives you
 
-`run` and `kubernetes` shortcuts can feed their output through further programs with `pipe:`, a list
-of stages in the same list form (`{node}` placeholders work there too). Arguments after the name go
-to the first stage. Only the first stage gets the cluster credentials: in the others `KUBECONFIG`
-and `TALOSCONFIG` point at a missing file, so a `kubectl` or `talosctl` there has no cluster
-configured (kubectl falls back to an unauthenticated `localhost:8080`, talosctl finds no endpoints)
-instead of reaching whatever cluster your own configuration selects; `{kubeconfig}` is not allowed
-in `pipe:`.
-If a later stage really needs the cluster, use a `kubernetes` shortcut with `[sh, -c, "…"]`. The
-exit code is that of the rightmost failing stage (like `set -o pipefail`); an earlier stage that
-stops only because a later one closed its input (`… | head`) does not count as failing. The listing
-shows such shortcuts with the kind `run |` or `kubernetes |`. For one-off pipes, pipe
-`talkub run <name>` in your own shell.
+|                                                       |                                                                                                                                                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📦 **One repo, one source of truth**                  | Talos configs, versions, schematics, Argo CD apps and chart versions all live in the repo. `talkub init` scaffolds it; nothing important lives on a laptop.                                                   |
+| 🔐 **Secrets that never touch the disk in plaintext** | SOPS + age for infrastructure secrets, Sealed Secrets for app secrets. Keys on a **YubiKey** or in the **Secure Enclave**. Decrypted configs exist only in private temp dirs for the duration of one command. |
+| 👥 **Team access without passing files around**       | `talkub admin add` / `admin remove` plus `keys rotate`. Nobody ever handles the cluster master key directly.                                                                                                  |
+| 🧠 **Configs rendered, never stored**                 | Machine configs are built on the fly from the secrets bundle, shared patches and per-node files. `talkub plan` shows the diff, `talkub apply` rolls it out node by node.                                      |
+| 🚀 **Bootstrap in one command**                       | etcd, kubeconfig, CoreDNS, Sealed Secrets (including a key backup) and Argo CD with an app of apps. Safe to re-run.                                                                                           |
+| 🔄 **Upgrades with guard rails**                      | `talkub versions` compares target, running and latest for Talos, Kubernetes and every chart. Upgrades run one node at a time with drain and health checks. `talkub renovate init` sets up update PRs.         |
+| 🛡️ **Tailscale lockdown**                             | Two steps, and the Talos and Kubernetes APIs are reachable only from your tailnet. The Tailscale operator puts apps at `https://app.your-tailnet.ts.net`.                                                     |
+| 💽 **Disk assistant**                                 | `talkub node volumes` reads the node's disks, suggests a portable selector, simulates where Talos places each volume and writes the config.                                                                   |
+| ⚡ **Shortcuts for daily work**                       | `talkub run db-password` copies a secret to the clipboard and clears it after 45 s. Fresh tokens, port forwards, CronJob runs and `k9s` with the right kubeconfig work the same way.                          |
+| ✅ **Mistakes caught before the commit**              | A pre-commit hook blocks unencrypted secrets, plain Kubernetes Secrets and invalid manifests (`yamllint`, `kubeconform`, `helm template`).                                                                    |
+| 🧯 **A plan for bad days**                            | `rotate-ca` for a leaked Talos CA, `keys rotate` when an admin leaves, and guides for rebuilding a node or the whole cluster from the repo.                                                                   |
 
-`--print` and `--follow` go before the name; everything after the name belongs to the shortcut,
-and only `run` and `kubernetes` shortcuts accept anything there.
+## 🎯 Is talkub for you?
 
-### Global shortcuts
+**Yes, if you …**
 
-Shortcuts you use in every cluster live in `~/.config/talkub/shortcuts.yaml`
-(`$XDG_CONFIG_HOME/talkub/shortcuts.yaml` if set), in the same format:
+- ✅ run Talos on bare metal, in a homelab or on **Hetzner Cloud**, with one to a handful of nodes
+- ✅ want GitOps with Argo CD, without writing the plumbing yourself
+- ✅ share admin access with a few people and want hardware-backed keys
+- ✅ would rather type `talkub upgrade talos` than read the Talos upgrade docs every time
 
-```yaml
-shortcuts:
-  pods:
-    description: all pods
-    run: [k, get, pods, -A]
+**Probably not, if you …**
+
+- ❌ use managed Kubernetes (EKS, GKE, AKS) or a distribution other than Talos
+- ❌ need to provision the machines themselves (talkub configures nodes, it does not create them)
+- ❌ run a fleet of clusters (have a look at Sidero Omni) or several clusters from one GitOps repo
+
+## 🗺️ How it works
+
+```
+homelab/                         ← your cluster repo (talkub lives outside it)
+├── .talkub.yaml                 ← nodes, Talos/Kubernetes versions, schematics
+├── keys/                        ← master key, encrypted to every admin's age key
+├── talos/
+│   ├── secrets.sops.yaml        ← Talos secrets bundle (SOPS)
+│   ├── talosconfig.sops.yaml
+│   ├── patches/                 ← shared machine config patches
+│   └── nodes/<node>.yaml        ← per-node network, disks, volumes
+├── kubernetes/kubeconfig.sops.yaml
+├── bootstrap/                   ← Sealed Secrets key backup, repo credentials (SOPS)
+└── gitops/
+    ├── root.yaml                ← Argo CD app of apps
+    ├── apps/*.yaml              ← one Argo CD Application per app; chart versions live here
+    ├── values/*.yaml            ← Helm values
+    └── manifests/               ← plain manifests and SealedSecrets
 ```
 
-`talkub run` lists and runs them in any cluster repo, always against that repo's cluster. A
-project shortcut hides a global one with the same name; the listing shows
-`project (overrides global)`. `talkub run --save-global <name>` moves a project shortcut into the
-pool (the file's comments are kept); `--force` replaces a global shortcut of the same name. Only
-`talkub run` reads the global file, so a broken one never blocks other commands.
+Your YubiKey (or another age identity) unlocks the master key, and the master key unlocks the SOPS
+files. talkub hands the decrypted `talosconfig`/`kubeconfig` to `talosctl`, `kubectl` or `helm`
+for a single call and deletes them afterwards. Argo CD pulls `gitops/` from your git remote and
+keeps the cluster in sync.
 
-## Nodes and machine configs
+## ⏱️ A tour in 60 seconds
 
-Adding control planes, replacing a machine, changing an address, removing a node:
-[nodes](docs/nodes.md).
+```bash
+talkub status                          # every node: Talos version, schematic, config drift, kubelet; every Argo CD app
+talkub k get pods -A                   # kubectl with the decrypted kubeconfig, just for this call
+talkub t -n 10.0.0.10 dashboard        # talosctl, same idea
+talkub shell                           # a subshell with KUBECONFIG/TALOSCONFIG set, removed on exit
 
-    talkub node add w-01 --ip 10.0.0.11 --role worker \
-        --static 10.0.0.11/24 --gateway 10.0.0.1 --mac aa:bb:cc:dd:ee:ff
-    talkub image add siderolabs/intel-ucode      # extensions per platform (metal, hcloud)
-    talkub image show --platform hcloud --arch arm64   # installer image + boot medium URL
-    talkub apply --insecure w-01                  # first install (maintenance mode, node's --ip)
-    talkub plan                                   # Talos dry-run for all nodes
-    talkub apply --mode no-reboot                 # asks per node; --yes to skip
+talkub plan && talkub apply            # change a patch, see the diff, roll it out node by node
+talkub versions                        # target vs. running vs. latest: Talos, Kubernetes, every chart
+talkub chart upgrade podinfo           # bump a chart and diff its default values
+talkub secret seal db -n app --prompt password -o gitops/manifests/app/db.sealed.yaml
 
-Once the node is booted (maintenance mode), `talkub node volumes w-01` lists its disks and asks for
-the install disk, an optional EPHEMERAL limit and user volumes (partition, raw or whole disk,
-optionally LUKS2 with a node-bound key). It suggests the most portable CEL selector that matches
-exactly the chosen disk, simulates where Talos will place each volume and how large it becomes,
-and writes the documents into `talos/nodes/w-01.yaml`. On an installed node it reads the disks via
-the talosconfig and only adds volumes.
-
-Machine configs are rendered on the fly from `talos/secrets.sops.yaml`, `talos/patches/*.yaml`
-(`controlplane*` / `worker*` are role-specific, `*.sops.yaml` patches are decrypted) and
-`talos/nodes/<node>.yaml`; they are never written to the repo.
-
-Before `apply --insecure` sends anything, talkub asks the maintenance API whether Talos is already
-on the node's disk (`systemdisk`). If so, Talos does not install the installer image and keeps
-booting the image on disk, e.g. from a reused Hetzner snapshot. talkub then prints that image's
-version, schematic and extensions. If they differ from the target, it warns and asks
-`apply the config to <node> and keep the image on its disk?` (default no). Fix: rewrite the disk
-with the boot media, or run `upgrade talos --force-unhealthy` afterwards; see
-[getting started](docs/getting-started.md#2a-the-node-already-has-talos-on-its-disk).
-
-Once the cluster is bootstrapped, `apply --mode auto|try` and `upgrade talos` are rolling: they
-check `talosctl health` once before the first change (and change nothing if the cluster is
-unhealthy; `--force-unhealthy` skips this check when the pending change is the fix, e.g. an
-upgrade that removes an extension the node is stuck booting on), then wait for health after each
-node before moving on. Health always runs through a
-control plane (another one than the node just changed, if there is one). After `apply` talkub first
-waits 30 seconds so the node's reboot has started (`TALKUB_APPLY_SETTLE_SECONDS` overrides this).
-`upgrade talos` installs with `talosctl upgrade --no-reboot`, triggers the reboot with
-`talosctl reboot --wait=false` and polls until the node runs the target version and schematic
-(10 minutes; `reboot --wait` breaks when the node stops its Tailscale extension, which the
-connection goes through). With more than one node it first drains the node itself with the repo
-kubeconfig (`kubectl drain`, 5 minutes timeout) and uncordons it once the cluster is healthy again;
-talosctl's own drain (part of its reboot) is not used because it goes through the cluster endpoint,
-which `talkub tailscale lockdown` firewalls.
-Before `talkub bootstrap`, apply nodes one at a time. If `apply` fails, the error lists the nodes
-already applied in this run. The rolling behavior is only tested against a fake `talosctl`; verify
-it on a real cluster before relying on it.
-
-Version skew: repos written by this talkub version (`schematics` instead of `installImage` in
-`.talkub.yaml`) cannot be read by older talkub versions — all admins should upgrade together.
-
-## Bootstrap, upgrades and status
-
-    talkub bootstrap                 # etcd, kubeconfig, Sealed Secrets, Argo CD, root app (re-runnable)
-    talkub status                    # target vs. actual per node + Argo CD sync/health and app errors
-    talkub upgrade talos             # nodes whose Talos version or schematic differs, one at a time
-    talkub upgrade k8s               # shows the talosctl dry-run first
-    talkub kubeconfig                # fetch a fresh admin kubeconfig, nothing else
-
-`kubeconfig` replaces `kubernetes/kubeconfig.sops.yaml` with a new admin kubeconfig from the first
-control plane that answers (after `tailscale lockdown` pointed at the tailnet, as `bootstrap` does).
-Use it when `talkub k` fails with `x509` or `Unauthorized` errors; unlike `bootstrap` it installs
-nothing. Commit `kubernetes/` afterwards.
-
-Chart versions live only in the Argo CD apps (`gitops/apps/<chart>.yaml`: `repoURL`, `chart`,
-`targetRevision`, `helm.valueFiles`, `destination.namespace`); `bootstrap` and `repo apply` install
-exactly what those files say. An old `charts` block in `.talkub.yaml` is ignored and dropped on the
-next write.
-
-## Versions and updates
-
-Step by step, with version rules and troubleshooting: [upgrading](docs/upgrading.md).
-
-When something is broken, or a node got a new disk: [debugging Talos](docs/debugging-talos.md) and
-[debugging Kubernetes](docs/debugging-kubernetes.md).
-
-Backups (repo, etcd snapshots, app data) and rebuilding a node or the whole cluster:
-[backup and recovery](docs/backup-and-recovery.md).
-
-    talkub versions                            # target vs. running vs. latest: Talos, Kubernetes, every chart app
-    talkub versions --offline                  # skip the latest-version lookups (no network)
-    talkub versions set talos v1.15.0          # then: talkub upgrade talos
-    talkub versions set kubernetes 1.38.0      # then: talkub upgrade k8s
-    talkub chart upgrade coredns                # bump one chart app to its latest version
-    talkub chart upgrade coredns --version 1.2.3 --yes
-    talkub chart upgrade --all                  # every chart app
-
-The Argo CD app files (`gitops/apps/*.yaml`) are the single source of chart versions — `versions`
-reads `targetRevision` from them and shows it next to what is actually running (via `kubectl get
-application`) and the latest release upstream. RUNNING is `not deployed` when Argo CD has not
-created the Application (often because the root app cannot sync — `talkub status` shows why),
-`pending` when it exists but has not synced yet, and `?` when the cluster cannot be queried. `*`
-marks a row whose latest differs from its target. `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
-(`helm show values` old vs. new) and the chart's `appVersion`, and asks for confirmation unless
-`--yes`; after it, commit and push `gitops/` so Argo CD picks it up. `versions set` only updates
-the target in `.talkub.yaml` — run
-`talkub upgrade talos`/`talkub upgrade k8s` afterwards to actually change the nodes.
-
-    talkub renovate init          # writes renovate.json in the repo root
-    talkub renovate init --force  # overwrite an existing one
-
-Generates a Renovate config that opens PRs for chart bumps (via the `argocd` manager, matching
-`gitops/apps/*.yaml`) and for Talos/Kubernetes bumps (via two custom regex managers, matching
-`.talkub.yaml`). After writing it, commit `renovate.json` and enable the Renovate GitHub app for
-this repo: <https://github.com/apps/renovate>. Argo CD rolls out a merged chart PR as soon as it
-merges, so run `talkub lint` on the PR branch _before_ merging it; a merged Talos/Kubernetes PR
-only updates `.talkub.yaml` — run `talkub upgrade talos` or `talkub upgrade k8s` afterwards to
-apply it to the nodes.
-
-## Sealed Secrets
-
-    talkub secret seal db -n app --from-literal password=… -o gitops/manifests/app/db.sealed.yaml
-    talkub secret seal ~/secret.yaml -o gitops/manifests/app/db.sealed.yaml   # manifest outside the repo
-    talkub secret backup-sealing-key # done by bootstrap; commit bootstrap/ afterwards
-
-Sealing uses the controller's live certificate and falls back to `bootstrap/sealed-secrets.pem`
-when the cluster is unreachable.
-Prefer `--prompt` or `--from-file` over `--from-literal`; more in [handling secrets](docs/secrets.md).
-
-## Tailscale
-
-    talkub init homelab … --tailscale --tailnet tail1234.ts.net     # new cluster: both steps at once
-    talkub tailscale enable --tailnet tail1234.ts.net   # existing cluster: extension + auth key
-    talkub apply && talkub upgrade talos                # configures, then installs the extension (via LAN)
-    talkub tailscale lockdown [--use-ips]               # firewall + tailnet addresses for talosctl/kubectl
-    talkub apply                                        # activates the firewall (via the tailnet)
-
-    talkub tailscale operator enable [--rotate-credentials]           # the operator (needs the CoreDNS takeover)
-    talkub tailscale expose grafana --service monitoring/grafana --port 80   # https://grafana.<tailnet>
-    talkub tailscale unexpose grafana
-    talkub tailscale egress add db --fqdn db.tail1234.ts.net           # pods reach tailnet hosts
-    talkub tailscale egress remove db
-
-After `lockdown` and `apply`, the Talos and Kubernetes APIs are reachable only via the tailnet; the
-nodes keep their LAN/public addresses for cluster traffic. Admin console setup, what the firewall
-allows, rollback, the operator, ingress, egress and troubleshooting: [Tailscale](docs/tailscale.md).
-
-## CoreDNS
-
-    talkub coredns takeover              # moves CoreDNS from Talos to Argo CD (DNS keeps working)
-    talkub coredns takeover --resume     # finish an interrupted takeover
-
-Talos manages CoreDNS by default (the `kube-system/coredns` ConfigMap and Deployment, behind the
-`kube-dns` Service). `takeover` stops Talos from managing it (`talos/patches/controlplane-coredns.yaml`,
-`KubeCoreDNSConfig` `enabled: false`) and installs CoreDNS as a Helm release (release `coredns`,
-Deployment `coredns-talkub`) that Argo CD manages instead. The `kube-dns` Service keeps its
-ClusterIP and selector throughout, so DNS keeps working during the switch; its ports become the
-chart's `udp-53`/`tcp-53`, and the metrics port 9153 is no longer exposed on `kube-dns`. The
-takeover refuses to start while any node's Talos config differs from the repo (`talkub plan`),
-so its Talos apply (mode `no-reboot`, confirmed per node unless `--yes`) carries only the CoreDNS
-patch. New clusters get
-CoreDNS this way from the start: `talkub init` writes the patch, Argo CD app and Helm values, and
-`talkub bootstrap` installs the Helm release before Sealed Secrets and Argo CD.
-
-If a takeover is interrupted partway, finish it with `talkub coredns takeover --resume` before
-running `talkub apply` or `talkub upgrade` again: Talos health fails while both CoreDNS
-deployments exist. `talkub tailscale operator enable` also
-requires the takeover to be done first (it extends the CoreDNS values with a stub zone for the
-tailnet).
-
-## Rotating the Talos CA
-
-    talkub rotate-ca            # asks for confirmation, then rotates the Talos API CA
-    talkub rotate-ca --yes      # no prompt
-
-Do this when the Talos API CA or a client certificate may have been exposed. It runs
-`talosctl rotate-ca`, then writes the new talosconfig and CA cert/key into the repo
-(`talos/talosconfig.sops.yaml`, `certs.os` in the secrets bundle). The previous encrypted
-talosconfig is kept as `talos/talosconfig.previous.sops.yaml` while a rotation is in
-progress; its presence means `talkub rotate-ca --finish` is needed to complete it.
-
-If a rotation is interrupted after `talosctl rotate-ca` has already run, `talkub rotate-ca
---finish` retries bringing the repo in line. If the new talosconfig itself could not be
-stored, its plaintext is kept under a printed temp path; pass it explicitly with
-`talkub rotate-ca --finish --talosconfig <path>`.
-
-Before you start:
-
-- Commit first. Git history then keeps the old talosconfig and secrets bundle.
-- Every other talosconfig for this cluster stops working after the rotation, for example
-  `~/.talos/config` or copies held by other admins. Hand out the new one from the repo.
-- Do not interrupt the rotation. `talosctl rotate-ca` can take several minutes. On Ctrl-C,
-  SIGTERM or a closed terminal, talkub keeps waiting for talosctl to finish (even if it can no
-  longer print) and keeps its output before it stops. If talkub is killed hard (SIGKILL), talosctl
-  keeps running on its own.
-- If the rotation is interrupted or fails, the printed temp directory holds `rotate-ca.out`
-  (talosctl's full output, including the new keys) and, if talosctl got that far, the new
-  talosconfig; after a successful run it is deleted.
-
-Commit `talos/` afterwards.
-
-## Lint and pre-commit hook
-
-    talkub lint                 # yamllint, kubeconform, helm template — style, syntax, valid manifests
-    talkub lint --offline       # same, but skip checks that need network access
-
-`--offline` is not a guarantee of zero network: kubeconform may still fetch a schema that is not
-yet cached, and a schema download that fails while offline just counts as skipped, not an error.
-
-Three checks, in order, each key-free:
-
-- yamllint (`.yamllint` if present, else a relaxed default managed by talkub) over every
-  `*.yaml`/`*.yml` in the repo.
-- `gitops/apps/**` and `gitops/manifests/**` manifests validated with `kubeconform` (a `skipped:`
-  line if `kubeconform` is not installed; `--offline` skips entirely if the local schema cache is
-  still empty).
-- every Argo CD Application's Helm chart rendered with `helm template` and validated the same way
-  (skipped entirely with `--offline`, or a `skipped:` line if `helm` is not installed).
-
-  talkub hooks install # install .git/hooks/pre-commit
-  talkub hooks install --force # overwrite a pre-commit hook not managed by talkub
-  talkub hooks uninstall # remove it again
-
-The hook runs `talkub check && talkub lint --offline` before every commit; `talkub init` installs
-it automatically. Bypass it once with `git commit --no-verify`.
-
-## Team and CI
-
-A new admin runs `talkub identity new` and sends the printed public key; an existing admin runs
-`talkub admin add age1… --name <them>` and pushes `keys/`. When someone leaves:
-`talkub admin remove <name> && talkub keys rotate`, then change the secrets they knew. Details in
-[handling secrets](docs/secrets.md#3-admins).
-
-Everyone should run the same talkub version: newer versions can change the `.talkub.yaml` format
-(see _Version skew_ above), and the pre-commit hook runs whichever talkub is installed.
-
-`talkub check` and `talkub lint` need no key, so CI can run them on every push and pull request
-without any secret. The job needs talkub, `helm` and `kubeconform` (lint prints a `skipped:` line for
-a missing tool instead of failing, so install both), and network access for the chart repos and
-schemas:
-
-```yaml
-# .github/workflows/check.yml in the cluster repo
-on: [push, pull_request]
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: | # talkub (see Install), helm and kubeconform onto PATH
-          ...
-      - run: talkub check && talkub lint
+talkub run db-password                 # a shortcut: secret to the clipboard, cleared after 45 s
+talkub tailscale expose grafana --service monitoring/grafana --port 80   # https://grafana.<tailnet>
 ```
 
-This is also where Renovate PRs get linted before anyone merges them. Jobs that need the master
-key (e.g. `talkub sops decrypt`) get it via `SOPS_AGE_KEY` from a CI secret; keep them rare, since
-that key decrypts every SOPS file.
+## 📥 Install
 
-## Development
+A single binary, no Python needed (macOS arm64, Linux amd64/arm64):
 
-    uv run pytest
-    uv run ruff check src tests
-    uv run lint-imports
+```bash
+gh release download --repo jan-alexander/talkub --pattern 'talkub-*-darwin-arm64' --dir /tmp/talkub
+install -m 755 /tmp/talkub/talkub-*-darwin-arm64 ~/.local/bin/talkub
+```
 
-Enable the pre-commit hook (import layers, ruff check, ruff format) once per clone:
+Or with uv: `uv tool install git+https://github.com/jan-alexander/talkub.git`. More options and
+shell completion: [reference](docs/reference.md#install-and-shell-completion).
 
-    git config core.hooksPath .githooks
+talkub drives the standard tools: `age`, `sops`, `talosctl` (v1.14+), `helm`, `kubectl`,
+`kubeseal`, and optionally `age-plugin-yubikey` / `age-plugin-se` and `kubeconform`.
 
-### Code layout
+## 🚀 Quick start
 
-`src/talkub/` is split by domain. `cli/` holds one thin module per command group and calls into
-the packages below it. Each package's `__init__.py` says what it covers.
+```bash
+talkub identity new --yubikey          # your personal key (or --se / --software)
+talkub init homelab --endpoint https://10.0.0.10:6443 \
+    --node cp-01=10.0.0.10 --git-url git@github.com:me/homelab.git
+cd homelab
+talkub admin add age1… --name backup   # a second key, kept offline: there is no passphrase recovery
+git add -A && git commit -m "init cluster repo" && git push -u origin main
+```
 
-| Package        | What lives there                                                                                                  |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `cli/`         | Typer commands, argument parsing, prompts, console output                                                         |
-| `scaffold.py`  | `talkub init`: writes a new cluster repo from `templates/`                                                        |
-| `overview/`    | `status`, `versions`: read-only views across the cluster                                                          |
-| `gitops/`      | Flows that change what Argo CD deploys: bootstrap, chart upgrade, git repo, CoreDNS, Tailscale operator, Renovate |
-| `workstation/` | The admin's machine: credential shells, shortcuts, clipboard                                                      |
-| `quality/`     | `lint`, `check`, pre-commit hook                                                                                  |
-| `helm/`        | Chart catalog and `helm` command lines                                                                            |
-| `talos/`       | Machine configs, node lifecycle, upgrades, CA rotation, installer images, Tailscale on the hosts                  |
-| `argocd/`      | Rendering, parsing and editing `gitops/apps/*.yaml`                                                               |
-| `kube/`        | kubectl/helm sessions, kubeseal                                                                                   |
-| `context.py`   | `Context`: repo + runner + keys, passed to every flow                                                             |
-| `secrets/`     | age identities, recipients, master key, SOPS                                                                      |
-| `config/`      | The repo on disk and `.talkub.yaml` (`Repo`, `Settings`, specs)                                                   |
-| `core/`        | Errors, running tools, YAML, atomic writes, temp files                                                            |
+Then boot the node into maintenance mode and follow [getting started](docs/getting-started.md),
+from `talkub apply --insecure` to your first app.
 
-The table is ordered top to bottom by layer: a package may import the ones below it, never the
-ones above. `uv run lint-imports` enforces this (contract in `pyproject.toml`).
+## 📚 Guides
 
-Adding a command: put the logic into the package that owns the domain, add a thin module in
-`cli/`, register it in `cli/main.py`, and put the tests into the matching folder under `tests/`.
+| Guide                                                   | For                                                                     |
+| ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 🏁 [Getting started](docs/getting-started.md)           | from a node in maintenance mode to a running cluster                    |
+| 📦 [Apps](docs/apps.md)                                 | Helm charts and manifests with Argo CD: add, update, reach, remove      |
+| 🔐 [Handling secrets](docs/secrets.md)                  | admins, SOPS files, Sealed Secrets, rotation, leaks                     |
+| 🖥️ [Nodes](docs/nodes.md)                               | add workers and control planes, replace, re-address, remove nodes       |
+| 🛡️ [Tailscale](docs/tailscale.md)                       | the tailnet as the only admin path; the operator for ingress and egress |
+| 🔄 [Upgrading](docs/upgrading.md)                       | Talos, Kubernetes and chart upgrades                                    |
+| 🧯 [Backup and recovery](docs/backup-and-recovery.md)   | etcd snapshots, app data, rebuilding a node or the cluster              |
+| 🔍 [Debugging Talos](docs/debugging-talos.md)           | nodes, boot, disks, etcd                                                |
+| 🔍 [Debugging Kubernetes](docs/debugging-kubernetes.md) | pods, Argo CD, Sealed Secrets, storage, DNS                             |
+| 📖 [Command reference](docs/reference.md)               | every command in detail                                                 |
+
+## 🧰 Commands at a glance
+
+| Area               | Commands                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| Cluster access     | `t`/`talosctl`, `k`/`kubectl`, `shell`, `run` (shortcuts), `kubeconfig`                       |
+| Repo and nodes     | `init`, `node add`, `node volumes`, `image`, `plan`, `apply`, `bootstrap`, `status`           |
+| Versions           | `versions`, `upgrade talos`, `upgrade k8s`, `chart upgrade`, `renovate init`                  |
+| Secrets and access | `identity`, `admin`, `keys rotate`, `sops edit`/`decrypt`, `secret seal`, `rotate-ca`, `repo` |
+| Networking         | `tailscale enable`/`lockdown`/`operator`/`expose`/`egress`, `coredns takeover`                |
+| Quality            | `check`, `lint`, `hooks install`                                                              |
+
+Details for each: [command reference](docs/reference.md).
+
+## 🧪 Status
+
+talkub is young (0.1.x) and runs a real homelab cluster on Hetzner Cloud. Some paths, like
+rolling upgrades across several nodes, are so far tested against a fake `talosctl` only: take an
+etcd snapshot before big changes (see [backup and recovery](docs/backup-and-recovery.md)).
+
+## 🛠️ Development
+
+```bash
+uv run pytest && uv run ruff check src tests && uv run lint-imports
+```
+
+Code layout, layer rules and releases: [development](docs/development.md).

@@ -117,7 +117,7 @@ To remove the extension as well, remove `siderolabs/tailscale` from the schemati
 ### 2a. Enable
 
 Prerequisites: `talkub tailscale enable` (the tailnet is known) and CoreDNS managed by Argo CD
-(new repos have it; older ones run `talkub coredns takeover` first, see the README).
+(new repos have it; older ones run `talkub coredns takeover` first, see the [reference](reference.md#coredns)).
 
 ```bash
 talkub tailscale operator enable       # OAuth client via prompt, or --client-id and --client-secret-file
