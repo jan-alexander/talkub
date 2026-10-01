@@ -499,6 +499,88 @@ def test_cli_versions_offline_flag(repo_with_configs, spy, capfd, monkeypatch):
     assert " -  " in out or "  -" in out
 
 
+def test_cli_versions_marks_outdated_rows_when_not_a_terminal(repo_with_configs, spy, version_http_stub, capfd):
+    _spy_talos_kube(spy)
+    spy("helm")
+    try:
+        main(["--repo", str(repo_with_configs.root), "versions"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    out = capfd.readouterr().out
+    assert "COMPONENT" in out
+    talos_line = next(line for line in out.splitlines() if "talos" in line)
+    assert talos_line.startswith("*")
+
+
+def test_cli_versions_only_shows_the_named_components(repo_with_configs, spy, version_http_stub, capfd):
+    _write_argocd_app(repo_with_configs)
+    talosctl, _kubectl = _spy_talos_kube(spy)
+    spy("kubectl").on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
+    spy("helm").on("show", "chart", stdout=CHART_OLD)
+    try:
+        main(["--repo", str(repo_with_configs.root), "versions", "--only", "argocd"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    out = capfd.readouterr().out
+    assert "argocd" in out
+    assert "talos" not in out and "kubernetes" not in out
+    assert talosctl.argvs == []
+
+
+def test_cli_versions_only_unknown_component_fails(repo_with_configs, spy, version_http_stub, capfd):
+    _spy_talos_kube(spy)
+    spy("helm")
+    with pytest.raises(SystemExit) as exc:
+        main(["--repo", str(repo_with_configs.root), "versions", "--only", "nope"])
+    assert exc.value.code == 1
+    err = capfd.readouterr().err
+    assert "error: unknown component(s): nope" in err
+    assert "hint: available: talos, kubernetes" in err
+
+
+def test_cli_versions_outdated_shows_only_rows_with_an_update(repo_with_configs, spy, version_http_stub, capfd):
+    version_http_stub.k8s_stable = "v1.37.0\n"
+    _spy_talos_kube(spy)
+    spy("helm")
+    try:
+        main(["--repo", str(repo_with_configs.root), "versions", "--outdated"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    out = capfd.readouterr().out
+    assert "talos" in out
+    assert "kubernetes" not in out
+
+
+def test_cli_versions_outdated_reports_when_everything_is_up_to_date(repo_with_configs, spy, version_http_stub, capfd):
+    version_http_stub.talos_tag = "v1.14.0"
+    version_http_stub.k8s_stable = "v1.37.0\n"
+    _spy_talos_kube(spy)
+    spy("helm")
+    try:
+        main(["--repo", str(repo_with_configs.root), "versions", "--outdated"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    out = capfd.readouterr().out
+    assert out.strip() == "all components are up to date"
+
+
+def test_cli_versions_live_table_on_a_terminal(repo_with_configs, spy, version_http_stub, capfd, monkeypatch):
+    monkeypatch.setenv("TTY_COMPATIBLE", "1")  # rich: treat the captured stdout as a terminal
+    monkeypatch.setenv("COLUMNS", "120")
+    _spy_talos_kube(spy)
+    spy("helm")
+    try:
+        main(["--repo", str(repo_with_configs.root), "versions"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    out = capfd.readouterr().out
+    assert "fetching talos: running version" in out  # the spinner named the lookups while running
+    final = out.rsplit("COMPONENT", 1)[1]  # the table printed after the transient live display
+    assert "kubernetes" in final
+    talos_line = next(line for line in final.splitlines() if "talos" in line)
+    assert "*" in talos_line and "\x1b[" in talos_line  # starred and coloured
+
+
 def test_cli_versions_set_command(empty_repo, capfd):
     try:
         main(["--repo", str(empty_repo.root), "versions", "set", "talos", "v1.15.0"])
@@ -513,3 +595,67 @@ def test_cli_versions_set_invalid_version_exits_nonzero(empty_repo, capfd):
         main(["--repo", str(empty_repo.root), "versions", "set", "talos", "1.15.0"])
     assert exc.value.code == 1
     assert "error" in capfd.readouterr().err
+
+
+# --- components, progress callbacks and filters ---
+
+
+def test_components_lists_talos_kubernetes_and_chart_apps(repo_with_configs):
+    _write_argocd_app(repo_with_configs)
+    assert versions.components(Context.open(repo_with_configs).repo) == ["talos", "kubernetes", "argocd"]
+
+
+def test_collect_reports_steps_and_rows_in_order(repo_with_configs, spy, version_http_stub):
+    _write_argocd_app(repo_with_configs)
+    _spy_talos_kube(spy)
+    spy("kubectl").on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
+    (
+        spy("helm")
+        .on("--version", "10.9.2", stdout=CHART_OLD)
+        .on("--version", "10.10.0", stdout=CHART_NEW)
+        .on("show", "chart", stdout=CHART_NEW)
+    )
+    steps: list[str] = []
+    seen: list[str] = []
+    rows = versions.collect(
+        Context.open(repo_with_configs), on_step=steps.append, on_row=lambda r: seen.append(r.component)
+    )
+    assert steps == [
+        "talos: running version",
+        "talos: latest release",
+        "kubernetes: running version",
+        "kubernetes: latest release",
+        "argocd: running version",
+        "argocd: latest chart version",
+        "argocd: appVersion change",
+    ]
+    assert seen == ["talos", "kubernetes", "argocd"]
+    assert [row.component for row in rows] == seen
+
+
+def test_collect_only_restricts_to_named_components_and_skips_the_rest(repo_with_configs, spy, version_http_stub):
+    _write_argocd_app(repo_with_configs)
+    talosctl, _kubectl = _spy_talos_kube(spy)
+    spy("kubectl").on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
+    spy("helm").on("show", "chart", stdout=CHART_OLD)
+    rows = versions.collect(Context.open(repo_with_configs), only=["argocd"])
+    assert [row.component for row in rows] == ["argocd"]
+    assert talosctl.argvs == []
+
+
+def test_collect_only_rejects_unknown_component(repo_with_configs, spy, version_http_stub):
+    _write_argocd_app(repo_with_configs)
+    with pytest.raises(ValidationError) as exc:
+        versions.collect(Context.open(repo_with_configs), only=["nope"])
+    assert "nope" in str(exc.value)
+    assert "talos, kubernetes, argocd" in (exc.value.hint or "")
+
+
+def test_outdated_keeps_rows_whose_latest_differs_from_target():
+    rows = [
+        versions.Row("talos", "v1.14.0", "v1.14.0", "v1.15.0"),
+        versions.Row("kubernetes", "1.37.0", "1.37.0", "1.37.0"),
+        versions.Row("a", "1.0.0", "?", "?"),
+        versions.Row("b", "1.0.0", "1.0.0", "-"),
+    ]
+    assert [row.component for row in versions.outdated(rows)] == ["talos"]

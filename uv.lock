@@ -347,6 +347,7 @@ name = "talkub"
 version = "0.1.9"
 source = { editable = "." }
 dependencies = [
+    { name = "rich" },
     { name = "ruamel-yaml" },
     { name = "typer" },
     { name = "yamllint" },
@@ -366,6 +367,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "rich", specifier = ">=14" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
     { name = "typer", specifier = ">=0.27" },
     { name = "yamllint", specifier = ">=1.38.0" },

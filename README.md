@@ -97,6 +97,7 @@ talkub shell                           # a subshell with KUBECONFIG/TALOSCONFIG 
 
 talkub plan && talkub apply            # change a patch, see the coloured diff (secrets redacted), roll it out node by node
 talkub versions                        # target vs. running vs. latest: Talos, Kubernetes, every chart
+talkub versions --outdated             # only what has an update
 talkub chart upgrade podinfo           # bump a chart and diff its default values
 talkub secret seal db -n app --prompt password -o gitops/manifests/app/db.sealed.yaml
 

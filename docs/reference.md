@@ -273,6 +273,8 @@ Backups (repo, etcd snapshots, app data) and rebuilding a node or the whole clus
 
     talkub versions                            # target vs. running vs. latest: Talos, Kubernetes, every chart app
     talkub versions --offline                  # skip the latest-version lookups (no network)
+    talkub versions --only coredns --only talos  # just these components (repeatable); faster, too
+    talkub versions --outdated                 # only rows with an update available
     talkub versions set talos v1.15.0          # then: talkub upgrade talos
     talkub versions set kubernetes 1.38.0      # then: talkub upgrade k8s
     talkub chart upgrade coredns                # bump one chart app to its latest version
@@ -284,7 +286,11 @@ reads `targetRevision` from them and shows it next to what is actually running (
 application`) and the latest release upstream. RUNNING is `not deployed` when Argo CD has not
 created the Application (often because the root app cannot sync — `talkub status` shows why),
 `pending` when it exists but has not synced yet, and `?` when the cluster cannot be queried. `*`
-marks a row whose latest differs from its target. `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
+marks a row whose latest differs from its target. On a terminal the table fills in live, row by
+row, with a spinner naming the lookup in progress; when stdout is not a terminal (pipes, scripts)
+the plain table is printed once at the end. `--only` restricts the lookups to the named components
+(a file stem under `gitops/apps/`, `talos` or `kubernetes`) and `--outdated` keeps only rows with
+a newer version (printing `all components are up to date` otherwise). `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
 (`helm show values` old vs. new) and the chart's `appVersion`, and asks for confirmation unless
 `--yes`; after it, commit and push `gitops/` so Argo CD picks it up. `versions set` only updates
 the target in `.talkub.yaml` — run

@@ -4,6 +4,11 @@
 `offline=True`, "-" for LATEST everywhere) so one broken component does not hide the rest. A chart
 app's RUNNING is "not deployed" when its Argo CD Application does not exist and "pending" when it
 exists but has not synced yet.
+
+Collecting is slow (one talosctl/kubectl/helm call or HTTP request per cell), so `collect` reports
+progress through two optional callbacks: `on_step` before every slow lookup (`"<component>: latest
+chart version"`) and `on_row` as soon as a component's row is complete. The CLI drives a live table
+from them; the overview layer itself never prints.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from talkub.argocd import app_files
@@ -41,6 +47,18 @@ class Row:
     running: str
     latest: str
     note: str = ""
+
+    @property
+    def outdated(self) -> bool:
+        """LATEST is known and differs from TARGET."""
+        return self.latest not in ("?", "-") and self.latest != self.target
+
+
+Step = Callable[[str], None]
+
+
+def _no_step(_message: str) -> None:
+    pass
 
 
 def _github_api() -> str:
@@ -128,15 +146,25 @@ def _kubernetes_running(ctx: Context) -> str:
     return ", ".join(distinct)
 
 
-def _talos_row(ctx: Context, settings: Settings, *, offline: bool) -> Row:
+def _talos_row(ctx: Context, settings: Settings, *, offline: bool, step: Step = _no_step) -> Row:
+    step("talos: running version")
     running = _talos_running(ctx, settings)
-    latest = "-" if offline else (_talos_latest() or "?")
+    if offline:
+        latest = "-"
+    else:
+        step("talos: latest release")
+        latest = _talos_latest() or "?"
     return Row("talos", settings.talos_version, running, latest)
 
 
-def _kubernetes_row(ctx: Context, settings: Settings, *, offline: bool) -> Row:
+def _kubernetes_row(ctx: Context, settings: Settings, *, offline: bool, step: Step = _no_step) -> Row:
+    step("kubernetes: running version")
     running = _kubernetes_running(ctx)
-    latest = "-" if offline else (_kubernetes_latest() or "?")
+    if offline:
+        latest = "-"
+    else:
+        step("kubernetes: latest release")
+        latest = _kubernetes_latest() or "?"
     note = ""
     if latest not in ("?", "-"):
         target_v, latest_v = (
@@ -193,49 +221,87 @@ def _chart_row(
     source_index: int | None,
     *,
     offline: bool,
+    step: Step = _no_step,
 ) -> Row:
-    """One chart app's row. `component` is the `gitops/apps/*.yaml` file stem (see `_chart_rows`);
+    """One chart app's row. `component` is the `gitops/apps/*.yaml` file stem (see `_chart_row_for`);
     `source.app` — the Application's `metadata.name`, which may differ — is still what identifies
     the actual Argo CD Application resource to `_chart_running`."""
+    step(f"{component}: running version")
     running = _chart_running(ctx, source, source_index)
     target = source.version or "?"  # an invalid/empty targetRevision must not crash `versions`
     if offline:
         return Row(component, target, running, "-")
+    step(f"{component}: latest chart version")
     try:
         latest = charts.latest_version(ctx.runner, source.repo, source.chart)
     except TalkubError:
         return Row(component, target, running, "?")
-    note = _app_version_note(ctx, source, latest) if latest != source.version else ""
+    note = ""
+    if latest != source.version:
+        step(f"{component}: appVersion change")
+        note = _app_version_note(ctx, source, latest)
     return Row(component, target, running, latest, note)
 
 
-def _chart_rows(ctx: Context, *, offline: bool) -> list[Row]:
-    """One row per `gitops/apps/*.yaml` file stem with a Helm chart source: a normal row for a
+def _chart_row_for(ctx: Context, stem: str, *, offline: bool, step: Step) -> Row:
+    """The row for one `gitops/apps/*.yaml` file stem with a Helm chart source: a normal row for a
     single-chart file, a "not a single-chart app" note for one with more than one (or a
-    malformed/multi-Application file) — never one row per `metadata.name`, which could differ
-    from the file stem `chart upgrade` and `--all` actually address."""
-    rows: list[Row] = []
-    for stem in app_files.chart_app_stems(ctx.repo):
-        if not app_files.is_single_chart_app(ctx.repo, stem):
-            rows.append(Row(stem, "?", "?", "?", "not a single-chart app"))
-            continue
-        sources, _findings = app_files.app_chart_sources(ctx.repo, stem)
-        source = sources[0]
-        indices = app_files.chart_source_indices(ctx.repo, stem)
-        source_index = indices[0] if indices else None
-        rows.append(_chart_row(ctx, stem, source, source_index, offline=offline))
-    return rows
+    malformed/multi-Application file) — rows are keyed by file stem, never by `metadata.name`,
+    which could differ from what `chart upgrade` and `--all` actually address."""
+    if not app_files.is_single_chart_app(ctx.repo, stem):
+        return Row(stem, "?", "?", "?", "not a single-chart app")
+    sources, _findings = app_files.app_chart_sources(ctx.repo, stem)
+    source = sources[0]
+    indices = app_files.chart_source_indices(ctx.repo, stem)
+    source_index = indices[0] if indices else None
+    return _chart_row(ctx, stem, source, source_index, offline=offline, step=step)
 
 
-def collect(ctx: Context, *, offline: bool = False) -> list[Row]:
-    """Talos, Kubernetes and every chart app (`gitops/apps/*.yaml` with a Helm chart source)."""
+def components(repo: Repo) -> list[str]:
+    """Every component `collect` reports, in table order: talos, kubernetes, then one entry per
+    `gitops/apps/*.yaml` file stem with a Helm chart source."""
+    return ["talos", "kubernetes", *app_files.chart_app_stems(repo)]
+
+
+def collect(
+    ctx: Context,
+    *,
+    offline: bool = False,
+    only: Sequence[str] | None = None,
+    on_step: Step | None = None,
+    on_row: Callable[[Row], None] | None = None,
+) -> list[Row]:
+    """Talos, Kubernetes and every chart app (`gitops/apps/*.yaml` with a Helm chart source), or
+    just the components named in `only` (in table order, each looked up once). `on_step` is
+    called before every slow lookup, `on_row` as soon as a row is complete."""
+    available = components(ctx.repo)
+    if only is not None:
+        unknown = [name for name in only if name not in available]
+        if unknown:
+            raise ValidationError(
+                f"unknown component(s): {', '.join(unknown)}",
+                hint=f"available: {', '.join(available)}",
+            )
+    wanted = [name for name in available if only is None or name in only]
+    step = on_step or _no_step
     settings = ctx.repo.load_settings()
-    rows = [
-        _talos_row(ctx, settings, offline=offline),
-        _kubernetes_row(ctx, settings, offline=offline),
-    ]
-    rows.extend(_chart_rows(ctx, offline=offline))
+    rows: list[Row] = []
+    for name in wanted:
+        if name == "talos":
+            row = _talos_row(ctx, settings, offline=offline, step=step)
+        elif name == "kubernetes":
+            row = _kubernetes_row(ctx, settings, offline=offline, step=step)
+        else:
+            row = _chart_row_for(ctx, name, offline=offline, step=step)
+        rows.append(row)
+        if on_row is not None:
+            on_row(row)
     return rows
+
+
+def outdated(rows: Sequence[Row]) -> list[Row]:
+    """The rows whose LATEST is known and differs from TARGET."""
+    return [row for row in rows if row.outdated]
 
 
 def render(rows: list[Row]) -> str:
@@ -245,11 +311,7 @@ def render(rows: list[Row]) -> str:
     widths = [max(len(entry[i]) for entry in table) for i in range(len(header))]
     lines = []
     for index, entry in enumerate(table):
-        marker = " "
-        if index > 0:
-            row = rows[index - 1]
-            if row.latest not in ("?", "-") and row.latest != row.target:
-                marker = "*"
+        marker = "*" if index > 0 and rows[index - 1].outdated else " "
         line = marker + " " + "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(entry))
         lines.append(line.rstrip())
     return "\n".join(lines) + "\n"

@@ -20,6 +20,7 @@ Changing a target only edits the repo. Nothing on the cluster changes until the 
 ```bash
 talkub status                            # every node healthy, every Argo CD app Synced/Healthy
 talkub versions                          # target vs. running vs. latest; `*` marks available updates
+talkub versions --outdated               # only the rows with an update; --only talos for one component
 git pull                                 # work on the latest repo state
 ```
 
