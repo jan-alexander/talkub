@@ -2,34 +2,48 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from talkub.context import Context
+from talkub.core import colordiff
 from talkub.core.ephemeral import decrypted
 from talkub.core.errors import ValidationError
 from talkub.core.runner import Runner, require_tool
 from talkub.talos import inspect
 
 
-def _print_redacted(text: str, *, file=None) -> None:
+def _print_redacted(text: str, *, file=None, colorize: Callable[[str], str] = str) -> None:
+    """Print `text` with secrets redacted, then passed through `colorize`. Redaction comes
+    first: delta (`colordiff.colorize`) is a child process and must not see the plaintext either."""
     if text:
         print(
-            inspect.redact_diff(text),
+            colorize(inspect.redact_diff(text)),
             end="" if text.endswith("\n") else "\n",
             file=file,
             flush=True,
         )
 
 
+def _color_wanted() -> bool:
+    return colordiff.wanted(sys.stdout, os.environ)
+
+
 @dataclass(frozen=True)
 class TalosSession:
     runner: Runner
     talosconfig: Path
+    color: bool = False
+    """Colour diffs in the redacted output (`plan`, `apply` dry-runs): set when stdout is a
+    terminal and NO_COLOR is unset; `talos_session`/`talos_session_from` decide."""
+
+    def _colorize(self, text: str) -> str:
+        return colordiff.colorize(self.runner, text) if self.color else text
 
     def argv(self, node: str, args: Sequence[str]) -> list[str]:
         return [
@@ -78,22 +92,22 @@ class TalosSession:
         before printing it, instead of letting talosctl write straight to the terminal — some
         talosctl output (config diffs, dry-runs) can contain machine CA keys, auth tokens, …"""
         result = self.run(node, args, check=False)
-        _print_redacted(result.stdout.decode(errors="replace"))
-        _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
+        _print_redacted(result.stdout.decode(errors="replace"), colorize=self._colorize)
+        _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr, colorize=self._colorize)
         return result.returncode
 
     def call_global_redacted(self, args: Sequence[str], endpoints: Sequence[str]) -> int:
         """Like `call_redacted`, but via `run_global` (endpoints only, no `-n`)."""
         result = self.run_global(args, endpoints, check=False)
-        _print_redacted(result.stdout.decode(errors="replace"))
-        _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr)
+        _print_redacted(result.stdout.decode(errors="replace"), colorize=self._colorize)
+        _print_redacted(result.stderr.decode(errors="replace"), file=sys.stderr, colorize=self._colorize)
         return result.returncode
 
     def call_global_uninterruptible(self, args: Sequence[str], endpoints: Sequence[str], *, raw_to: Path) -> int:
         """Like `call_global_redacted`, via `Runner.run_uninterruptible`: the unredacted output
         is kept in `raw_to` (0600, must not exist); only its redacted form is printed."""
         code = self.runner.run_uninterruptible(self.argv_global(args, endpoints), output=raw_to)
-        _print_redacted(raw_to.read_bytes().decode(errors="replace"))
+        _print_redacted(raw_to.read_bytes().decode(errors="replace"), colorize=self._colorize)
         return code
 
 
@@ -107,7 +121,7 @@ def talos_session(ctx: Context) -> Iterator[TalosSession]:
             hint="it is created by `talkub init`",
         )
     with decrypted(ctx.sops, {"talosconfig": source}) as paths:
-        yield TalosSession(ctx.runner, paths["talosconfig"])
+        yield TalosSession(ctx.runner, paths["talosconfig"], color=_color_wanted())
 
 
 def talos_session_from(runner: Runner, path: Path) -> TalosSession:
@@ -116,4 +130,4 @@ def talos_session_from(runner: Runner, path: Path) -> TalosSession:
     require_tool("talosctl")
     if not path.is_file():
         raise ValidationError(f"{path} does not exist")
-    return TalosSession(runner, path)
+    return TalosSession(runner, path, color=_color_wanted())

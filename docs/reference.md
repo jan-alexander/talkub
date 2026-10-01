@@ -207,6 +207,11 @@ Machine configs are rendered on the fly from `talos/secrets.sops.yaml`, `talos/p
 (`controlplane*` / `worker*` are role-specific, `*.sops.yaml` patches are decrypted) and
 `talos/nodes/<node>.yaml`; they are never written to the repo.
 
+`plan` and the dry-run before each `apply` show talosctl's config diff with secrets redacted
+(`<redacted>`). On a terminal the diff is coloured: through `delta --color-only` when
+[delta](https://github.com/dandavison/delta) is installed (word-level highlighting, your delta
+theme; no pager), otherwise red/green built in. Piped output and `NO_COLOR=1` stay plain.
+
 Before `apply --insecure` sends anything, talkub asks the maintenance API whether Talos is already
 on the node's disk (`systemdisk`). If so, Talos does not install the installer image and keeps
 booting the image on disk, e.g. from a reused Hetzner snapshot. talkub then prints that image's
