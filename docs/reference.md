@@ -5,14 +5,18 @@ Every talkub command and what it does in detail. For step-by-step walkthroughs s
 
 ## Install and shell completion
 
-From a GitHub release (built wheel, no build step on install):
+talkub is a Python package (3.12 or newer), installed as a tool with [uv](https://docs.astral.sh/uv/),
+which downloads a matching Python itself if the machine has none. Straight from source:
+
+    uv tool install git+https://github.com/jan-alexander/talkub.git
+
+Or from the built wheel of a GitHub release (no build step on install):
 
     gh release download --repo jan-alexander/talkub --pattern '*.whl' --dir /tmp/talkub
     uv tool install --compile-bytecode /tmp/talkub/talkub-*.whl
 
-Or straight from source:
-
-    uv tool install git+https://github.com/jan-alexander/talkub.git
+Update with `uv tool upgrade talkub` (source installs follow `main`) or by installing the newer
+wheel the same way.
 
     # needs: age, sops, talosctl (v1.14 or newer; init refuses older), helm (and kubectl, kubeseal later)
     # optional: age-plugin-yubikey, age-plugin-se

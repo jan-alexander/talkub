@@ -40,5 +40,5 @@ Adding a command: put the logic into the package that owns the domain, add a thi
 
 Releases are created by the manually triggered `Release` workflow (Actions tab, or
 `gh workflow run release.yml`): it takes the version from `pyproject.toml`, aborts if release
-`v<version>` already exists, runs lint and tests, then publishes wheel, sdist, the binaries and
-`SHA256SUMS`. Bump the version first with `uv version --bump patch|minor|major`.
+`v<version>` already exists, runs lint and tests, then publishes wheel, sdist and `SHA256SUMS`.
+Bump the version first with `uv version --bump patch|minor|major`.
