@@ -281,11 +281,13 @@ reads `targetRevision` from them and shows it next to what is actually running (
 application`) and the latest release upstream. RUNNING is `not deployed` when Argo CD has not
 created the Application (often because the root app cannot sync — `talkub status` shows why),
 `pending` when it exists but has not synced yet, and `?` when the cluster cannot be queried. `*`
-marks a row whose latest differs from its target. On a terminal the table fills in live, row by
-row, with a spinner naming the lookup in progress; when stdout is not a terminal (pipes, scripts)
-the plain table is printed once at the end. `--only` restricts the lookups to the named components
-(a file stem under `gitops/apps/`, `talos` or `kubernetes`) and `--outdated` keeps only rows with
-a newer version (printing `all components are up to date` otherwise). `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
+marks a row whose latest differs from its target. Components are looked up in parallel (up to
+eight at a time; the talosconfig and kubeconfig are decrypted once per run, and helm calls against
+the same chart repo run one after another). On a terminal the table fills in live, each running row
+with a spinner and the lookup in progress; when stdout is not a terminal (pipes, scripts) the plain
+table is printed once at the end. `--only` restricts the lookups to the named components (a file
+stem under `gitops/apps/`, `talos` or `kubernetes`) and `--outdated` keeps only rows with a newer
+version (printing `all components are up to date` otherwise). `chart upgrade` writes the new `targetRevision`, shows a diff of the chart's default values
 (`helm show values` old vs. new) and the chart's `appVersion`, and asks for confirmation unless
 `--yes`; after it, commit and push `gitops/` so Argo CD picks it up. `versions set` only updates
 the target in `.talkub.yaml` — run

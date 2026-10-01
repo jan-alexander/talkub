@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import threading
+from collections.abc import Mapping, Sequence
 
 import typer
-from rich.console import Console, Group, RenderableType
+from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.table import Table
@@ -19,9 +20,10 @@ app = typer.Typer(help="Target vs. running vs. latest versions: Talos, Kubernete
 PENDING = Text("…", style="dim")
 
 
-def _table(names: Sequence[str], rows: dict[str, Row]) -> Table:
-    """The versions table: one line per component in `names`, pending cells dimmed, outdated rows
-    starred (as in the plain text output) with LATEST highlighted."""
+def _table(names: Sequence[str], rows: Mapping[str, Row], steps: Mapping[str, str] | None = None) -> Table:
+    """The versions table: one line per component in `names`. A finished row is starred when
+    outdated (as in the plain text output) with LATEST highlighted; an unfinished one has dimmed
+    cells and, while a lookup runs (`steps[name]`), a spinner plus the lookup's name in NOTE."""
     table = Table(box=None, show_edge=False, pad_edge=False, header_style="bold", collapse_padding=True)
     table.add_column("", width=1, no_wrap=True)
     for title in ("COMPONENT", "TARGET", "RUNNING", "LATEST", "NOTE"):
@@ -29,7 +31,9 @@ def _table(names: Sequence[str], rows: dict[str, Row]) -> Table:
     for name in names:
         row = rows.get(name)
         if row is None:
-            table.add_row(" ", name, PENDING, PENDING, PENDING, "")
+            step = (steps or {}).get(name)
+            marker = Spinner("dots", style="cyan") if step else " "
+            table.add_row(marker, name, PENDING, PENDING, PENDING, Text(step or "", style="dim"))
             continue
         latest = Text(row.latest, style="bold yellow") if row.outdated else Text(row.latest)
         table.add_row("*" if row.outdated else " ", row.component, row.target, row.running, latest, row.note)
@@ -37,29 +41,33 @@ def _table(names: Sequence[str], rows: dict[str, Row]) -> Table:
 
 
 class _LiveTable:
-    """Drives a `rich.live.Live` table from `collect`'s callbacks: every component is listed up
-    front with pending cells, rows fill in as they complete and a spinner below names the lookup
-    currently running. Transient — the final result is printed separately once collecting is done."""
+    """Drives a `rich.live.Live` table from `collect`'s callbacks, which arrive from worker
+    threads: every component is listed up front with pending cells, a running one shows a spinner
+    and the lookup in progress, and rows fill in as they complete. Transient — the final result is
+    printed separately once collecting is done."""
 
     def __init__(self, console: Console, names: Sequence[str]) -> None:
         self._names: Sequence[str] = names
         self._rows: dict[str, Row] = {}
-        self._step: str = ""
+        self._steps: dict[str, str] = {}
+        self._lock = threading.Lock()
         self._live: Live = Live(self._render(), console=console, transient=True, refresh_per_second=12)
 
-    def _render(self) -> RenderableType:
-        table = _table(self._names, self._rows)
-        if not self._step:
-            return table
-        return Group(table, Spinner("dots", text=Text(f"fetching {self._step}", style="dim")))
+    def _render(self) -> Table:
+        return _table(self._names, self._rows, self._steps)
 
-    def on_step(self, message: str) -> None:
-        self._step = message
-        self._live.update(self._render())
+    def _refresh(self) -> None:
+        with self._lock:
+            self._live.update(self._render())
+
+    def on_step(self, component: str, step: str) -> None:
+        self._steps[component] = step
+        self._refresh()
 
     def on_row(self, row: Row) -> None:
         self._rows[row.component] = row
-        self._live.update(self._render())
+        self._steps.pop(row.component, None)
+        self._refresh()
 
     def __enter__(self) -> _LiveTable:
         self._live.start()

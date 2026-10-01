@@ -5,10 +5,11 @@
 app's RUNNING is "not deployed" when its Argo CD Application does not exist and "pending" when it
 exists but has not synced yet.
 
-Collecting is slow (one talosctl/kubectl/helm call or HTTP request per cell), so `collect` reports
-progress through two optional callbacks: `on_step` before every slow lookup (`"<component>: latest
-chart version"`) and `on_row` as soon as a component's row is complete. The CLI drives a live table
-from them; the overview layer itself never prints.
+Collecting is slow (one talosctl/kubectl/helm call or HTTP request per cell), so components are
+looked up concurrently and `collect` reports progress through two optional callbacks: `on_step`
+before every slow lookup (`("<component>", "latest chart version")`) and `on_row` as soon as a
+component's row is complete. The CLI drives a live table from them; the overview layer itself
+never prints.
 """
 
 from __future__ import annotations
@@ -16,9 +17,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass
 
 from talkub.argocd import app_files
@@ -27,14 +31,15 @@ from talkub.config import Repo, Settings
 from talkub.context import Context
 from talkub.core.errors import TalkubError, ValidationError
 from talkub.helm import charts
-from talkub.kube.session import kube_session
+from talkub.kube.session import KubeSession, kube_session
 from talkub.talos import inspect
-from talkub.talos.client import talos_session
+from talkub.talos.client import TalosSession, talos_session
 from talkub.talos.lifecycle import ordered_nodes
 
 GITHUB_API = "https://api.github.com"
 K8S_RELEASE_URL = "https://dl.k8s.io/release/stable.txt"
 KUBECTL_TIMEOUT = "--request-timeout=10s"
+MAX_WORKERS = 8  # components looked up at the same time
 
 _TALOS_VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 _K8S_VERSION_RE = re.compile(r"^v?\d+\.\d+\.\d+$")
@@ -54,10 +59,10 @@ class Row:
         return self.latest not in ("?", "-") and self.latest != self.target
 
 
-Step = Callable[[str], None]
+Step = Callable[[str, str], None]  # (component, what is being looked up)
 
 
-def _no_step(_message: str) -> None:
+def _no_step(_component: str, _step: str) -> None:
     pass
 
 
@@ -106,34 +111,33 @@ def _version_tuple(value: str) -> tuple[int, ...] | None:
         return None
 
 
-def _talos_running(ctx: Context, settings: Settings) -> str:
+def _talos_running(talos: TalosSession | None, settings: Settings) -> str:
     """Distinct `talosctl version` server tags across every node, comma-joined; "?" on any
-    error (undecryptable talosconfig, unreachable node, unparseable output)."""
+    error (no session — undecryptable talosconfig —, unreachable node, unparseable output)."""
+    if talos is None:
+        return "?"
     try:
         order = ordered_nodes(settings, [])
-        with talos_session(ctx) as session:
-            versions: list[str] = []
-            for name in order:
-                result = session.run(settings.mgmt_address(name), ["version"], check=False)
-                if result.returncode != 0:
-                    return "?"
-                version = inspect.server_version(result.stdout.decode())
-                if version is None:
-                    return "?"
-                if version not in versions:
-                    versions.append(version)
-            return ", ".join(versions) if versions else "?"
+        versions: list[str] = []
+        for name in order:
+            result = talos.run(settings.mgmt_address(name), ["version"], check=False)
+            if result.returncode != 0:
+                return "?"
+            version = inspect.server_version(result.stdout.decode())
+            if version is None:
+                return "?"
+            if version not in versions:
+                versions.append(version)
+        return ", ".join(versions) if versions else "?"
     except TalkubError:
         return "?"
 
 
-def _kubernetes_running(ctx: Context) -> str:
+def _kubernetes_running(kube: KubeSession | None) -> str:
     """Distinct kubelet versions across every node, comma-joined; "?" on any error."""
-    try:
-        with kube_session(ctx) as kube:
-            result = kube.kubectl(["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False)
-    except TalkubError:
+    if kube is None:
         return "?"
+    result = kube.kubectl(["get", "nodes", "-o", "json", KUBECTL_TIMEOUT], check=False)
     if result.returncode != 0:
         return "?"
     versions = inspect.kubelet_versions(result.stdout.decode())
@@ -146,24 +150,24 @@ def _kubernetes_running(ctx: Context) -> str:
     return ", ".join(distinct)
 
 
-def _talos_row(ctx: Context, settings: Settings, *, offline: bool, step: Step = _no_step) -> Row:
-    step("talos: running version")
-    running = _talos_running(ctx, settings)
+def _talos_row(talos: TalosSession | None, settings: Settings, *, offline: bool, step: Step = _no_step) -> Row:
+    step("talos", "running version")
+    running = _talos_running(talos, settings)
     if offline:
         latest = "-"
     else:
-        step("talos: latest release")
+        step("talos", "latest release")
         latest = _talos_latest() or "?"
     return Row("talos", settings.talos_version, running, latest)
 
 
-def _kubernetes_row(ctx: Context, settings: Settings, *, offline: bool, step: Step = _no_step) -> Row:
-    step("kubernetes: running version")
-    running = _kubernetes_running(ctx)
+def _kubernetes_row(kube: KubeSession | None, settings: Settings, *, offline: bool, step: Step = _no_step) -> Row:
+    step("kubernetes", "running version")
+    running = _kubernetes_running(kube)
     if offline:
         latest = "-"
     else:
-        step("kubernetes: latest release")
+        step("kubernetes", "latest release")
         latest = _kubernetes_latest() or "?"
     note = ""
     if latest not in ("?", "-"):
@@ -176,24 +180,22 @@ def _kubernetes_row(ctx: Context, settings: Settings, *, offline: bool, step: St
     return Row("kubernetes", settings.kubernetes_version, running, latest, note)
 
 
-def _chart_running(ctx: Context, source: HelmSource, source_index: int | None) -> str:
-    try:
-        with kube_session(ctx) as kube:
-            result = kube.kubectl(
-                [
-                    "-n",
-                    "argocd",
-                    "get",
-                    "application",
-                    source.app,
-                    "-o",
-                    "json",
-                    KUBECTL_TIMEOUT,
-                ],
-                check=False,
-            )
-    except TalkubError:
+def _chart_running(kube: KubeSession | None, source: HelmSource, source_index: int | None) -> str:
+    if kube is None:
         return "?"
+    result = kube.kubectl(
+        [
+            "-n",
+            "argocd",
+            "get",
+            "application",
+            source.app,
+            "-o",
+            "json",
+            KUBECTL_TIMEOUT,
+        ],
+        check=False,
+    )
     if result.returncode != 0:
         # NotFound: Argo CD has not created the Application (yet), e.g. the root app cannot sync.
         return "not deployed" if b"(NotFound)" in (result.stderr or b"") else "?"
@@ -214,36 +216,55 @@ def _app_version_note(ctx: Context, source: HelmSource, latest: str) -> str:
     return ""
 
 
+class _RepoLocks:
+    """One lock per chart repo URL: helm's repository index cache is not safe against concurrent
+    `show chart --repo` calls for the same repo, so those run one at a time (different repos in
+    parallel)."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, threading.Lock] = {}
+        self._guard = threading.Lock()
+
+    def for_repo(self, repo: str) -> threading.Lock:
+        with self._guard:
+            return self._locks.setdefault(repo, threading.Lock())
+
+
 def _chart_row(
     ctx: Context,
+    kube: KubeSession | None,
     component: str,
     source: HelmSource,
     source_index: int | None,
     *,
     offline: bool,
     step: Step = _no_step,
+    locks: _RepoLocks | None = None,
 ) -> Row:
     """One chart app's row. `component` is the `gitops/apps/*.yaml` file stem (see `_chart_row_for`);
     `source.app` — the Application's `metadata.name`, which may differ — is still what identifies
     the actual Argo CD Application resource to `_chart_running`."""
-    step(f"{component}: running version")
-    running = _chart_running(ctx, source, source_index)
+    step(component, "running version")
+    running = _chart_running(kube, source, source_index)
     target = source.version or "?"  # an invalid/empty targetRevision must not crash `versions`
     if offline:
         return Row(component, target, running, "-")
-    step(f"{component}: latest chart version")
-    try:
-        latest = charts.latest_version(ctx.runner, source.repo, source.chart)
-    except TalkubError:
-        return Row(component, target, running, "?")
-    note = ""
-    if latest != source.version:
-        step(f"{component}: appVersion change")
-        note = _app_version_note(ctx, source, latest)
+    step(component, "latest chart version")
+    with (locks or _RepoLocks()).for_repo(source.repo):
+        try:
+            latest = charts.latest_version(ctx.runner, source.repo, source.chart)
+        except TalkubError:
+            return Row(component, target, running, "?")
+        note = ""
+        if latest != source.version:
+            step(component, "appVersion change")
+            note = _app_version_note(ctx, source, latest)
     return Row(component, target, running, latest, note)
 
 
-def _chart_row_for(ctx: Context, stem: str, *, offline: bool, step: Step) -> Row:
+def _chart_row_for(
+    ctx: Context, kube: KubeSession | None, stem: str, *, offline: bool, step: Step, locks: _RepoLocks
+) -> Row:
     """The row for one `gitops/apps/*.yaml` file stem with a Helm chart source: a normal row for a
     single-chart file, a "not a single-chart app" note for one with more than one (or a
     malformed/multi-Application file) — rows are keyed by file stem, never by `metadata.name`,
@@ -254,13 +275,24 @@ def _chart_row_for(ctx: Context, stem: str, *, offline: bool, step: Step) -> Row
     source = sources[0]
     indices = app_files.chart_source_indices(ctx.repo, stem)
     source_index = indices[0] if indices else None
-    return _chart_row(ctx, stem, source, source_index, offline=offline, step=step)
+    return _chart_row(ctx, kube, stem, source, source_index, offline=offline, step=step, locks=locks)
 
 
 def components(repo: Repo) -> list[str]:
     """Every component `collect` reports, in table order: talos, kubernetes, then one entry per
     `gitops/apps/*.yaml` file stem with a Helm chart source."""
     return ["talos", "kubernetes", *app_files.chart_app_stems(repo)]
+
+
+def _open_or_none[S](
+    stack: ExitStack, session: Callable[[Context], AbstractContextManager[S]], ctx: Context
+) -> S | None:
+    """Enter `session(ctx)` on `stack`, or `None` when it cannot be opened (missing or undecryptable
+    config, missing tool): every RUNNING cell that needs it then reads "?"."""
+    try:
+        return stack.enter_context(session(ctx))
+    except TalkubError:
+        return None
 
 
 def collect(
@@ -272,8 +304,12 @@ def collect(
     on_row: Callable[[Row], None] | None = None,
 ) -> list[Row]:
     """Talos, Kubernetes and every chart app (`gitops/apps/*.yaml` with a Helm chart source), or
-    just the components named in `only` (in table order, each looked up once). `on_step` is
-    called before every slow lookup, `on_row` as soon as a row is complete."""
+    just the components named in `only`; the result is in table order.
+
+    Components are looked up concurrently (up to `MAX_WORKERS` at a time), each over the Talos and
+    Kube sessions opened once here, so the callbacks arrive from worker threads and in no fixed
+    order across components: `on_step(component, step)` before every slow lookup, `on_row(row)` as
+    soon as a row is complete."""
     available = components(ctx.repo)
     if only is not None:
         unknown = [name for name in only if name not in available]
@@ -283,20 +319,29 @@ def collect(
                 hint=f"available: {', '.join(available)}",
             )
     wanted = [name for name in available if only is None or name in only]
+    if not wanted:
+        return []
     step = on_step or _no_step
     settings = ctx.repo.load_settings()
-    rows: list[Row] = []
-    for name in wanted:
-        if name == "talos":
-            row = _talos_row(ctx, settings, offline=offline, step=step)
-        elif name == "kubernetes":
-            row = _kubernetes_row(ctx, settings, offline=offline, step=step)
-        else:
-            row = _chart_row_for(ctx, name, offline=offline, step=step)
-        rows.append(row)
-        if on_row is not None:
-            on_row(row)
-    return rows
+    locks = _RepoLocks()
+
+    with ExitStack() as stack:
+        talos = _open_or_none(stack, talos_session, ctx) if "talos" in wanted else None
+        kube = _open_or_none(stack, kube_session, ctx) if any(name != "talos" for name in wanted) else None
+
+        def row_for(name: str) -> Row:
+            if name == "talos":
+                row = _talos_row(talos, settings, offline=offline, step=step)
+            elif name == "kubernetes":
+                row = _kubernetes_row(kube, settings, offline=offline, step=step)
+            else:
+                row = _chart_row_for(ctx, kube, name, offline=offline, step=step, locks=locks)
+            if on_row is not None:
+                on_row(row)
+            return row
+
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(wanted))) as pool:
+            return list(pool.map(row_for, wanted))
 
 
 def outdated(rows: Sequence[Row]) -> list[Row]:

@@ -574,7 +574,7 @@ def test_cli_versions_live_table_on_a_terminal(repo_with_configs, spy, version_h
     except SystemExit as exc:
         assert exc.code == 0
     out = capfd.readouterr().out
-    assert "fetching talos: running version" in out  # the spinner named the lookups while running
+    assert "running version" in out  # the live table named the lookups while they ran
     final = out.rsplit("COMPONENT", 1)[1]  # the table printed after the transient live display
     assert "kubernetes" in final
     talos_line = next(line for line in final.splitlines() if "talos" in line)
@@ -605,7 +605,7 @@ def test_components_lists_talos_kubernetes_and_chart_apps(repo_with_configs):
     assert versions.components(Context.open(repo_with_configs).repo) == ["talos", "kubernetes", "argocd"]
 
 
-def test_collect_reports_steps_and_rows_in_order(repo_with_configs, spy, version_http_stub):
+def test_collect_reports_steps_per_component_and_rows(repo_with_configs, spy, version_http_stub):
     _write_argocd_app(repo_with_configs)
     _spy_talos_kube(spy)
     spy("kubectl").on("get", "application", "argocd", stdout=APP_SYNCED_JSON)
@@ -615,22 +615,97 @@ def test_collect_reports_steps_and_rows_in_order(repo_with_configs, spy, version
         .on("--version", "10.10.0", stdout=CHART_NEW)
         .on("show", "chart", stdout=CHART_NEW)
     )
-    steps: list[str] = []
+    steps: list[tuple[str, str]] = []
     seen: list[str] = []
     rows = versions.collect(
-        Context.open(repo_with_configs), on_step=steps.append, on_row=lambda r: seen.append(r.component)
+        Context.open(repo_with_configs),
+        on_step=lambda component, step: steps.append((component, step)),
+        on_row=lambda r: seen.append(r.component),
     )
-    assert steps == [
-        "talos: running version",
-        "talos: latest release",
-        "kubernetes: running version",
-        "kubernetes: latest release",
-        "argocd: running version",
-        "argocd: latest chart version",
-        "argocd: appVersion change",
-    ]
-    assert seen == ["talos", "kubernetes", "argocd"]
-    assert [row.component for row in rows] == seen
+    by_component = {name: [step for c, step in steps if c == name] for name in ("talos", "kubernetes", "argocd")}
+    assert by_component == {  # components run concurrently, so only the order within one is fixed
+        "talos": ["running version", "latest release"],
+        "kubernetes": ["running version", "latest release"],
+        "argocd": ["running version", "latest chart version", "appVersion change"],
+    }
+    assert sorted(seen) == ["argocd", "kubernetes", "talos"]
+    assert [row.component for row in rows] == ["talos", "kubernetes", "argocd"]  # table order regardless
+
+
+def _write_three_chart_apps(repo):
+    for stem in ("alpha", "beta", "gamma"):
+        write_chart_app(repo, stem, "https://argoproj.github.io/argo-helm", "argo-cd", "10.9.2", stem)
+
+
+def test_collect_decrypts_the_kubeconfig_once_for_many_charts(repo_with_configs, spy, version_http_stub):
+    _write_three_chart_apps(repo_with_configs)
+    _, kubectl = _spy_talos_kube(spy)
+    kubectl.on("get", "application", stdout=APP_SYNCED_JSON)
+    spy("helm").on("show", "chart", stdout=CHART_OLD)
+    ctx = Context.open(repo_with_configs)
+    decrypted: list[str] = []
+    real_decrypt = ctx.sops.decrypt
+
+    def counting_decrypt(path):
+        decrypted.append(path.name)
+        return real_decrypt(path)
+
+    ctx.sops.decrypt = counting_decrypt  # type: ignore[method-assign]
+    rows = versions.collect(ctx)
+    assert [row.running for row in rows if row.component != "talos"] == ["1.37.0", "10.9.2", "10.9.2", "10.9.2"]
+    assert decrypted.count("kubeconfig.sops.yaml") == 1
+    assert decrypted.count("talosconfig.sops.yaml") == 1
+
+
+BARRIER_KUBECTL = """
+case "$*" in
+  *"get nodes"*) printf '%s' '{NODES}'; exit 0 ;;
+esac
+: > "{DIR}/started.$$"
+for _ in $(seq 1 60); do
+  [ "$(ls "{DIR}"/started.* | wc -l)" -ge 3 ] && printf '%s' '{APP}' && exit 0
+  sleep 0.05
+done
+exit 1
+"""
+
+
+def test_collect_queries_chart_apps_concurrently(repo_with_configs, fake_bin, spy, tmp_path, version_http_stub):
+    """A fake kubectl that only answers once three `get application` calls are in flight at the same
+    time: sequential collection would time out on every chart."""
+    _write_three_chart_apps(repo_with_configs)
+    marks = tmp_path / "marks"
+    marks.mkdir()
+    spy("talosctl").on("version", stdout=VERSION_OUT)
+    spy("helm").on("show", "chart", stdout=CHART_OLD)
+    fake_bin(
+        "kubectl",
+        BARRIER_KUBECTL.replace("{DIR}", str(marks)).replace("{NODES}", NODES_JSON).replace("{APP}", APP_SYNCED_JSON),
+    )
+    rows = versions.collect(Context.open(repo_with_configs))
+    assert [row.running for row in rows if row.component not in ("talos", "kubernetes")] == ["10.9.2"] * 3
+
+
+EXCLUSIVE_HELM = """
+if ! mkdir "{DIR}/lock" 2>/dev/null; then echo "concurrent helm run" >&2; exit 1; fi
+sleep 0.3
+rmdir "{DIR}/lock"
+cat "{DIR}/chart.yaml"
+"""
+
+
+def test_collect_serialises_helm_calls_per_chart_repo(repo_with_configs, fake_bin, spy, tmp_path, version_http_stub):
+    """Helm's index cache is not safe against concurrent `show chart --repo` of the same repo, so
+    those run one at a time: a fake helm that refuses to run twice at once never fails."""
+    _write_three_chart_apps(repo_with_configs)
+    lockdir = tmp_path / "helmlock"
+    lockdir.mkdir()
+    (lockdir / "chart.yaml").write_text(CHART_OLD)
+    _, kubectl = _spy_talos_kube(spy)
+    kubectl.on("get", "application", stdout=APP_SYNCED_JSON)
+    fake_bin("helm", EXCLUSIVE_HELM.replace("{DIR}", str(lockdir)))
+    rows = versions.collect(Context.open(repo_with_configs))
+    assert [row.latest for row in rows if row.component not in ("talos", "kubernetes")] == ["10.9.2"] * 3
 
 
 def test_collect_only_restricts_to_named_components_and_skips_the_rest(repo_with_configs, spy, version_http_stub):
