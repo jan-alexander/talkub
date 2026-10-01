@@ -266,7 +266,7 @@ def test_values_get_stub_zone_when_operator_app_exists(cluster):
 
     repo, _, _ = cluster
     settings = repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="tail1234.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="tail1234.ts.net")
     repo.write_settings(settings)
     atomic_write(repo.gitops_dir / "apps" / "tailscale-operator.yaml", b"kind: Application\n")
     run(repo)

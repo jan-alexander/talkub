@@ -72,7 +72,7 @@ def test_enable_note_tells_apply_before_upgrade(repo):
 def test_enable_twice_and_bad_input(repo):
     with pytest.raises(ValidationError):
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey="nope")
-    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY, node_cidr="10.0.0.0/16")
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     assert repo.load_settings().tailscale.node_cidr == "10.0.0.0/16"
     with pytest.raises(ValidationError) as exc:
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
@@ -171,7 +171,7 @@ def test_lockdown_rejects_nodes_outside_the_node_network(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     before_settings = repo.settings_file.read_bytes()
     with pytest.raises(ValidationError) as exc:
-        tailscale.lockdown(Context.open(repo), node_cidr="10.0.0.0/28")  # w-01 (10.0.0.20) is outside
+        tailscale.lockdown(Context.open(repo))  # w-01 (10.0.0.20) is outside
     assert "outside the node network 10.0.0.0/28" in str(exc.value)
     assert "w-01 (10.0.0.20)" in str(exc.value)
     assert "cp-01" not in str(exc.value)

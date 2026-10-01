@@ -264,7 +264,7 @@ def test_add_node_after_lockdown_uses_tailnet_mgmt(empty_repo):
     from talkub.talos import tailscale
 
     settings = empty_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     empty_repo.write_settings(settings)
     add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions())
     assert empty_repo.load_settings().nodes["w-01"].mgmt is None  # enabled, not locked down
@@ -287,7 +287,7 @@ def test_add_node_after_lockdown_use_ips_keeps_lan_ip_and_warns(empty_repo):
     from talkub.talos import tailscale
 
     settings = empty_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24", use_ips=True)
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", use_ips=True)
     empty_repo.write_settings(settings)
     tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True, exist_ok=True)
     tailscale.firewall_patch_path(empty_repo).write_text("x")
@@ -314,7 +314,7 @@ def test_add_node_after_lockdown_warns_outside_the_node_network(empty_repo):
     from talkub.talos import tailscale
 
     settings = empty_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     empty_repo.write_settings(settings)
     # enabled, not locked down: no firewall yet, no warning
     assert add_node(empty_repo, "w-01", NodeSpec(ip="192.168.1.5", role="worker"), NodeOptions()) == []

@@ -96,7 +96,7 @@ def test_render_adds_tailnet_sans_for_controlplanes(talos_repo):
     from talkub.config import TailscaleSpec
 
     settings = talos_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     configs = render_configs(Context.open(talos_repo), settings, ["cp-01"])
     assert "cp-01.t.ts.net" in configs["cp-01"].decode()
 
@@ -106,7 +106,7 @@ def test_render_does_not_duplicate_tailnet_san_already_used_as_mgmt(talos_repo):
     from talkub.config import TailscaleSpec
 
     settings = talos_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     configs = render_configs(Context.open(talos_repo), settings, ["cp-01"])
     for doc in yamlio.load_all(configs["cp-01"].decode()):
@@ -129,7 +129,7 @@ def test_render_worker_gets_its_own_tailnet_and_mgmt_names(talos_repo):
     from talkub.config import TailscaleSpec
 
     settings = talos_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     settings.nodes["w-01"] = NodeSpec(ip="10.0.0.20", role="worker")
     settings.nodes["w-02"] = NodeSpec(ip="10.0.0.21", role="worker", mgmt="w-02.lan")
     settings.nodes["w-03"] = NodeSpec(ip="10.0.0.22", role="worker", mgmt="10.0.0.99")

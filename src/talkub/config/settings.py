@@ -81,10 +81,7 @@ class Settings:
             "nodes": {name: node_to_dict(n) for name, n in self.nodes.items()},
         }
         if self.tailscale is not None:
-            data["tailscale"] = {
-                "tailnet": self.tailscale.tailnet,
-                "nodeCidr": self.tailscale.node_cidr,
-            }
+            data["tailscale"] = {"tailnet": self.tailscale.tailnet}
             if self.tailscale.use_ips:
                 data["tailscale"]["useIps"] = True
         if self.git is not None:
@@ -174,13 +171,14 @@ class Settings:
             if not isinstance(raw_tailscale, Mapping):
                 raise ValidationError(f"{MARKER}: 'tailscale' must be a mapping")
             tailnet = optional_text(raw_tailscale.get("tailnet"), "tailscale.tailnet")
-            node_cidr = optional_text(raw_tailscale.get("nodeCidr"), "tailscale.nodeCidr")
-            if tailnet is None or node_cidr is None:
-                raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet and nodeCidr")
+            if tailnet is None:
+                raise ValidationError(f"{MARKER}: 'tailscale' needs tailnet")
+            # A legacy `nodeCidr` (talkub <= 0.1.7) is ignored: the firewall rules list the nodes'
+            # own addresses (`talkub tailscale firewall`); the key disappears on the next write.
             use_ips = raw_tailscale.get("useIps", False)
             if not isinstance(use_ips, bool):
                 raise ValidationError(f"{MARKER}: 'tailscale.useIps' must be a boolean")
-            tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=node_cidr, use_ips=use_ips)
+            tailscale = TailscaleSpec(tailnet=tailnet, use_ips=use_ips)
 
         git = None
         raw_git = data.get("git")

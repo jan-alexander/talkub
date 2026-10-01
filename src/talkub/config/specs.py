@@ -55,7 +55,6 @@ class SchematicSpec:
 @dataclass(frozen=True)
 class TailscaleSpec:
     tailnet: str
-    node_cidr: str
     use_ips: bool = False
 
 

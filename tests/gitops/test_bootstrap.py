@@ -365,7 +365,7 @@ def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
 
     repo, spies = cluster
     settings = repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     repo.write_settings(settings)
     tailscale.firewall_patch_path(repo).parent.mkdir(parents=True, exist_ok=True)

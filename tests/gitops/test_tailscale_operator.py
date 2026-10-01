@@ -34,7 +34,7 @@ def _run(argv):
 
 def _enable_prereqs(repo):
     settings = repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet=TAILNET, node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet=TAILNET)
     settings.git = GitSpec(GIT_URL)
     repo.write_settings(settings)
     atomic_write(coredns.app_path(repo), b"placeholder\n")
@@ -115,7 +115,7 @@ def test_check_can_enable_requires_tailscale(repo_with_configs):
 
 def test_check_can_enable_requires_coredns(repo_with_configs):
     settings = repo_with_configs.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet=TAILNET, node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet=TAILNET)
     repo_with_configs.write_settings(settings)
     with pytest.raises(ValidationError) as exc:
         tailscale_operator.check_can_enable(repo_with_configs)
@@ -125,7 +125,7 @@ def test_check_can_enable_requires_coredns(repo_with_configs):
 
 def test_check_can_enable_requires_git_url(repo_with_configs):
     settings = repo_with_configs.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet=TAILNET, node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet=TAILNET)
     repo_with_configs.write_settings(settings)
     atomic_write(coredns.app_path(repo_with_configs), b"placeholder\n")
     with pytest.raises(ValidationError) as exc:

@@ -76,7 +76,7 @@ def test_refresh_fails_when_no_controlplane_answers(talos_repo, spy):
 
 def test_refresh_after_lockdown_points_at_the_tailnet(talos_repo, spy):
     settings = talos_repo.load_settings()
-    settings.tailscale = TailscaleSpec(tailnet="t.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     talos_repo.write_settings(settings)
     tailscale.firewall_patch_path(talos_repo).parent.mkdir(parents=True, exist_ok=True)

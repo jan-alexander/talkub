@@ -120,19 +120,19 @@ def test_full_settings_roundtrip(tmp_path):
         platform="metal",
         arch="arm64",
     )
-    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24")
+    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net")
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert repo.load_settings() == settings
     text = repo.settings_file.read_text()
     assert "installImage" not in text
-    assert "kernelArgs" in text and "nodeCidr" in text
+    assert "kernelArgs" in text and "nodeCidr" not in text
     assert "useIps" not in text  # default False is not written
 
 
 def test_tailscale_use_ips_roundtrip(tmp_path):
     settings = sample_settings()
-    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", node_cidr="10.0.0.0/24", use_ips=True)
+    settings.tailscale = TailscaleSpec(tailnet="tail.ts.net", use_ips=True)
     repo = Repo(tmp_path)
     repo.write_settings(settings)
     assert repo.load_settings() == settings
@@ -141,10 +141,27 @@ def test_tailscale_use_ips_roundtrip(tmp_path):
 
 def test_tailscale_use_ips_defaults_false_and_parses_strictly():
     data = sample_settings().to_dict()
-    data["tailscale"] = {"tailnet": "t.ts.net", "nodeCidr": "10.0.0.0/24"}
+    data["tailscale"] = {"tailnet": "t.ts.net"}
     assert Settings.from_dict(data).tailscale.use_ips is False
     data["tailscale"]["useIps"] = "true"  # not a bool
     with pytest.raises(ValidationError):
+        Settings.from_dict(data)
+
+
+def test_tailscale_legacy_node_cidr_is_ignored_and_dropped(tmp_path):
+    data = sample_settings().to_dict()
+    data["tailscale"] = {"tailnet": "t.ts.net", "nodeCidr": "10.0.0.0/24"}
+    settings = Settings.from_dict(data)
+    assert settings.tailscale == TailscaleSpec(tailnet="t.ts.net")
+    repo = Repo(tmp_path)
+    repo.write_settings(settings)
+    assert "nodeCidr" not in repo.settings_file.read_text()
+
+
+def test_tailscale_needs_tailnet():
+    data = sample_settings().to_dict()
+    data["tailscale"] = {"useIps": True}
+    with pytest.raises(ValidationError, match="tailnet"):
         Settings.from_dict(data)
 
 
