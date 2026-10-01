@@ -25,6 +25,7 @@ from talkub.core.errors import ValidationError
 from talkub.core.findings import (
     Finding,  # moved to findings.py; kept importable from here too
 )
+from talkub.helm.charts import strip_pull_preamble
 from talkub.helm.install import chart_ref
 
 # kubeconform's file-name template for CRD schemas: the same layout is used by the datree
@@ -410,7 +411,7 @@ def _render_helm(ctx: Context, source: HelmSource, tmp: Path, index: int, report
             )
         )
         return None
-    return result.stdout
+    return strip_pull_preamble(result.stdout)
 
 
 def lint_helm_app(ctx: Context, report: LintReport, source: HelmSource, *, offline: bool = False) -> None:

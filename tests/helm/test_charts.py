@@ -29,6 +29,32 @@ def test_latest_version_oci_repo():
     ]
 
 
+def test_latest_version_schemeless_oci_repo():
+    # Argo CD's form of an OCI chart repo: no oci:// scheme in repoURL.
+    runner = FakeRunner(outputs={"helm": CHART_YAML})
+    charts.latest_version(runner, "code.forgejo.org/forgejo-helm", "forgejo")
+    assert runner.calls[0].argv == [
+        "helm",
+        "show",
+        "chart",
+        "oci://code.forgejo.org/forgejo-helm/forgejo",
+    ]
+
+
+def test_show_chart_drops_the_oci_pull_preamble():
+    # helm 4 prints "Pulled:"/"Digest:" lines on stdout before the document of an OCI chart.
+    preamble = b"Pulled: code.forgejo.org/forgejo-helm/forgejo:17.1.7\nDigest: sha256:abc\n"
+    runner = FakeRunner(outputs={"helm": preamble + CHART_YAML})
+    doc = charts.show_chart(runner, "code.forgejo.org/forgejo-helm", "forgejo", "17.1.7")
+    assert doc == {"apiVersion": "v2", "name": "argo-cd", "version": "10.9.2", "appVersion": "v3.5.3"}
+
+
+def test_strip_pull_preamble_only_touches_leading_lines():
+    assert charts.strip_pull_preamble(b"Pulled: a:1\nDigest: sha256:x\n---\nkind: X\n") == b"---\nkind: X\n"
+    assert charts.strip_pull_preamble(b"kind: X\nDigest: not a preamble\n") == b"kind: X\nDigest: not a preamble\n"
+    assert charts.strip_pull_preamble(b"") == b""
+
+
 def test_resolve_defaults_covers_both_charts():
     specs = charts.resolve_defaults(FakeRunner(outputs={"helm": CHART_YAML}))
     assert set(specs) == {"argocd", "sealed-secrets"}

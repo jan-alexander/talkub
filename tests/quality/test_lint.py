@@ -990,6 +990,23 @@ def test_lint_helm_apps_renders_and_validates(empty_repo, spy):
     assert kubeconform.calls[-1]["args"][-1] == "-"
 
 
+def test_lint_helm_apps_drops_the_oci_pull_preamble(empty_repo, spy):
+    # helm 4 prints "Pulled:"/"Digest:" lines on stdout before the manifests of an OCI chart;
+    # kubeconform would otherwise see a document without a kind.
+    _write_source_app(empty_repo, "myapp")
+    helm = spy("helm")
+    manifest = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"
+    helm.on("template", stdout="Pulled: example.com/charts/mychart:1.0.0\nDigest: sha256:abc\n---\n" + manifest)
+    kubeconform = spy("kubeconform")
+    kubeconform.on("-", stdout=_kubeconform_json([]), read_stdin=True)
+
+    report = LintReport()
+    lint_helm_apps(Context.open(empty_repo), report, offline=False)
+
+    assert report.findings == []
+    assert kubeconform.calls[-1]["stdin"] == "---\n" + manifest
+
+
 def test_lint_helm_apps_uses_inline_values_file(empty_repo, fake_bin):
     _write_source_app(empty_repo, "myapp", helm={"valuesObject": {"foo": "bar"}})
     fake_bin("helm", "true\n")  # never actually run: FakeRunner intercepts

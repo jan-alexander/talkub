@@ -7,13 +7,15 @@ from contextlib import ExitStack
 from talkub.argocd.app_files import HelmSource
 from talkub.config import ChartSpec
 from talkub.core.ephemeral import private_file
+from talkub.helm.charts import oci_reference
 from talkub.kube.session import KubeSession
 
 
 def chart_ref(chart: ChartSpec) -> list[str]:
     """helm arguments naming the chart: an OCI reference, or chart name plus --repo."""
-    if chart.repo.startswith("oci://"):
-        return [f"{chart.repo.rstrip('/')}/{chart.chart}"]
+    reference = oci_reference(chart.repo, chart.chart)
+    if reference is not None:
+        return [reference]
     return [chart.chart, "--repo", chart.repo]
 
 

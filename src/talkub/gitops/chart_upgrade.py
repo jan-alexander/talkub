@@ -53,7 +53,7 @@ def _show_values(ctx: Context, chart: ChartSpec) -> str:
         "--version",
         chart.version,
     ]
-    return ctx.runner.run(argv).stdout.decode()
+    return charts.strip_pull_preamble(ctx.runner.run(argv).stdout).decode()
 
 
 def _diff(old: str, new: str, *, old_label: str, new_label: str) -> str:

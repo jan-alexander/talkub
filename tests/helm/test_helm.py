@@ -13,6 +13,12 @@ def test_chart_ref_oci_is_a_single_reference():
     assert chart_ref(chart) == ["oci://ghcr.io/argoproj/argo-helm/argo-cd"]
 
 
+def test_chart_ref_schemeless_repo_is_oci():
+    # Argo CD writes OCI chart repos without the oci:// scheme in repoURL.
+    chart = ChartSpec(repo="code.forgejo.org/forgejo-helm", chart="forgejo", version="1")
+    assert chart_ref(chart) == ["oci://code.forgejo.org/forgejo-helm/forgejo"]
+
+
 def test_chart_ref_https_uses_repo_flag():
     chart = ChartSpec(repo="https://charts.example.org", chart="demo", version="1")
     assert chart_ref(chart) == ["demo", "--repo", "https://charts.example.org"]

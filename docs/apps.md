@@ -67,7 +67,8 @@ https://stefanprodan.github.io/podinfo` lists the defaults.
   keep it equal to `metadata.name`.
 - `talkub lint`, `versions` and `chart upgrade` understand the pattern above: `repoURL` +
   `chart` + `targetRevision`, values via `$values/…`. Other value file paths are skipped with a
-  warning. `talkub versions` also reads `oci://` repo URLs.
+  warning. Charts from an OCI registry work too, written the way Argo CD wants them: `repoURL:
+  code.forgejo.org/forgejo-helm` without the `oci://` scheme (talkub also accepts `oci://`).
 - Namespaces that must be `privileged` or need labels: create them yourself
   ([3](#3-namespaces-and-pod-security)) instead of `CreateNamespace=true`.
 

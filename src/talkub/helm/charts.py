@@ -22,16 +22,38 @@ CATALOG: dict[str, tuple[str, str]] = {
 DEFAULT_KEYS = ("argocd", "sealed-secrets")
 
 
+def oci_reference(repo: str, chart: str) -> str | None:
+    """The `oci://registry/path/chart` reference of a chart in an OCI registry, or None for a
+    classic (http(s)) chart repository. Argo CD writes OCI repos into `repoURL` without the
+    `oci://` scheme (`code.forgejo.org/forgejo-helm`), helm needs it; both forms are accepted."""
+    if "://" not in repo:
+        repo = f"oci://{repo}"
+    if not repo.startswith("oci://"):
+        return None
+    return f"{repo.rstrip('/')}/{chart}"
+
+
+def strip_pull_preamble(stdout: bytes) -> bytes:
+    """helm's stdout without the `Pulled: ...` / `Digest: ...` lines it prints before the actual
+    output when it fetches a chart from an OCI registry (helm 4); they would otherwise be read as
+    part of the document."""
+    lines = stdout.split(b"\n")
+    while lines and (lines[0].startswith(b"Pulled: ") or lines[0].startswith(b"Digest: ")):
+        del lines[0]
+    return b"\n".join(lines)
+
+
 def show_chart(runner: Runner, repo: str, chart: str, version: str | None = None) -> dict:
     """Full `helm show chart` document (`version`, `appVersion`, ...); pinned to `version` if
     given, else the repo's latest."""
-    if repo.startswith("oci://"):
-        argv = ["helm", "show", "chart", f"{repo.rstrip('/')}/{chart}"]
+    reference = oci_reference(repo, chart)
+    if reference is not None:
+        argv = ["helm", "show", "chart", reference]
     else:
         argv = ["helm", "show", "chart", chart, "--repo", repo]
     if version is not None:
         argv = [*argv, "--version", version]
-    return yamlio.load(runner.run(argv).stdout.decode())
+    return yamlio.load(strip_pull_preamble(runner.run(argv).stdout).decode())
 
 
 def latest_version(runner: Runner, repo: str, chart: str) -> str:
