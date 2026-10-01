@@ -328,7 +328,7 @@ def lockdown(ctx: Context, *, use_ips: bool = False) -> list[str]:
     ]
     if non_tailnet:
         notes.append(
-            "these nodes keep a non-tailnet mgmt and are reachable only from the node network after "
+            "these nodes keep a non-tailnet mgmt and are reachable only from the other nodes after "
             f"`apply`: {', '.join(non_tailnet)}"
         )
     return notes

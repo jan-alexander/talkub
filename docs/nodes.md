@@ -33,9 +33,9 @@ talkub status
   arm64 Hetzner CAX node). A platform the cluster does not use yet needs a schematic first
   (`talkub image show --platform <platform>`); `apply` refuses without one.
 - With Tailscale lockdown, `node add` sets `mgmt` to `<name>.<tailnet>` itself (with
-  `lockdown --use-ips` it warns: set `mgmt` to the tailnet IP once the node has joined). An `ip`
-  outside `--node-cidr` is warned about: the firewall blocks cluster traffic from it until the
-  rules in `talos/patches/firewall.yaml` are extended.
+  `lockdown --use-ips` it warns: set `mgmt` to the tailnet IP once the node has joined). It also
+  rewrites `talos/patches/firewall.yaml` to allow the new node's `ip` (which must be an IP address,
+  not a name); `talkub apply` activates it on the existing nodes before the new node can join.
 - If the machine already has Talos on its disk, `apply --insecure` shows that and asks: see
   [getting started](getting-started.md#2a-the-node-already-has-talos-on-its-disk).
 
@@ -108,7 +108,7 @@ The install disk itself cannot be swapped in place: treat it as a new machine ([
 | Change                                         | Steps                                                                                                                                                                                                |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mgmt` only (how talkub reaches the node)      | Edit `nodes.<name>.mgmt` in `.talkub.yaml`. A name (not an IP) goes into the node's certificate: `talkub apply <name>`. A control plane's `mgmt` goes into every node's certificate: `talkub apply`. |
-| The node's IP (DHCP reservation or `--static`) | Change `--static`/`--gateway` in `talos/nodes/<name>.yaml` (or the DHCP reservation), `talkub apply <name>`, then update `ip`/`mgmt`.                                                                |
+| The node's IP (DHCP reservation or `--static`) | Change `--static`/`--gateway` in `talos/nodes/<name>.yaml` (or the DHCP reservation), `talkub apply <name>`, then update `ip`/`mgmt`. With Tailscale lockdown: `talkub tailscale firewall` and `talkub apply`, so the other nodes allow the new address. |
 | A control plane's IP                           | As above, plus the talosconfig endpoints (`talkub sops edit talos/talosconfig.sops.yaml`); if it is the Kubernetes endpoint, see [2](#2-add-control-planes-ha).                                      |
 
 Reach the node through its old address for the `apply`, and expect the connection to drop when the

@@ -235,6 +235,8 @@ it on a real cluster before relying on it.
 
 Version skew: repos written by this talkub version (`schematics` instead of `installImage` in
 `.talkub.yaml`) cannot be read by older talkub versions — all admins should upgrade together.
+`tailscale.nodeCidr` from older versions is ignored and dropped on the next write; run
+`talkub tailscale firewall` and `talkub apply` once to narrow the firewall to the nodes' addresses.
 
 ## Bootstrap, upgrades and status
 
@@ -311,6 +313,7 @@ Prefer `--prompt` or `--from-file` over `--from-literal`; more in [handling secr
     talkub apply && talkub upgrade talos                # configures, then installs the extension (via LAN)
     talkub tailscale lockdown [--use-ips]               # firewall + tailnet addresses for talosctl/kubectl
     talkub apply                                        # activates the firewall (via the tailnet)
+    talkub tailscale firewall                           # rewrite the firewall from the nodes' ips (then apply)
 
     talkub tailscale operator enable [--rotate-credentials]           # the operator (needs the CoreDNS takeover)
     talkub tailscale expose grafana --service monitoring/grafana --port 80   # https://grafana.<tailnet>
@@ -318,9 +321,11 @@ Prefer `--prompt` or `--from-file` over `--from-literal`; more in [handling secr
     talkub tailscale egress add db --fqdn db.tail1234.ts.net           # pods reach tailnet hosts
     talkub tailscale egress remove db
 
-After `lockdown` and `apply`, the Talos and Kubernetes APIs are reachable only via the tailnet; the
-nodes keep their LAN/public addresses for cluster traffic. Admin console setup, what the firewall
-allows, rollback, the operator, ingress, egress and troubleshooting: [Tailscale](tailscale.md).
+After `lockdown` and `apply`, the Talos and Kubernetes APIs are reachable only via the tailnet;
+cluster ports are open only to the nodes' own addresses (`ip` in `.talkub.yaml`), the pod and the
+service network. `node add` and `tailscale firewall` rewrite the patch; `talkub apply` activates it.
+Admin console setup, what the firewall allows, rollback, the operator, ingress, egress and
+troubleshooting: [Tailscale](tailscale.md).
 
 ## CoreDNS
 

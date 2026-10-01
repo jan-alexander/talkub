@@ -37,8 +37,7 @@ talkub init homelab … --tailscale --tailnet tail1234.ts.net   # asks for the a
 ```
 
 `init` then does both steps below in the repo right away; the nodes install with the extension and
-come up locked down. `--node-cidr` sets the node network if the `/24` of the first node does not
-cover every node.
+come up locked down.
 
 ### 1b. An existing cluster
 
@@ -69,14 +68,22 @@ What the two steps write:
 | Ports                                    | From                                                   | For                            |
 | ---------------------------------------- | ------------------------------------------------------ | ------------------------------ |
 | 50000, 6443/tcp                          | the tailnet (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`)   | admins: talosctl, kubectl      |
-| 50000, 50001, 6443, 2379-2380, 10250/tcp | node network (`--node-cidr`), pod and service networks | cluster traffic: etcd, kubelet |
-| 4789/udp                                 | node network                                           | Flannel VXLAN                  |
+| 50000, 50001, 6443, 2379-2380, 10250/tcp | each node's `ip` (`/32`), pod and service networks     | cluster traffic: etcd, kubelet |
+| 4789/udp                                 | the nodes' own addresses                               | Flannel VXLAN                  |
 | 80, 443/tcp                              | anywhere, only on nodes added with `--public-ingress`  | a public ingress controller    |
 
 The nodes keep their LAN/public addresses for the cluster itself and do not use Tailscale DNS
 (`TS_ACCEPT_DNS=false`); only admin clients go through the tailnet. Everything else, NodePorts
-included, is blocked from outside. A node whose `ip` lies outside `--node-cidr` would lose its
-cluster traffic: `lockdown` refuses, and `node add` warns.
+included, is blocked from outside. The rules name each node's `ip`, so a node needs a fixed address
+(DHCP reservation or `--static`) and `ip` must be an IP, not a name (`mgmt` may be a name).
+`talkub node add` rewrites `talos/patches/firewall.yaml` with the new node; after changing a node's
+`ip` run `talkub tailscale firewall`. Both need `talkub apply` afterwards. The file is generated:
+put extra rules into `talos/nodes/<node>.yaml` (like `--public-ingress`) or another patch, edits in
+`firewall.yaml` itself are overwritten.
+
+Repos written by talkub 0.1.7 or older allowed a whole network instead (`tailscale.nodeCidr`,
+usually the `/24` around the first node, which on a hosted server is shared with strangers). The key
+is ignored now; run `talkub tailscale firewall` and `talkub apply` once to narrow the rules.
 
 ### 1d. Clients without MagicDNS
 
@@ -90,6 +97,8 @@ The IPs stay the same as long as the device is not deleted from the tailnet.
 - **New nodes**: `talkub node add` sets `mgmt` to `<node>.tail1234.ts.net` itself; with
   `--use-ips`, set it to the node's tailnet IP after the first install. The first install
   (`apply --insecure`) still uses `--ip`: maintenance mode has no firewall. See [nodes](nodes.md).
+- **A node's `ip` changed**: update it in `.talkub.yaml`, then `talkub tailscale firewall` and
+  `talkub apply`.
 - **A new auth key** (expired or revoked): `talkub sops edit talos/patches/tailscale.sops.yaml`,
   then `talkub apply`. Nodes already in the tailnet keep their device; the key matters for new and
   reinstalled nodes.
@@ -104,8 +113,8 @@ Back to LAN access, e.g. when the tailnet is not an option any more:
 2. In `.talkub.yaml`, set `mgmt` back to the LAN addresses (or remove the entries).
 3. Point the talosconfig endpoints/nodes and the kubeconfig `server` back at the LAN:
    `talkub sops edit talos/talosconfig.sops.yaml` and `talkub sops edit kubernetes/kubeconfig.sops.yaml`.
-4. `talkub apply` via the LAN. While the firewall is still active, your machine must be inside the
-   node network (`--node-cidr`), since 50000 is open only to the tailnet and the node network.
+4. `talkub apply` via the LAN. While the firewall is still active, 50000 is open only to the tailnet
+   and the nodes' own addresses, so run this from a node or from inside the tailnet.
 5. Commit.
 
 To remove the extension as well, remove `siderolabs/tailscale` from the schematics
@@ -196,7 +205,7 @@ rewrites `spec.externalName`, so the config app ignores that field instead of re
 | Node boot hangs at `service "ext-tailscale" to be up`                    | Extension without a valid auth key (reused image, expired key): new key via `sops edit`, or [getting started](getting-started.md#2a-the-node-already-has-talos-on-its-disk).               |
 | talosctl/kubectl time out after `apply`                                  | Firewall active, but your machine is not in the tailnet, or `mgmt` is wrong: `tailscale status`, `.talkub.yaml`.                                                                           |
 | Node drops out of the tailnet after months                               | Key expiry: disable it for the node devices; re-auth with a new key ([1e](#1e-after-the-lockdown)).                                                                                        |
-| New node `NotReady`, flannel errors                                      | Its `ip` is outside `--node-cidr`: extend the rules in `talos/patches/firewall.yaml`, `talkub apply`.                                                                                      |
+| New node `NotReady`, flannel errors                                      | The existing nodes still run the old firewall: `talkub apply`. A node whose `ip` changed: `talkub tailscale firewall`, `talkub apply`.                                                      |
 | `https://<app>.<tailnet>` has no certificate                             | HTTPS certificates not enabled for the tailnet; the first request can take a minute while the certificate is issued.                                                                       |
 | Redirect loop behind `expose`                                            | The backend redirects HTTP to HTTPS; switch it to plain HTTP (e.g. `server.insecure` for Argo CD).                                                                                         |
 | Egress: the Service works, the MagicDNS name returns NXDOMAIN            | The operator's nameserver missed an update (seen with 1.102.4): if `talkub k -n tailscale get cm dnsrecords -o yaml` lists the name, `talkub k -n tailscale delete pod -l app=nameserver`. |
