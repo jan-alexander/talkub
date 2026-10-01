@@ -33,19 +33,19 @@ leaves you with a lot of loose ends:
 
 ## ✨ What talkub gives you
 
-|                                                       |                                                                                                                                                                                                               |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 📦 **One repo, one source of truth**                  | Talos configs, versions, schematics, Argo CD apps and chart versions all live in the repo. `talkub init` scaffolds it; nothing important lives on a laptop.                                                   |
-| 🔐 **Secrets that never touch the disk in plaintext** | SOPS + age for infrastructure secrets, Sealed Secrets for app secrets. Keys on a **YubiKey** or in the **Secure Enclave**. Decrypted configs exist only in private temp dirs for the duration of one command. |
-| 👥 **Team access without passing files around**       | `talkub admin add` / `admin remove` plus `keys rotate`. Nobody ever handles the cluster master key directly.                                                                                                  |
+|                                                       |                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 📦 **One repo, one source of truth**                  | Talos configs, versions, schematics, Argo CD apps and chart versions all live in the repo. `talkub init` scaffolds it; nothing important lives on a laptop.                                                                                                                                                              |
+| 🔐 **Secrets that never touch the disk in plaintext** | SOPS + age for infrastructure secrets, Sealed Secrets for app secrets. Keys on a **YubiKey** or in the **Secure Enclave**. Decrypted configs exist only in private temp dirs for the duration of one command.                                                                                                            |
+| 👥 **Team access without passing files around**       | `talkub admin add` / `admin remove` plus `keys rotate`. Nobody ever handles the cluster master key directly.                                                                                                                                                                                                             |
 | 🧠 **Configs rendered, never stored**                 | Machine configs are built on the fly from the secrets bundle, shared patches and per-node files. `talkub plan` shows what would change as a coloured diff with secrets redacted (word-level highlighting through [delta](https://github.com/dandavison/delta) if you have it); `talkub apply` rolls it out node by node. |
-| 🚀 **Bootstrap in one command**                       | etcd, kubeconfig, CoreDNS, Sealed Secrets (including a key backup) and Argo CD with an app of apps. Safe to re-run.                                                                                           |
-| 🔄 **Upgrades with guard rails**                      | `talkub versions` compares target, running and latest for Talos, Kubernetes and every chart. Upgrades run one node at a time with drain and health checks. `talkub renovate init` sets up update PRs.         |
-| 🛡️ **Tailscale lockdown**                             | Two steps, and the Talos and Kubernetes APIs are reachable only from your tailnet. The Tailscale operator puts apps at `https://app.your-tailnet.ts.net`.                                                     |
-| 💽 **Disk assistant**                                 | `talkub node volumes` reads the node's disks, suggests a portable selector, simulates where Talos places each volume and writes the config.                                                                   |
-| ⚡ **Shortcuts for daily work**                       | `talkub run db-password` copies a secret to the clipboard and clears it after 45 s. Fresh tokens, port forwards, CronJob runs and `k9s` with the right kubeconfig work the same way.                          |
-| ✅ **Mistakes caught before the commit**              | A pre-commit hook blocks unencrypted secrets, plain Kubernetes Secrets and invalid manifests (`yamllint`, `kubeconform`, `helm template`).                                                                    |
-| 🧯 **A plan for bad days**                            | `rotate-ca` for a leaked Talos CA, `keys rotate` when an admin leaves, and guides for rebuilding a node or the whole cluster from the repo.                                                                   |
+| 🚀 **Bootstrap in one command**                       | etcd, kubeconfig, CoreDNS, Sealed Secrets (including a key backup) and Argo CD with an app of apps. Safe to re-run.                                                                                                                                                                                                      |
+| 🔄 **Upgrades with guard rails**                      | `talkub versions` compares target, running and latest for Talos, Kubernetes and every chart. Upgrades run one node at a time with drain and health checks. `talkub renovate init` sets up update PRs.                                                                                                                    |
+| 🛡️ **Tailscale lockdown**                             | Two steps, and the Talos and Kubernetes APIs are reachable only from your tailnet. The Tailscale operator puts apps at `https://app.your-tailnet.ts.net`.                                                                                                                                                                |
+| 💽 **Disk assistant**                                 | `talkub node volumes` reads the node's disks, suggests a portable selector, simulates where Talos places each volume and writes the config.                                                                                                                                                                              |
+| ⚡ **Shortcuts for daily work**                       | `talkub run db-password` copies a secret to the clipboard and clears it after 45 s. Fresh tokens, port forwards, CronJob runs and `k9s` with the right kubeconfig work the same way.                                                                                                                                     |
+| ✅ **Mistakes caught before the commit**              | A pre-commit hook blocks unencrypted secrets, plain Kubernetes Secrets and invalid manifests (`yamllint`, `kubeconform`, `helm template`).                                                                                                                                                                               |
+| 🧯 **A plan for bad days**                            | `rotate-ca` for a leaked Talos CA, `keys rotate` when an admin leaves, and guides for rebuilding a node or the whole cluster from the repo.                                                                                                                                                                              |
 
 ## 🎯 Is talkub for you?
 
@@ -116,9 +116,14 @@ install -m 755 /tmp/talkub/talkub-*-darwin-arm64 ~/.local/bin/talkub
 Or with uv: `uv tool install git+https://github.com/jan-alexander/talkub.git`. More options and
 shell completion: [reference](docs/reference.md#install-and-shell-completion).
 
-talkub drives the standard tools: `age`, `sops`, `talosctl` (v1.14+), `helm`, `kubectl`,
-`kubeseal`, and optionally `age-plugin-yubikey` / `age-plugin-se`, `kubeconform` and
-[delta](https://github.com/dandavison/delta) (colours the `plan`/`apply` diffs; red/green built in
+talkub drives the standard tools: [`age`](https://github.com/FiloSottile/age),
+[`sops`](https://github.com/getsops/sops), [`talosctl`](https://github.com/siderolabs/talos) (v1.14+),
+[`helm`](https://helm.sh), [`kubectl`](https://kubernetes.io/docs/reference/kubectl/),
+[`kubeseal`](https://github.com/bitnami-labs/sealed-secrets), and optionally
+[`age-plugin-yubikey`](https://github.com/str4d/age-plugin-yubikey) /
+[`age-plugin-se`](https://github.com/remko/age-plugin-se),
+[`kubeconform`](https://github.com/yannh/kubeconform) and
+[`delta`](https://github.com/dandavison/delta) (colours the `plan`/`apply` diffs; red/green built in
 without it).
 
 ## 🚀 Quick start
