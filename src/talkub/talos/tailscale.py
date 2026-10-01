@@ -67,41 +67,23 @@ def validate_authkey(key: str) -> str:
     return key
 
 
-def validate_cidr(cidr: str) -> str:
-    try:
-        return str(ipaddress.ip_network(cidr, strict=False))
-    except ValueError:
-        raise ValidationError(f"invalid --node-cidr {cidr!r}", hint="e.g. 10.0.0.0/24") from None
-
-
 def controlplanes(settings: Settings) -> list[str]:
     return [name for name in ordered_nodes(settings, []) if settings.nodes[name].role == "controlplane"]
 
 
-def default_node_cidr(settings: Settings) -> str:
-    first = ordered_nodes(settings, [])[0]
-    ip = settings.nodes[first].ip
-    try:
-        return str(ipaddress.ip_interface(f"{ip}/24").network)
-    except ValueError:
-        raise ValidationError(
-            f"cannot derive the node network from {ip!r}",
-            hint="pass --node-cidr, e.g. 10.0.0.0/24",
-        ) from None
-
-
-def outside_node_network(settings: Settings, node_cidr: str) -> list[str]:
-    """`name (ip)` of the nodes whose IP is not in `node_cidr`; host names are skipped."""
-    network = ipaddress.ip_network(node_cidr, strict=False)
-    outside = []
+def node_sources(settings: Settings) -> list[str]:
+    """One host subnet per node (`/32`, `/128`) for the cluster-internal firewall rules."""
+    sources = []
     for name, node in settings.nodes.items():
         try:
             address = ipaddress.ip_address(node.ip)
         except ValueError:
-            continue
-        if address not in network:
-            outside.append(f"{name} ({node.ip})")
-    return outside
+            raise ValidationError(
+                f"node '{name}' has no IP address (ip: {node.ip!r}); the firewall rules need one",
+                hint=f"set nodes.{name}.ip in .talkub.yaml to the node's IP address (mgmt may stay a name)",
+            ) from None
+        sources.append(f"{address}/{address.max_prefixlen}")
+    return sources
 
 
 def is_tailnet_address(address: str, tailnet: str) -> bool:
@@ -184,13 +166,18 @@ def render_extension_patch(authkey: str) -> bytes:
     return yamlio.dump(doc).encode()
 
 
-def render_firewall_patch(node_cidr: str) -> str:
+FIREWALL_HEADER = (
+    "# Talos firewall written by `talkub tailscale lockdown` and rewritten by `talkub tailscale firewall`\n"
+    "# and `talkub node add`: from outside, the Talos and Kubernetes APIs are reachable only via the\n"
+    "# tailnet; cluster ports are open only to the nodes' own addresses. Edits here are overwritten;\n"
+    "# put extra rules into talos/nodes/<node>.yaml or another patch.\n"
+)
+
+
+def render_firewall_patch(sources: Sequence[str]) -> str:
+    node_rules = [{"subnet": s} for s in sources]
     docs = [
-        {
-            "apiVersion": "v1alpha1",
-            "kind": "NetworkDefaultActionConfig",
-            "ingress": "block",
-        },
+        {"apiVersion": "v1alpha1", "kind": "NetworkDefaultActionConfig", "ingress": "block"},
         {
             "apiVersion": "v1alpha1",
             "kind": "NetworkRuleConfig",
@@ -202,29 +189,43 @@ def render_firewall_patch(node_cidr: str) -> str:
             "apiVersion": "v1alpha1",
             "kind": "NetworkRuleConfig",
             "name": "cluster-internal",
-            "portSelector": {
-                "ports": [50000, 50001, 6443, "2379-2380", 10250],
-                "protocol": "tcp",
-            },
-            "ingress": [
-                {"subnet": node_cidr},
-                {"subnet": POD_SUBNET},
-                {"subnet": SERVICE_SUBNET},
-            ],
+            "portSelector": {"ports": [50000, 50001, 6443, "2379-2380", 10250], "protocol": "tcp"},
+            "ingress": [*node_rules, {"subnet": POD_SUBNET}, {"subnet": SERVICE_SUBNET}],
         },
         {
             "apiVersion": "v1alpha1",
             "kind": "NetworkRuleConfig",
             "name": "flannel-vxlan",
             "portSelector": {"ports": [4789], "protocol": "udp"},
-            "ingress": [{"subnet": node_cidr}],
+            "ingress": node_rules,
         },
     ]
-    header = (
-        "# Talos firewall written by `talkub tailscale lockdown`: from outside, the Talos and\n"
-        "# Kubernetes APIs are reachable only via the tailnet; the node network keeps cluster ports.\n"
-    )
-    return header + "---\n".join(yamlio.dump(doc) for doc in docs)
+    return FIREWALL_HEADER + "---\n".join(yamlio.dump(doc) for doc in docs)
+
+
+def write_firewall_patch(repo: Repo, settings: Settings) -> list[str]:
+    """Write talos/patches/firewall.yaml for the nodes in `settings`; returns their subnets."""
+    sources = node_sources(settings)
+    atomic_write(firewall_patch_path(repo), render_firewall_patch(sources).encode())
+    return sources
+
+
+def firewall(repo: Repo) -> list[str]:
+    """Rewrite the firewall patch from the current nodes (after changing a node's ip, or once
+    after upgrading from a talkub that allowed a whole node network)."""
+    settings = repo.load_settings()
+    if settings.tailscale is None:
+        raise ValidationError("tailscale is not enabled", hint="run `talkub tailscale enable` first")
+    if not is_locked_down(repo):
+        raise ValidationError(
+            f"{repo.rel(firewall_patch_path(repo))} does not exist",
+            hint="run `talkub tailscale lockdown` first; it writes the firewall",
+        )
+    sources = write_firewall_patch(repo, settings)
+    return [
+        f"rewrote {repo.rel(firewall_patch_path(repo))}: cluster ports open to {', '.join(sources)}",
+        "run `talkub apply` to activate it on the nodes",
+    ]
 
 
 def _load_mapping(data: bytes, what: str) -> dict:
@@ -277,7 +278,7 @@ def check_can_enable(repo: Repo) -> Settings:
     return settings
 
 
-def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = None) -> list[str]:
+def enable(ctx: Context, *, tailnet: str, authkey: str) -> list[str]:
     """Step 1: auth-key patch + extension in every used schematic. Addresses stay unchanged,
     so a running cluster can still be upgraded and configured via LAN."""
     repo = ctx.repo
@@ -285,8 +286,7 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
     patch = extension_patch_path(repo)
     validate_tailnet(tailnet)
     authkey = validate_authkey(authkey)
-    cidr = validate_cidr(node_cidr) if node_cidr else default_node_cidr(settings)
-    settings.tailscale = TailscaleSpec(tailnet=tailnet, node_cidr=cidr)
+    settings.tailscale = TailscaleSpec(tailnet=tailnet)
     for platform in images.used_platforms(settings):
         spec = settings.ensure_schematic(platform)
         if EXTENSION not in spec.extensions:
@@ -298,7 +298,7 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
     )
     atomic_write(patch, encrypted)
     repo.write_settings(settings)
-    notes = [f"node network for the firewall rules: {cidr} (change with `talkub tailscale lockdown --node-cidr`)"]
+    notes = []
     if is_bootstrapped(ctx):
         notes.append(
             "running cluster: `talkub apply` configures the extension (Talos accepts it before the "
@@ -309,7 +309,7 @@ def enable(ctx: Context, *, tailnet: str, authkey: str, node_cidr: str | None = 
     return notes
 
 
-def lockdown(ctx: Context, *, node_cidr: str | None = None, use_ips: bool = False) -> list[str]:
+def lockdown(ctx: Context, *, use_ips: bool = False) -> list[str]:
     """Step 2: firewall patch, mgmt = <node>.<tailnet> (or the node's tailnet IP with
     `use_ips`, for clients without MagicDNS), client configs pointed at the tailnet."""
     repo = ctx.repo
@@ -321,14 +321,8 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None, use_ips: bool = Fals
             f"{repo.rel(firewall_patch_path(repo))} already exists",
             hint="already locked down",
         )
-    cidr = validate_cidr(node_cidr) if node_cidr else settings.tailscale.node_cidr
-    settings.tailscale = TailscaleSpec(tailnet=settings.tailscale.tailnet, node_cidr=cidr, use_ips=use_ips)
-    outside = outside_node_network(settings, settings.tailscale.node_cidr)
-    if outside:
-        raise ValidationError(
-            f"these nodes are outside the node network {settings.tailscale.node_cidr}: {', '.join(outside)}",
-            hint="the firewall would block their cluster traffic; re-run with --node-cidr covering every node",
-        )
+    settings.tailscale = TailscaleSpec(tailnet=settings.tailscale.tailnet, use_ips=use_ips)
+    sources = node_sources(settings)  # fails before anything is written
     if not repo.talosconfig.is_file():
         raise ValidationError(
             f"{repo.rel(repo.talosconfig)} does not exist",
@@ -384,15 +378,12 @@ def lockdown(ctx: Context, *, node_cidr: str | None = None, use_ips: bool = Fals
     if kubeconfig is not None:
         atomic_write(repo.kubeconfig, kubeconfig)
     repo.write_settings(settings)
-    atomic_write(
-        firewall_patch_path(repo),
-        render_firewall_patch(settings.tailscale.node_cidr).encode(),
-    )
+    atomic_write(firewall_patch_path(repo), render_firewall_patch(sources).encode())
     notes = [
         f"talkub now reaches the nodes via: {', '.join(settings.mgmt_address(n) for n in settings.nodes)}",
         (
             "run `talkub apply` to activate the firewall; afterwards 50000/6443 are open only to the tailnet "
-            f"and the node network {settings.tailscale.node_cidr}"
+            f"and cluster ports only to the nodes' own addresses ({', '.join(sources)})"
         ),
     ]
     non_tailnet = [

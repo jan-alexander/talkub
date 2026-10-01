@@ -47,7 +47,7 @@ def test_enable_keeps_addresses_and_encrypts_key(repo):
     notes = tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     settings = repo.load_settings()
     assert settings.tailscale.tailnet == "t.ts.net"
-    assert settings.tailscale.node_cidr == "10.0.0.0/24"
+    assert "nodeCidr" not in repo.settings_file.read_text()
     assert settings.nodes["cp-01"].mgmt is None  # addresses untouched: LAN still works
     assert repo.talosconfig.read_bytes() == before_talosconfig
     assert tailscale.EXTENSION in settings.schematics["metal"].extensions
@@ -73,7 +73,6 @@ def test_enable_twice_and_bad_input(repo):
     with pytest.raises(ValidationError):
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey="nope")
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
-    assert repo.load_settings().tailscale.node_cidr == "10.0.0.0/16"
     with pytest.raises(ValidationError) as exc:
         tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     assert "already enabled" in str(exc.value)
@@ -108,7 +107,7 @@ def test_lockdown_switches_clients_to_the_tailnet(repo):
     kubeconfig = yamlio.load(ctx.sops.decrypt(repo.kubeconfig).decode())
     assert kubeconfig["clusters"][0]["cluster"]["server"] == "https://cp-01.t.ts.net:6443"
     assert tailscale.is_locked_down(repo)
-    assert "10.0.0.0/24" in tailscale.firewall_patch_path(repo).read_text()
+    assert "subnet: 10.0.0.10/32" in tailscale.firewall_patch_path(repo).read_text()
     assert any("talkub apply" in n for n in notes)
     assert any("w-01 (w-01.lan)" in n for n in notes)
 
@@ -167,26 +166,49 @@ def test_lockdown_write_failure_does_not_leave_a_locked_down_repo(repo, monkeypa
     assert not tailscale.is_locked_down(repo)
 
 
-def test_lockdown_rejects_nodes_outside_the_node_network(repo):
+def test_lockdown_firewall_lists_the_nodes_addresses(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
-    before_settings = repo.settings_file.read_bytes()
-    with pytest.raises(ValidationError) as exc:
-        tailscale.lockdown(Context.open(repo))  # w-01 (10.0.0.20) is outside
-    assert "outside the node network 10.0.0.0/28" in str(exc.value)
-    assert "w-01 (10.0.0.20)" in str(exc.value)
-    assert "cp-01" not in str(exc.value)
-    assert "--node-cidr" in exc.value.hint
-    assert not tailscale.firewall_patch_path(repo).exists()
-    assert repo.settings_file.read_bytes() == before_settings
+    tailscale.lockdown(Context.open(repo))
+    text = tailscale.firewall_patch_path(repo).read_text()
+    assert "subnet: 10.0.0.10/32" in text and "subnet: 10.0.0.20/32" in text
+    assert "/24" not in text
 
 
-def test_lockdown_skips_non_ip_addresses_in_the_cidr_check(repo):
+def test_lockdown_refuses_a_node_without_an_ip_address(repo):
     tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     settings = repo.load_settings()
     settings.nodes["w-02"] = NodeSpec(ip="w-02.lan", role="worker")
     repo.write_settings(settings)
+    before = repo.settings_file.read_bytes()
+    with pytest.raises(ValidationError, match="w-02"):
+        tailscale.lockdown(Context.open(repo))
+    assert not tailscale.is_locked_down(repo)
+    assert repo.settings_file.read_bytes() == before
+
+
+def test_firewall_requires_lockdown(repo):
+    with pytest.raises(ValidationError, match="not enabled"):
+        tailscale.firewall(repo)
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    with pytest.raises(ValidationError) as exc:
+        tailscale.firewall(repo)
+    assert "lockdown" in exc.value.hint
+
+
+def test_firewall_rewrites_the_patch_from_the_nodes(repo):
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
     tailscale.lockdown(Context.open(repo))
-    assert tailscale.is_locked_down(repo)
+    path = tailscale.firewall_patch_path(repo)
+    path.write_text("# hand edit\n")
+    settings = repo.load_settings()
+    settings.nodes["w-02"] = NodeSpec(ip="10.0.0.30", role="worker", mgmt="w-02.t.ts.net")
+    repo.write_settings(settings)
+    notes = tailscale.firewall(repo)
+    text = path.read_text()
+    assert "hand edit" not in text
+    assert "subnet: 10.0.0.30/32" in text and "subnet: 10.0.0.10/32" in text
+    assert any("10.0.0.30/32" in n for n in notes)
+    assert any("talkub apply" in n for n in notes)
 
 
 def test_lockdown_probes_every_node_via_the_tailnet_first(repo, talosctl):
