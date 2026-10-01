@@ -155,7 +155,7 @@ def test_k8s_after_lockdown_uses_the_mgmt_endpoint(talos_repo, spy):
     settings.nodes["cp-01"] = dataclasses.replace(settings.nodes["cp-01"], mgmt="cp-01.t.ts.net")
     talos_repo.write_settings(settings)
     tailscale.firewall_patch_path(talos_repo).parent.mkdir(parents=True, exist_ok=True)
-    tailscale.firewall_patch_path(talos_repo).write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
+    tailscale.firewall_patch_path(talos_repo).write_text(tailscale.render_firewall_patch(["10.0.0.10/32"]))
     talosctl = spy("talosctl")
     assert upgrade.k8s(Context.open(talos_repo), confirm=lambda q: True) is True
     for call in talosctl.argvs:

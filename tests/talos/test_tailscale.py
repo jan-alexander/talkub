@@ -100,6 +100,26 @@ def test_firewall_patch():
     assert docs[3]["ingress"] == [{"subnet": "10.0.0.10/32"}, {"subnet": "10.0.0.11/32"}]
 
 
+def test_rewrite_talosconfig():
+    doc = yamlio.load(
+        tailscale.rewrite_talosconfig(TALOSCONFIG, ["cp-01.t.ts.net", "cp-02.t.ts.net"], "cp-01.t.ts.net").decode()
+    )
+    context = doc["contexts"]["test"]
+    assert list(context["endpoints"]) == ["cp-01.t.ts.net", "cp-02.t.ts.net"]
+    assert list(context["nodes"]) == ["cp-01.t.ts.net"]
+    assert context["key"] == "a2V5"
+    with pytest.raises(ValidationError):
+        tailscale.rewrite_talosconfig(b"context: nope\ncontexts: {}\n", ["x"], "x")
+
+
+def test_rewrite_kubeconfig_server():
+    doc = yamlio.load(tailscale.rewrite_kubeconfig_server(KUBECONFIG, "https://cp-01.t.ts.net:6443").decode())
+    assert doc["clusters"][0]["cluster"]["server"] == "https://cp-01.t.ts.net:6443"
+    assert doc["clusters"][0]["cluster"]["certificate-authority-data"] == "Y2E="
+    with pytest.raises(ValidationError):
+        tailscale.rewrite_kubeconfig_server(b"kind: Config\nclusters: []\n", "https://x:6443")
+
+
 @need("talosctl")
 def test_patches_validate_with_talosctl(tmp_path):
     secrets = tmp_path / "secrets.yaml"

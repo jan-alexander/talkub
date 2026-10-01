@@ -369,7 +369,7 @@ def test_bootstrap_after_lockdown_points_kubeconfig_at_tailnet(cluster):
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     repo.write_settings(settings)
     tailscale.firewall_patch_path(repo).parent.mkdir(parents=True, exist_ok=True)
-    tailscale.firewall_patch_path(repo).write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
+    tailscale.firewall_patch_path(repo).write_text(tailscale.render_firewall_patch(["10.0.0.10/32"]))
     spies["talosctl"].rules.insert(
         0,
         {

@@ -24,6 +24,7 @@ talkub node add w-01 --ip 10.0.0.11 --role worker     # DHCP; add --static/--gat
 # boot the machine from the boot media into maintenance mode: `talkub image show` prints the URL
 talkub node volumes w-01 --insecure                   # install disk, EPHEMERAL limit, user volumes
 talkub check && git add -A && git commit -m "feat: node w-01" && git push
+talkub apply cp-01                                    # Tailscale lockdown only: existing nodes allow w-01 (node add says which)
 talkub apply --insecure w-01
 talkub status
 ```
@@ -35,7 +36,8 @@ talkub status
 - With Tailscale lockdown, `node add` sets `mgmt` to `<name>.<tailnet>` itself (with
   `lockdown --use-ips` it warns: set `mgmt` to the tailnet IP once the node has joined). It also
   rewrites `talos/patches/firewall.yaml` to allow the new node's `ip` (which must be an IP address,
-  not a name); `talkub apply` activates it on the existing nodes before the new node can join.
+  not a name). Apply that to the existing nodes first (`talkub apply <existing nodes>`, the warning
+  names them); a plain `talkub apply` would also try the new, not yet installed node.
 - If the machine already has Talos on its disk, `apply --insecure` shows that and asks: see
   [getting started](getting-started.md#2a-the-node-already-has-talos-on-its-disk).
 

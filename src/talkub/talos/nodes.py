@@ -15,7 +15,7 @@ from talkub.config import NodeSpec, Repo, SchematicSpec, Settings
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
-from talkub.talos.firewall import write_firewall_patch
+from talkub.talos.firewall import firewall_patch_path, is_locked_down, node_sources, render_firewall_patch
 
 LINK = "net0"
 # ARPHRD_ETHER and no link kind (not a VLAN, bond or bridge): the physical Ethernet port.
@@ -208,8 +208,8 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
     if moved is not None:
         warnings.append(moved)
     settings = repo.load_settings()
-    firewall = repo.talos_dir / "patches" / "firewall.yaml"
-    locked_down = settings.tailscale is not None and firewall.is_file()
+    firewall = firewall_patch_path(repo)
+    locked_down = settings.tailscale is not None and is_locked_down(repo)
     if locked_down and spec.mgmt is None:
         if settings.tailscale.use_ips:
             # lockdown --use-ips: no MagicDNS name to guess; keep the LAN ip until the node
@@ -236,6 +236,9 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         raise ValidationError(f"{repo.rel(path)} already exists", hint="remove it or choose another name")
     settings.nodes[name] = spec
     settings = Settings.from_dict(settings.to_dict())  # validates role, platform and arch
+    # Locked down: the firewall lists every node's address, so it is rendered before anything
+    # is written (a legacy node with a name as ip fails here, leaving the repo untouched).
+    sources = node_sources(settings) if locked_down else []
     platform = settings.node_platform(name)
     if platform not in settings.schematics:
         source = settings.schematics.get(settings.platform, SchematicSpec())
@@ -247,14 +250,15 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
             f"platform '{platform}' is new: copied extensions from '{settings.platform}' "
             f"({', '.join(source.extensions) or 'none'}); adjust with talkub image add/remove --platform {platform}"
         )
-    if options.public_ingress and not (repo.talos_dir / "patches" / "firewall.yaml").exists():
+    if options.public_ingress and not is_locked_down(repo):
         warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale lockdown`)")
     atomic_write(path, render_node_patch(name, options).encode())
     repo.write_settings(settings)
     if locked_down:
-        write_firewall_patch(repo, settings)
+        atomic_write(firewall, render_firewall_patch(sources).encode())
+        existing = " ".join(n for n in settings.nodes if n != name)
         warnings.append(
-            f"{repo.rel(firewall)} now allows {spec.ip}; until `talkub apply` has run on the existing nodes, "
-            "their firewall blocks cluster traffic from the new node"
+            f"{repo.rel(firewall)} now allows {spec.ip}; the existing nodes block the new node until "
+            f"`talkub apply {existing}` has run, so do that before `talkub apply --insecure {name}`"
         )
     return warnings

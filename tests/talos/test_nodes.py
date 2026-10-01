@@ -342,6 +342,40 @@ def test_add_node_after_lockdown_needs_an_ip_address(empty_repo):
     assert tailscale.firewall_patch_path(empty_repo).read_text() == before
 
 
+def test_add_node_after_lockdown_refuses_when_an_existing_node_has_no_ip_address(empty_repo):
+    from talkub.config import TailscaleSpec
+    from talkub.talos import tailscale
+
+    settings = empty_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
+    empty_repo.write_settings(settings)
+    tailscale.write_firewall_patch(empty_repo, settings)
+    settings.nodes["w-01"] = NodeSpec(ip="w-01.lan", role="worker")  # legacy repo: name instead of ip
+    empty_repo.write_settings(settings)
+    before_settings = empty_repo.settings_file.read_bytes()
+    before_firewall = tailscale.firewall_patch_path(empty_repo).read_text()
+    with pytest.raises(ValidationError, match="w-01"):
+        add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
+    assert empty_repo.settings_file.read_bytes() == before_settings
+    assert not node_patch_path(empty_repo, "w-02").exists()
+    assert tailscale.firewall_patch_path(empty_repo).read_text() == before_firewall
+
+
+def test_add_node_after_lockdown_warning_names_the_apply_commands(empty_repo):
+    from talkub.config import TailscaleSpec
+    from talkub.talos import tailscale
+
+    settings = empty_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
+    empty_repo.write_settings(settings)
+    tailscale.write_firewall_patch(empty_repo, settings)
+    existing = " ".join(settings.nodes)
+    warnings = add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
+    assert len(warnings) == 1
+    assert f"`talkub apply {existing}`" in warnings[0]
+    assert "`talkub apply --insecure w-02`" in warnings[0]
+
+
 def test_upsert_documents_replaces_by_kind_and_name_and_keeps_the_rest(tmp_path):
     from talkub.talos.nodes import read_node_documents, upsert_documents
 

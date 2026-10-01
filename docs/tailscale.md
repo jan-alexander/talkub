@@ -110,11 +110,11 @@ The IPs stay the same as long as the device is not deleted from the tailnet.
 Back to LAN access, e.g. when the tailnet is not an option any more:
 
 1. Delete `talos/patches/firewall.yaml`.
-2. In `.talkub.yaml`, set `mgmt` back to the LAN addresses (or remove the entries).
-3. Point the talosconfig endpoints/nodes and the kubeconfig `server` back at the LAN:
+2. `talkub apply`, still via the tailnet: the firewall is active until this has run, and 50000 is
+   open only to the tailnet and the nodes' own addresses.
+3. In `.talkub.yaml`, set `mgmt` back to the LAN addresses (or remove the entries).
+4. Point the talosconfig endpoints/nodes and the kubeconfig `server` back at the LAN:
    `talkub sops edit talos/talosconfig.sops.yaml` and `talkub sops edit kubernetes/kubeconfig.sops.yaml`.
-4. `talkub apply` via the LAN. While the firewall is still active, 50000 is open only to the tailnet
-   and the nodes' own addresses, so run this from a node or from inside the tailnet.
 5. Commit.
 
 To remove the extension as well, remove `siderolabs/tailscale` from the schematics
@@ -205,7 +205,7 @@ rewrites `spec.externalName`, so the config app ignores that field instead of re
 | Node boot hangs at `service "ext-tailscale" to be up`                    | Extension without a valid auth key (reused image, expired key): new key via `sops edit`, or [getting started](getting-started.md#2a-the-node-already-has-talos-on-its-disk).               |
 | talosctl/kubectl time out after `apply`                                  | Firewall active, but your machine is not in the tailnet, or `mgmt` is wrong: `tailscale status`, `.talkub.yaml`.                                                                           |
 | Node drops out of the tailnet after months                               | Key expiry: disable it for the node devices; re-auth with a new key ([1e](#1e-after-the-lockdown)).                                                                                        |
-| New node `NotReady`, flannel errors                                      | The existing nodes still run the old firewall: `talkub apply`. A node whose `ip` changed: `talkub tailscale firewall`, `talkub apply`.                                                      |
+| New node `NotReady`, flannel errors                                      | The existing nodes still run the old firewall: `talkub apply <existing nodes>`. A node whose `ip` changed: `talkub tailscale firewall`, `talkub apply`.                                     |
 | `https://<app>.<tailnet>` has no certificate                             | HTTPS certificates not enabled for the tailnet; the first request can take a minute while the certificate is issued.                                                                       |
 | Redirect loop behind `expose`                                            | The backend redirects HTTP to HTTPS; switch it to plain HTTP (e.g. `server.insecure` for Argo CD).                                                                                         |
 | Egress: the Service works, the MagicDNS name returns NXDOMAIN            | The operator's nameserver missed an update (seen with 1.102.4): if `talkub k -n tailscale get cm dnsrecords -o yaml` lists the name, `talkub k -n tailscale delete pod -l app=nameserver`. |

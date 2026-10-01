@@ -80,7 +80,7 @@ def test_refresh_after_lockdown_points_at_the_tailnet(talos_repo, spy):
     settings.nodes["cp-01"] = NodeSpec(ip="10.0.0.10", mgmt="cp-01.t.ts.net")
     talos_repo.write_settings(settings)
     tailscale.firewall_patch_path(talos_repo).parent.mkdir(parents=True, exist_ok=True)
-    tailscale.firewall_patch_path(talos_repo).write_text(tailscale.render_firewall_patch("10.0.0.0/24"))
+    tailscale.firewall_patch_path(talos_repo).write_text(tailscale.render_firewall_patch(["10.0.0.10/32"]))
     talosctl = spy("talosctl").on("kubeconfig", stdout=KUBECONFIG)
     kubeconfig.refresh(Context.open(talos_repo))
     assert _node(talosctl.argvs[0]) == "cp-01.t.ts.net"
