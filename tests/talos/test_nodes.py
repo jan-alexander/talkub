@@ -280,6 +280,7 @@ def test_add_node_after_lockdown_uses_tailnet_mgmt(empty_repo):
     nodes = empty_repo.load_settings().nodes
     assert nodes["w-02"].mgmt == "w-02.t.ts.net"
     assert nodes["w-03"].mgmt == "w3.lan"
+    assert "subnet: 10.0.0.12/32" in tailscale.firewall_patch_path(empty_repo).read_text()
 
 
 def test_add_node_after_lockdown_use_ips_keeps_lan_ip_and_warns(empty_repo):
@@ -296,35 +297,49 @@ def test_add_node_after_lockdown_use_ips_keeps_lan_ip_and_warns(empty_repo):
     assert node.mgmt is None  # keeps the LAN ip (mgmt_address falls back to it)
     assert node.ip == "10.0.0.12"
     assert any("w-02" in w and "tailnet IP" in w for w in warnings)
-    # explicit --mgmt is still honored
-    assert (
-        add_node(
-            empty_repo,
-            "w-03",
-            NodeSpec(ip="10.0.0.13", role="worker", mgmt="w3.lan"),
-            NodeOptions(),
-        )
-        == []
+    # explicit --mgmt is still honored; only the firewall rewrite is reported
+    warnings = add_node(
+        empty_repo,
+        "w-03",
+        NodeSpec(ip="10.0.0.13", role="worker", mgmt="w3.lan"),
+        NodeOptions(),
     )
+    assert [w for w in warnings if "firewall.yaml" not in w] == []
     assert empty_repo.load_settings().nodes["w-03"].mgmt == "w3.lan"
 
 
-def test_add_node_after_lockdown_warns_outside_the_node_network(empty_repo):
+def test_add_node_after_lockdown_rewrites_the_firewall(empty_repo):
     from talkub.config import TailscaleSpec
     from talkub.talos import tailscale
 
     settings = empty_repo.load_settings()
     settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
     empty_repo.write_settings(settings)
-    # enabled, not locked down: no firewall yet, no warning
-    assert add_node(empty_repo, "w-01", NodeSpec(ip="192.168.1.5", role="worker"), NodeOptions()) == []
-    tailscale.firewall_patch_path(empty_repo).parent.mkdir(parents=True, exist_ok=True)
-    tailscale.firewall_patch_path(empty_repo).write_text("x")
-    warnings = add_node(empty_repo, "w-02", NodeSpec(ip="192.168.1.6", role="worker"), NodeOptions())
+    # enabled, not locked down: no firewall is created
+    assert add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions()) == []
+    assert not tailscale.firewall_patch_path(empty_repo).exists()
+    tailscale.write_firewall_patch(empty_repo, empty_repo.load_settings())
+    warnings = add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
+    text = tailscale.firewall_patch_path(empty_repo).read_text()
+    assert "subnet: 10.0.0.12/32" in text and "subnet: 10.0.0.11/32" in text
     assert len(warnings) == 1
-    assert "10.0.0.0/24" in warnings[0] and "firewall.yaml" in warnings[0]
-    assert add_node(empty_repo, "w-03", NodeSpec(ip="10.0.0.13", role="worker"), NodeOptions()) == []
-    assert add_node(empty_repo, "w-04", NodeSpec(ip="w-04.lan", role="worker"), NodeOptions()) == []
+    assert "10.0.0.12" in warnings[0] and "talkub apply" in warnings[0]
+
+
+def test_add_node_after_lockdown_needs_an_ip_address(empty_repo):
+    from talkub.config import TailscaleSpec
+    from talkub.talos import tailscale
+
+    settings = empty_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
+    empty_repo.write_settings(settings)
+    tailscale.write_firewall_patch(empty_repo, settings)
+    before = tailscale.firewall_patch_path(empty_repo).read_text()
+    with pytest.raises(ValidationError, match="w-04"):
+        add_node(empty_repo, "w-04", NodeSpec(ip="w-04.lan", role="worker"), NodeOptions())
+    assert "w-04" not in empty_repo.load_settings().nodes
+    assert not node_patch_path(empty_repo, "w-04").exists()
+    assert tailscale.firewall_patch_path(empty_repo).read_text() == before
 
 
 def test_upsert_documents_replaces_by_kind_and_name_and_keeps_the_rest(tmp_path):

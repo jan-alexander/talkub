@@ -15,6 +15,7 @@ from talkub.config import NodeSpec, Repo, SchematicSpec, Settings
 from talkub.core import yamlio
 from talkub.core.errors import ValidationError
 from talkub.core.fsutil import atomic_write
+from talkub.talos.firewall import write_firewall_patch
 
 LINK = "net0"
 # ARPHRD_ETHER and no link kind (not a VLAN, bond or bridge): the physical Ethernet port.
@@ -196,14 +197,6 @@ def static_address_warning(spec: NodeSpec, options: NodeOptions, fix: str = "add
     return f"after install the node is reachable at {address}; {fix.format(address=address)} so plan/apply use it"
 
 
-def _outside(ip: str, cidr: str) -> bool:
-    """True when `ip` is an IP address outside `cidr` (host names are not checked)."""
-    try:
-        return ipaddress.ip_address(ip) not in ipaddress.ip_network(cidr, strict=False)
-    except ValueError:
-        return False
-
-
 def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> list[str]:
     """Write talos/nodes/<name>.yaml and the node entry. Returns warnings."""
     validate_node_name(name)
@@ -228,11 +221,14 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         else:
             # Locked down: talkub reaches nodes only via the tailnet (see tailscale.lockdown).
             spec = dataclasses.replace(spec, mgmt=f"{name}.{settings.tailscale.tailnet}")
-    if locked_down and _outside(spec.ip, settings.tailscale.node_cidr):
-        warnings.append(
-            f"{spec.ip} is outside the node network {settings.tailscale.node_cidr}: the firewall will block "
-            f"the node's cluster traffic until the rules in {repo.rel(firewall)} are extended"
-        )
+    if locked_down:
+        try:
+            ipaddress.ip_address(spec.ip)
+        except ValueError:
+            raise ValidationError(
+                f"node '{name}': --ip must be an IP address on a locked-down cluster (got {spec.ip!r})",
+                hint="the firewall rules list the nodes' addresses; pass the node's IP, a name may go into --mgmt",
+            ) from None
     if name in settings.nodes:
         raise ValidationError(f"node '{name}' already exists")
     path = node_patch_path(repo, name)
@@ -255,4 +251,10 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale lockdown`)")
     atomic_write(path, render_node_patch(name, options).encode())
     repo.write_settings(settings)
+    if locked_down:
+        write_firewall_patch(repo, settings)
+        warnings.append(
+            f"{repo.rel(firewall)} now allows {spec.ip}; until `talkub apply` has run on the existing nodes, "
+            "their firewall blocks cluster traffic from the new node"
+        )
     return warnings
