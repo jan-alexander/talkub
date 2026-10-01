@@ -1,6 +1,6 @@
 [project]
 name = "talkub"
-version = "0.1.7"
+version = "0.1.8"
 description = "Admin CLI for Talos Linux clusters managed with ArgoCD, SOPS/age and Sealed Secrets"
 readme = "README.md"
 requires-python = ">=3.12"
