@@ -107,15 +107,16 @@ talkub tailscale expose grafana --service monitoring/grafana --port 80   # https
 
 ## 📥 Install
 
-A single binary, no Python needed (macOS arm64, Linux amd64/arm64):
+With [uv](https://docs.astral.sh/uv/), from the latest GitHub release (a built wheel, no Python
+project setup needed):
 
 ```bash
-gh release download --repo jan-alexander/talkub --pattern 'talkub-*-darwin-arm64' --dir /tmp/talkub
-install -m 755 /tmp/talkub/talkub-*-darwin-arm64 ~/.local/bin/talkub
+gh release download --repo jan-alexander/talkub --pattern '*.whl' --dir /tmp/talkub
+uv tool install --compile-bytecode /tmp/talkub/talkub-*.whl
 ```
 
-Or with uv: `uv tool install git+https://github.com/jan-alexander/talkub.git`. More options and
-shell completion: [reference](docs/reference.md#install-and-shell-completion).
+Or straight from source: `uv tool install git+https://github.com/jan-alexander/talkub.git`. More
+options and shell completion: [reference](docs/reference.md#install-and-shell-completion).
 
 talkub drives the standard tools: [`age`](https://github.com/FiloSottile/age),
 [`sops`](https://github.com/getsops/sops), [`talosctl`](https://github.com/siderolabs/talos) (v1.14+),

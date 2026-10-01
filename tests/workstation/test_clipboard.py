@@ -143,14 +143,6 @@ def test_schedule_clear_spawns_the_clearer_with_only_the_digest_on_stdin(monkeyp
     assert SECRET.decode() not in argv
 
 
-def test_clearer_argv_uses_the_binary_itself_when_compiled(monkeypatch):
-    from talkub.workstation import clipboard
-
-    monkeypatch.setattr(clipboard, "__compiled__", object(), raising=False)
-    monkeypatch.setattr(sys, "argv", ["/opt/talkub/talkub", "run", "pw"])
-    assert clipboard.clearer_argv() == ["/opt/talkub/talkub", clipboard.CLEAR_COMMAND]
-
-
 def test_spawn_detached_feeds_stdin_to_a_real_child_and_it_runs_in_its_own_session(
     tmp_path,
 ):

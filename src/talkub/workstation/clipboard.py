@@ -17,8 +17,6 @@ from talkub.core.errors import CommandFailed, ValidationError
 from talkub.core.runner import Runner
 
 CLEAR_SECONDS_ENV = "TALKUB_CLIPBOARD_CLEAR_SECONDS"
-# Hidden first argument that makes a compiled talkub binary run the clearer (see cli.main.main).
-CLEAR_COMMAND = "__clipboard-clear"
 DEFAULT_CLEAR_SECONDS = 45.0
 
 
@@ -80,13 +78,7 @@ def copy(runner: Runner, value: bytes) -> ClipboardTool:
 
 
 def clearer_argv() -> list[str]:
-    """How to start the clearer: `python -I -m ...`, or the talkub binary itself when compiled.
-
-    Nuitka defines `__compiled__` in every compiled module. There `sys.executable` names a
-    `python3` that does not exist; `sys.argv[0]` is the absolute path of the onefile binary.
-    """
-    if "__compiled__" in globals():
-        return [sys.argv[0], CLEAR_COMMAND]
+    """How to start the clearer: `python -I -m talkub.workstation.clipboard_clear`."""
     # -I: isolated mode, so the clearer's sys.path does not depend on the caller's cwd.
     return [sys.executable, "-I", "-m", "talkub.workstation.clipboard_clear"]
 

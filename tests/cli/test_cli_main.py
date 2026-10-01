@@ -287,15 +287,6 @@ def test_top_level_help_mentions_run(capfd):
     assert "Run a shortcut" in capfd.readouterr().out
 
 
-def test_hidden_clipboard_clear_command_runs_the_clearer(monkeypatch):
-    from talkub.workstation import clipboard, clipboard_clear
-
-    called = []
-    monkeypatch.setattr(clipboard_clear, "main", lambda: called.append(True))
-    main([clipboard.CLEAR_COMMAND])
-    assert called == [True]
-
-
 def test_version_comes_from_pyproject(capfd):
     import tomllib
     from pathlib import Path

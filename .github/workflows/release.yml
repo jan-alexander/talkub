@@ -1,6 +1,6 @@
 name: Release
 
-# Manually triggered: builds the wheel + sdist and Nuitka binaries for the version in pyproject.toml
+# Manually triggered: builds the wheel + sdist for the version in pyproject.toml
 # and publishes them as GitHub release v<version>. Aborts if that release or tag already exists.
 on:
   workflow_dispatch:
@@ -83,44 +83,8 @@ jobs:
           name: dist-python
           path: dist/*
 
-  binary:
-    needs: prepare
-    strategy:
-      matrix:
-        # Linux on 22.04: the binary needs at least the glibc it was built against (2.35).
-        runner: [macos-latest]
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - uses: astral-sh/setup-uv@v7
-
-      - name: Install patchelf
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y patchelf
-
-      - name: Build binary
-        env:
-          UV_PYTHON: ${{ env.pythonLocation }}/bin/python
-        run: ./scripts/build-binary.sh
-
-      - name: Smoke test binary
-        run: |
-          bin="$(ls dist/talkub-*-*-*)"
-          test "$("$bin" --version)" = "$(uv version --short)"
-          "$bin" --help
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-binary-${{ matrix.runner }}
-          path: dist/talkub-*-*-*
-
   release:
-    needs: [prepare, binary]
+    needs: [prepare]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -129,9 +93,8 @@ jobs:
 
       - uses: actions/download-artifact@v5
         with:
-          pattern: dist-*
+          name: dist-python
           path: dist
-          merge-multiple: true
 
       - name: Create release
         env:
