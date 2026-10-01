@@ -63,7 +63,19 @@ def test_lockdown_use_ips_flag(repo, capfd, monkeypatch):
     calls = []
     monkeypatch.setattr(tailscale, "lockdown", lambda ctx, **kw: calls.append(kw) or [])
     assert _run(["--repo", str(repo.root), "tailscale", "lockdown", "--use-ips"]) == 0
-    assert calls == [{"node_cidr": None, "use_ips": True}]
+    assert calls == [{"use_ips": True}]
+
+
+def test_firewall_command_rewrites_the_patch(repo, capfd, monkeypatch):
+    calls = []
+    monkeypatch.setattr(tailscale, "firewall", lambda r: calls.append(r.root) or ["rewrote it"])
+    assert _run(["--repo", str(repo.root), "tailscale", "firewall"]) == 0
+    assert calls == [repo.root]
+    assert "note: rewrote it" in capfd.readouterr().out
+
+
+def test_node_cidr_option_is_gone(repo):
+    assert _run(["--repo", str(repo.root), "tailscale", "lockdown", "--node-cidr", "10.0.0.0/24"]) != 0
 
 
 def test_enable_prompts_for_the_key(repo, monkeypatch):
@@ -262,7 +274,7 @@ def test_read_authkey_warns_only_inside_the_repo(tmp_path, capfd):
 
 
 @need("talosctl")
-def test_init_tailscale_enable_failure_hint_keeps_node_cidr(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
+def test_init_tailscale_enable_failure_hint(tmp_path, software_identity, fake_bin, monkeypatch, capfd):
     fake_bin("helm", HELM)
     monkeypatch.chdir(tmp_path)
     key_file = tmp_path / "key"
@@ -287,9 +299,7 @@ def test_init_tailscale_enable_failure_hint_keeps_node_cidr(tmp_path, software_i
             "t.ts.net",
             "--tailscale-authkey-file",
             str(key_file),
-            "--node-cidr",
-            "10.0.0.0/16",
         ]
     )
     assert code == 1
-    assert "talkub tailscale enable --tailnet t.ts.net --node-cidr 10.0.0.0/16" in capfd.readouterr().err
+    assert "talkub tailscale enable --tailnet t.ts.net && talkub tailscale lockdown" in capfd.readouterr().err

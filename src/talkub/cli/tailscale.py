@@ -1,4 +1,4 @@
-"""tailscale enable, tailscale lockdown, tailscale operator enable."""
+"""tailscale enable, lockdown, firewall, operator enable, expose, egress."""
 
 from __future__ import annotations
 
@@ -15,12 +15,6 @@ app = typer.Typer(
     help="Tailscale as the only admin path to the Talos and Kubernetes APIs.",
     no_args_is_help=True,
 )
-NODE_CIDR = typer.Option(
-    None,
-    "--node-cidr",
-    help="Node network for cluster-internal rules (default: /24 of the first node).",
-)
-
 operator_app = typer.Typer(
     help="The Tailscale Kubernetes operator (egress to tailnet hosts; ingress via `talkub tailscale expose`).",
     no_args_is_help=True,
@@ -44,20 +38,18 @@ def enable(
     ctx: typer.Context,
     tailnet: str = typer.Option(..., "--tailnet", help="Tailnet DNS name, e.g. tail1234.ts.net."),
     authkey_file: Path = typer.Option(None, "--authkey-file", help="File with the auth key (default: prompt)."),
-    node_cidr: str = NODE_CIDR,
 ) -> None:
     """Step 1: add the Tailscale extension and auth key (addresses stay on the LAN)."""
     context = ctx.obj.context()
     tailscale.validate_tailnet(tailnet)
     tailscale.check_can_enable(context.repo)
     authkey = read_authkey(authkey_file, repo_root=context.repo.root)
-    print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
+    print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey))
 
 
 @app.command("lockdown")
 def lockdown(
     ctx: typer.Context,
-    node_cidr: str = NODE_CIDR,
     use_ips: bool = typer.Option(
         False,
         "--use-ips",
@@ -65,7 +57,17 @@ def lockdown(
     ),
 ) -> None:
     """Step 2: Talos firewall + tailnet addresses for talosctl/kubectl."""
-    print_notes(tailscale.lockdown(ctx.obj.context(), node_cidr=node_cidr, use_ips=use_ips))
+    print_notes(tailscale.lockdown(ctx.obj.context(), use_ips=use_ips))
+
+
+@app.command("firewall")
+def firewall(ctx: typer.Context) -> None:
+    """Rewrite talos/patches/firewall.yaml from the nodes in .talkub.yaml.
+
+    After changing a node's ip, or once after upgrading from a talkub whose rules allowed a whole
+    node network (nodeCidr). `node add` does this itself. Then `talkub apply`.
+    """
+    print_notes(tailscale.firewall(ctx.obj.repo()))
 
 
 @operator_app.command("enable")

@@ -83,7 +83,6 @@ def init(
     tailscale_authkey_file: Path = typer.Option(
         None, "--tailscale-authkey-file", help="Auth key file (default: prompt)."
     ),
-    node_cidr: str = typer.Option(None, "--node-cidr", help="Node network for the firewall (with --tailscale)."),
 ) -> None:
     """Create a new cluster repo with keys, Talos secrets and the GitOps skeleton."""
     authkey = None
@@ -91,11 +90,9 @@ def init(
         if not tailnet:
             raise ValidationError("--tailscale needs --tailnet", hint="e.g. --tailnet tail1234.ts.net")
         tailscale.validate_tailnet(tailnet)
-        if node_cidr:
-            tailscale.validate_cidr(node_cidr)
         authkey = tailscale.validate_authkey(read_authkey(tailscale_authkey_file))
-    elif tailnet or tailscale_authkey_file or node_cidr:
-        raise ValidationError("--tailnet/--tailscale-authkey-file/--node-cidr need --tailscale")
+    elif tailnet or tailscale_authkey_file:
+        raise ValidationError("--tailnet/--tailscale-authkey-file need --tailscale")
     nodes = dict(_parse_node(value) for value in node)
     options = node_options(static, gateway, mac, dns, disk_selector, public_ingress)
     node_opts: dict[str, NodeOptions] = {}
@@ -133,10 +130,9 @@ def init(
     if authkey is not None:
         context = Context.open(repo)
         try:
-            print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey, node_cidr=node_cidr))
+            print_notes(tailscale.enable(context, tailnet=tailnet, authkey=authkey))
         except TalkubError as err:
-            cidr = f" --node-cidr {node_cidr}" if node_cidr else ""
-            hint = f"cd {repo.root} && talkub tailscale enable --tailnet {tailnet}{cidr} && talkub tailscale lockdown"
+            hint = f"cd {repo.root} && talkub tailscale enable --tailnet {tailnet} && talkub tailscale lockdown"
             raise type(err)(
                 f"created {repo.root}, but the Tailscale setup failed: {err}",
                 hint=f"{hint}; {err.hint}" if err.hint else hint,
