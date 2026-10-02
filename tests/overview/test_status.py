@@ -171,3 +171,76 @@ def test_no_error_lines_for_a_healthy_cluster(talos_repo, spy):
     report = status.collect(Context.open(talos_repo))
     assert report.application_errors == []
     assert status.render(report).endswith("argocd: 1 Synced/Healthy")
+
+
+# --- --apps: per-application details, progress callbacks ---
+
+APPS_DETAILED = (
+    '{"items": ['
+    '{"metadata": {"name": "argocd"}, "status": {"sync": {"status": "Synced", "revision": "0123456789abcdef0123456789abcdef01234567"}, '
+    '"health": {"status": "Healthy"}, "operationState": {"phase": "Succeeded"}}}, '
+    '{"metadata": {"name": "harbor"}, "status": {"sync": {"status": "OutOfSync", "revisions": ["1.18.0"]}, '
+    '"health": {"status": "Progressing"}, "operationState": {"phase": "Running"}, '
+    '"resources": [{"kind": "Deployment", "name": "harbor-core", "health": {"status": "Progressing", "message": "rolling"}}]}}, '
+    '{"metadata": {"name": "root"}, "status": {"sync": {"status": "Unknown"}, "health": {"status": "Healthy"}, '
+    '"conditions": [{"type": "ComparisonError", "message": "Repository not found"}]}}'
+    "]}"
+)
+
+
+def _detailed_spies(spy):
+    _spies(spy)
+    spy("kubectl").on("get", "nodes", stdout=NODES).on("get", "applications.argoproj.io", stdout=APPS_DETAILED)
+
+
+def test_collect_reports_progress_through_callbacks(talos_repo, spy):
+    _spies(spy)
+    steps: list[tuple[str, str]] = []
+    nodes: list[str] = []
+    kubes: list[str] = []
+    report = status.collect(
+        Context.open(talos_repo),
+        on_step=lambda subject, step: steps.append((subject, step)),
+        on_node=lambda node: nodes.append(node.name),
+        on_kube=lambda kube: kubes.append(kube.kube),
+    )
+    assert [step for subject, step in steps if subject == "cp-01"] == ["talos version", "extensions", "config drift"]
+    assert [step for subject, step in steps if subject == "kubernetes"] == ["nodes", "applications"]
+    assert nodes == ["cp-01"]
+    assert kubes == ["ok"]
+    assert report.nodes[0].kubelet == "1.37.0"  # merged from the kube lookup after both finished
+
+
+def test_collect_keeps_application_details(talos_repo, spy):
+    _detailed_spies(spy)
+    report = status.collect(Context.open(talos_repo))
+    assert [app.name for app in report.application_details] == ["argocd", "harbor", "root"]
+    assert report.applications == {"Synced/Healthy": 1, "OutOfSync/Progressing": 1, "Unknown/Healthy": 1}
+
+
+def test_render_without_apps_is_unchanged(talos_repo, spy):
+    _detailed_spies(spy)
+    text = status.render(status.collect(Context.open(talos_repo)))
+    assert "APP" not in text
+    assert text.endswith("  root: ComparisonError: Repository not found")
+
+
+def test_render_with_apps_lists_every_application(talos_repo, spy):
+    _detailed_spies(spy)
+    text = status.render(status.collect(Context.open(talos_repo)), apps=True)
+    lines = text.splitlines()
+    header = next(line for line in lines if line.startswith("APP"))
+    assert header.split() == ["APP", "SYNC", "HEALTH", "OPERATION", "REVISION", "NOTE"]
+    rows = {line.split()[0]: line for line in lines[lines.index(header) + 1 :]}
+    assert rows["argocd"].split() == ["argocd", "Synced", "Healthy", "Succeeded", "0123456"]
+    assert rows["harbor"].split()[:5] == ["harbor", "OutOfSync", "Progressing", "Running", "1.18.0"]
+    assert rows["harbor"].endswith("Deployment/harbor-core: Progressing (rolling)")
+    assert rows["root"].endswith("ComparisonError: Repository not found")
+    assert "  root: ComparisonError" not in text  # the per-app errors moved into the table
+
+
+def test_render_with_apps_and_no_applications(talos_repo, spy):
+    _spies(spy)
+    spy("kubectl").on("get", "nodes", stdout=NODES).on("get", "applications.argoproj.io", stdout='{"items": []}')
+    text = status.render(status.collect(Context.open(talos_repo)), apps=True)
+    assert text.endswith("argocd: no applications")

@@ -10,6 +10,7 @@ import ipaddress
 import json
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 from ruamel.yaml.error import YAMLError
 
@@ -347,16 +348,87 @@ def application_errors(text: str) -> list[tuple[str, str]]:
         if not isinstance(item, dict):
             continue
         name = _str(_dict(item.get("metadata")).get("name")) or "?"
-        conditions = _dict(item.get("status")).get("conditions")
-        for condition in conditions if isinstance(conditions, list) else []:
-            if not isinstance(condition, dict):
-                continue
-            kind = _str(condition.get("type"))
-            if not kind.endswith("Error"):
-                continue
-            message = _str(condition.get("message")).strip()
-            errors.append((name, f"{kind}: {message}" if message else kind))
+        errors.extend((name, error) for error in _error_conditions(_dict(item.get("status"))))
     return errors
+
+
+def _error_conditions(status: dict[str, object]) -> list[str]:
+    """'<type>: <message>' per `*Error` condition of one Application's `status`."""
+    errors: list[str] = []
+    conditions = status.get("conditions")
+    for condition in conditions if isinstance(conditions, list) else []:
+        if not isinstance(condition, dict):
+            continue
+        kind = _str(condition.get("type"))
+        if not kind.endswith("Error"):
+            continue
+        message = _str(condition.get("message")).strip()
+        errors.append(f"{kind}: {message}" if message else kind)
+    return errors
+
+
+@dataclass(frozen=True)
+class ApplicationDetail:
+    """One Argo CD Application as `status --apps` shows it."""
+
+    name: str
+    sync: str  # Synced | OutOfSync | Unknown
+    health: str  # Healthy | Progressing | Degraded | Suspended | Missing | Unknown
+    operation: str  # phase of the last sync operation (Running, Succeeded, Failed, Error, …) or "-"
+    revision: str  # short synced revision(s), comma-joined for multi-source apps, or "-"
+    errors: list[str]  # "<type>: <message>" per `*Error` condition
+    resources: list[str]  # "Kind/name: <health> (<message>)" per resource that is not Healthy
+
+
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _short_revision(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return value[:7] if _GIT_SHA.match(value) else value
+
+
+def _unhealthy_resources(resources: object) -> list[str]:
+    lines: list[str] = []
+    for resource in resources if isinstance(resources, list) else []:
+        if not isinstance(resource, dict):
+            continue
+        health = _dict(resource.get("health"))
+        status = _str(health.get("status"))
+        if not status or status == "Healthy":
+            continue
+        line = f"{_str(resource.get('kind')) or '?'}/{_str(resource.get('name')) or '?'}: {status}"
+        message = _str(health.get("message")).strip()
+        lines.append(f"{line} ({message})" if message else line)
+    return lines
+
+
+def application_details(text: str) -> list[ApplicationDetail]:
+    """One `ApplicationDetail` per item of `kubectl get applications -o json`, in the server's
+    order; empty if not parseable. Missing fields read Unknown / "-" rather than failing."""
+    details: list[ApplicationDetail] = []
+    for item in _items(text):
+        status = _dict(item.get("status"))
+        sync = _dict(status.get("sync"))
+        revisions = sync.get("revisions")
+        if isinstance(revisions, list):
+            shorts = [short for short in (_short_revision(r) for r in revisions) if short]
+            revision = ", ".join(shorts) or "-"
+        else:
+            revision = _short_revision(sync.get("revision")) or "-"
+        details.append(
+            ApplicationDetail(
+                name=_str(_dict(item.get("metadata")).get("name")) or "?",
+                sync=_str(sync.get("status")) or "Unknown",
+                health=_str(_dict(status.get("health")).get("status")) or "Unknown",
+                operation=_str(_dict(status.get("operationState")).get("phase")) or "-",
+                revision=revision,
+                errors=_error_conditions(status),
+                resources=_unhealthy_resources(status.get("resources")),
+            )
+        )
+    return details
 
 
 def _int(value: object) -> int | None:

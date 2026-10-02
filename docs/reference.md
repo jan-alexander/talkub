@@ -242,9 +242,22 @@ Version skew: repos written by this talkub version (`schematics` instead of `ins
 
     talkub bootstrap                 # etcd, kubeconfig, Sealed Secrets, Argo CD, root app (re-runnable)
     talkub status                    # target vs. actual per node + Argo CD sync/health and app errors
+    talkub status --apps             # plus one line per Argo CD Application (sync, health, operation, …)
     talkub upgrade talos             # nodes whose Talos version or schematic differs, one at a time
     talkub upgrade k8s               # shows the talosctl dry-run first
     talkub kubeconfig                # fetch a fresh admin kubeconfig, nothing else
+
+`status` looks every node up in parallel (Talos version, schematic, config drift) alongside the
+Kubernetes side (kubelet versions, Argo CD Applications); on a terminal the table fills in live,
+each running row with a spinner and the call in progress, while a pipe gets the plain table once
+at the end. Below the nodes it prints the Argo CD summary (`argocd: 12 Synced/Healthy, 1
+OutOfSync/Progressing`) and, for apps stuck with a `*Error` condition, one line each with the
+reason. `--apps`/`-a` replaces those lines with a table of every Application: SYNC and HEALTH as
+Argo CD reports them, OPERATION is the phase of the last sync operation (`Running` while a sync is
+in progress, `Failed`/`Error` when it broke, `-` if none ran yet), REVISION the synced git SHA or
+chart version, and NOTE lists the error conditions plus every resource that is not Healthy
+(`Deployment/harbor-core: Progressing (…)`) — the quickest way to see *which* app is progressing
+or degraded and why.
 
 `kubeconfig` replaces `kubernetes/kubeconfig.sops.yaml` with a new admin kubeconfig from the first
 control plane that answers (after `tailscale lockdown` pointed at the tailnet, as `bootstrap` does).

@@ -357,3 +357,57 @@ def test_machine_ca_missing():
 
     with pytest.raises(ValidationError):
         machine_ca(_resource("version: v1alpha1\nmachine:\n  type: controlplane\n"))
+
+
+APPS_DETAILED = """{"items": [
+  {"metadata": {"name": "argocd"}, "status": {
+    "sync": {"status": "Synced", "revision": "0123456789abcdef0123456789abcdef01234567"},
+    "health": {"status": "Healthy"},
+    "operationState": {"phase": "Succeeded"},
+    "resources": [{"kind": "Deployment", "name": "argocd-server", "health": {"status": "Healthy"}},
+                  {"kind": "ConfigMap", "name": "argocd-cm", "status": "Synced"}]}},
+  {"metadata": {"name": "harbor"}, "status": {
+    "sync": {"status": "OutOfSync", "revisions": ["1.18.0", "0123456789abcdef0123456789abcdef01234567"]},
+    "health": {"status": "Progressing"},
+    "operationState": {"phase": "Running"},
+    "resources": [{"kind": "Deployment", "namespace": "harbor", "name": "harbor-core",
+                   "health": {"status": "Progressing", "message": "Waiting for rollout to finish"}},
+                  {"kind": "StatefulSet", "name": "harbor-database", "health": {"status": "Degraded"}}]}},
+  {"metadata": {"name": "root"}, "status": {
+    "sync": {"status": "Unknown"}, "health": {"status": "Healthy"},
+    "conditions": [{"type": "ComparisonError", "message": "Repository not found"},
+                   {"type": "SharedResourceWarning", "message": "shared"}]}}
+]}"""
+
+
+def test_application_details_one_entry_per_app_in_order():
+    argocd, harbor, root = inspect.application_details(APPS_DETAILED)
+    assert (argocd.name, argocd.sync, argocd.health, argocd.operation) == ("argocd", "Synced", "Healthy", "Succeeded")
+    assert argocd.revision == "0123456"
+    assert argocd.resources == []
+    assert argocd.errors == []
+    assert (harbor.sync, harbor.health, harbor.operation) == ("OutOfSync", "Progressing", "Running")
+    assert harbor.revision == "1.18.0, 0123456"
+    assert harbor.resources == [
+        "Deployment/harbor-core: Progressing (Waiting for rollout to finish)",
+        "StatefulSet/harbor-database: Degraded",
+    ]
+    assert (root.sync, root.health, root.operation, root.revision) == ("Unknown", "Healthy", "-", "-")
+    assert root.errors == ["ComparisonError: Repository not found"]
+
+
+def test_application_details_defensive():
+    assert inspect.application_details("not json") == []
+    assert inspect.application_details('{"items": []}') == []
+    [weird] = inspect.application_details('{"items": [{"status": "weird"}]}')
+    assert (weird.name, weird.sync, weird.health, weird.operation, weird.revision) == (
+        "?",
+        "Unknown",
+        "Unknown",
+        "-",
+        "-",
+    )
+    [odd] = inspect.application_details(
+        '{"items": [{"metadata": {"name": "a"}, "status": {"resources": [5, {"health": 3}]}}]}'
+    )
+    assert odd.resources == []
