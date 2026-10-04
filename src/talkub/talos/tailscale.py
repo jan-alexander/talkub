@@ -34,6 +34,7 @@ from talkub.talos.firewall import (
     write_firewall_patch,
 )
 from talkub.talos.lifecycle import is_bootstrapped, ordered_nodes
+from talkub.talos.nodes import ensure_node_ip_pins
 
 EXTENSION = "siderolabs/tailscale"
 _LABEL = r"[a-z0-9]([a-z0-9-]*[a-z0-9])?"
@@ -159,10 +160,23 @@ def firewall(repo: Repo) -> list[str]:
             hint="run `talkub tailscale lockdown` first; it writes the firewall",
         )
     sources = write_firewall_patch(repo, settings)
+    pinned, pin_warnings = ensure_node_ip_pins(repo, settings)
     return [
+        *_pin_notes(pinned, pin_warnings),
         f"rewrote {repo.rel(firewall_patch_path(repo))}: cluster ports open to {', '.join(sources)}",
         "run `talkub apply` to activate it on the nodes",
     ]
+
+
+def _pin_notes(pinned: Sequence[str], warnings: Sequence[str]) -> list[str]:
+    notes = list(warnings)
+    if pinned:
+        notes.insert(
+            0,
+            f"pinned the Kubernetes node IP of {', '.join(pinned)} to its ip (KubeNodeConfig in talos/nodes/): "
+            "API server endpoint and kubelet no longer depend on tailscale0",
+        )
+    return notes
 
 
 def _load_mapping(data: bytes, what: str) -> dict:
@@ -315,8 +329,10 @@ def lockdown(ctx: Context, *, use_ips: bool = False) -> list[str]:
     if kubeconfig is not None:
         atomic_write(repo.kubeconfig, kubeconfig)
     repo.write_settings(settings)
+    pinned, pin_warnings = ensure_node_ip_pins(repo, settings)
     atomic_write(firewall_patch_path(repo), render_firewall_patch(sources).encode())
     notes = [
+        *_pin_notes(pinned, pin_warnings),
         f"talkub now reaches the nodes via: {', '.join(settings.mgmt_address(n) for n in settings.nodes)}",
         (
             "run `talkub apply` to activate the firewall; afterwards 50000/6443 are open only to the tailnet "

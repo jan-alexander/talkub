@@ -73,7 +73,15 @@ What the two steps write:
 | 80, 443/tcp                              | anywhere, only on nodes added with `--public-ingress`  | a public ingress controller    |
 
 The nodes keep their LAN/public addresses for the cluster itself and do not use Tailscale DNS
-(`TS_ACCEPT_DNS=false`); only admin clients go through the tailnet. Everything else, NodePorts
+(`TS_ACCEPT_DNS=false`); only admin clients go through the tailnet. To keep it that way, `lockdown`
+(and `talkub tailscale firewall`, `node add`) pins each node's Kubernetes node IP to its `ip` with a
+`KubeNodeConfig` in `talos/nodes/<node>.yaml`. Without the pin Talos may pick the tailscale0 address
+for `kube-apiserver --advertise-address` (the endpoint of the `kubernetes` Service, i.e. every
+in-cluster client such as Argo CD) and `kubelet --node-ip`; a tailscaled failure would then take the
+whole control plane down together with the admin path, with no way back in but the provider's
+console. Repos locked down by an older talkub get the pin from `talkub tailscale firewall` followed
+by `talkub apply` (kubelet and API server restart once, no reboot). An existing `KubeNodeConfig` in
+the node patch is left alone and reported if it pins another address. Everything else, NodePorts
 included, is blocked from outside. The rules name each node's `ip`, so a node needs a fixed address
 (DHCP reservation or `--static`) and `ip` must be an IP, not a name (`mgmt` may be a name).
 `talkub node add` rewrites `talos/patches/firewall.yaml` with the new node; after changing a node's
@@ -98,7 +106,8 @@ The IPs stay the same as long as the device is not deleted from the tailnet.
   `--use-ips`, set it to the node's tailnet IP after the first install. The first install
   (`apply --insecure`) still uses `--ip`: maintenance mode has no firewall. See [nodes](nodes.md).
 - **A node's `ip` changed**: update it in `.talkub.yaml`, then `talkub tailscale firewall` and
-  `talkub apply`.
+  `talkub apply`. The `KubeNodeConfig` pin in `talos/nodes/<node>.yaml` is not rewritten; `firewall`
+  reports it if it still names the old address, so update it by hand in the same step.
 - **A new auth key** (expired or revoked): `talkub sops edit talos/patches/tailscale.sops.yaml`,
   then `talkub apply`. Nodes already in the tailnet keep their device; the key matters for new and
   reinstalled nodes.

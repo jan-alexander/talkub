@@ -356,3 +356,25 @@ def test_lockdown_without_talosconfig(repo):
     assert "does not exist" in str(exc.value)
     assert "talkub init" in exc.value.hint
     assert not tailscale.firewall_patch_path(repo).exists()
+
+
+def test_lockdown_and_firewall_pin_the_kubernetes_node_ip(repo):
+    from talkub.talos.nodes import node_patch_path, render_node_patch
+
+    for name in ("cp-01", "w-01"):
+        path = node_patch_path(repo, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(render_node_patch(name))
+    tailscale.enable(Context.open(repo), tailnet="t.ts.net", authkey=KEY)
+    notes = tailscale.lockdown(Context.open(repo))
+    assert "- 10.0.0.10/32" in node_patch_path(repo, "cp-01").read_text()
+    assert "- 10.0.0.20/32" in node_patch_path(repo, "w-01").read_text()
+    assert any("KubeNodeConfig" in n and "cp-01" in n and "w-01" in n for n in notes)
+    # a node added by hand later gets its pin from the firewall rewrite
+    settings = repo.load_settings()
+    settings.nodes["w-02"] = NodeSpec(ip="10.0.0.40", role="worker", mgmt="w-02.t.ts.net")
+    repo.write_settings(settings)
+    node_patch_path(repo, "w-02").write_text(render_node_patch("w-02"))
+    notes = tailscale.firewall(repo)
+    assert "- 10.0.0.40/32" in node_patch_path(repo, "w-02").read_text()
+    assert any("KubeNodeConfig" in n and "w-02" in n and "cp-01" not in n for n in notes)

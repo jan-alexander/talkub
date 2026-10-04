@@ -69,7 +69,39 @@ class NodeOptions:
         return warnings
 
 
-def render_node_patch(node: str, options: NodeOptions = NodeOptions()) -> str:
+# Without a pin Talos picks the node's "first" address for Kubernetes; with the Tailscale
+# extension that is often the tailscale0 one. The API server then advertises it (the endpoint
+# of the `kubernetes` Service, i.e. every in-cluster client) and the kubelet registers it, so
+# a tailscaled failure takes Argo CD, cert-manager and the node status down with the admin
+# path, and with the lockdown firewall nothing is left to recover from (seen 2026-10-02).
+PIN_COMMENT = (
+    "# Kubernetes node IP pinned to the node's address (written by talkub): otherwise Talos may\n"
+    "# pick the tailscale0 address, and a tailscaled failure would take the API server endpoint\n"
+    "# and the kubelet down with it, not only the admin path.\n"
+)
+
+
+def node_ip_document(address: str) -> dict:
+    """KubeNodeConfig that pins the Kubernetes node IP to `address` (an IP, not a name)."""
+    ip = ipaddress.ip_address(address)
+    return {
+        "apiVersion": "v1alpha1",
+        "kind": "KubeNodeConfig",
+        "nodeIP": {"validSubnets": [f"{ip}/{ip.max_prefixlen}"]},
+    }
+
+
+def pinned_address(spec: NodeSpec, options: NodeOptions) -> str | None:
+    """The address to pin the node IP to: the static address, else `ip`; None if that is a name."""
+    candidate = options.static.split("/")[0] if options.static else spec.ip
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    return candidate
+
+
+def render_node_patch(node: str, options: NodeOptions = NodeOptions(), node_ip: str | None = None) -> str:
     docs: list[dict] = [
         {
             "apiVersion": "v1alpha1",
@@ -124,6 +156,8 @@ def render_node_patch(node: str, options: NodeOptions = NodeOptions()) -> str:
                 "ingress": [{"subnet": "0.0.0.0/0"}, {"subnet": "::/0"}],
             }
         )
+    if node_ip is not None:
+        docs.append(node_ip_document(node_ip))
     header = (
         f"# Talos patch for node {node}, applied after talos/patches/*.yaml.\n"
         "# Written by `talkub node add`; edit freely.\n"
@@ -164,6 +198,42 @@ def upsert_documents(path: Path, docs: Sequence[dict]) -> None:
             index[key] = len(existing)
             existing.append(doc)
     atomic_write(path, (header + "---\n".join(yamlio.dump(doc) for doc in existing)).encode())
+
+
+def ensure_node_ip_pins(repo: Repo, settings: Settings) -> tuple[list[str], list[str]]:
+    """Append the KubeNodeConfig pin to every node patch that has none (the file is kept as
+    is, comments included). Nodes without a patch file are skipped. Returns (nodes pinned,
+    warnings: a name as `ip`, or an existing pin to another address)."""
+    pinned: list[str] = []
+    warnings: list[str] = []
+    for name, spec in settings.nodes.items():
+        path = node_patch_path(repo, name)
+        if not path.is_file():
+            continue
+        try:
+            ipaddress.ip_address(spec.ip)
+        except ValueError:
+            warnings.append(
+                f"node '{name}': ip {spec.ip!r} is not an IP address, so its Kubernetes node IP "
+                "is not pinned (KubeNodeConfig); set ip to the node's address and run `talkub tailscale firewall`"
+            )
+            continue
+        doc = node_ip_document(spec.ip)
+        existing = [d for d in read_node_documents(path) if isinstance(d, dict) and d.get("kind") == "KubeNodeConfig"]
+        if existing:
+            subnets = list((existing[0].get("nodeIP") or {}).get("validSubnets") or [])
+            if subnets != doc["nodeIP"]["validSubnets"]:
+                warnings.append(
+                    f"node '{name}': {repo.rel(path)} pins the Kubernetes node IP to "
+                    f"{', '.join(subnets) or 'nothing'}, not {doc['nodeIP']['validSubnets'][0]}; check it"
+                )
+            continue
+        text = path.read_text()
+        if not text.endswith("\n"):
+            text += "\n"
+        atomic_write(path, (text + "---\n" + PIN_COMMENT + yamlio.dump(doc)).encode())
+        pinned.append(name)
+    return pinned, warnings
 
 
 def node_patch_path(repo: Repo, node: str) -> Path:
@@ -252,7 +322,15 @@ def add_node(repo: Repo, name: str, spec: NodeSpec, options: NodeOptions) -> lis
         )
     if options.public_ingress and not is_locked_down(repo):
         warnings.append("--public-ingress has no effect without the Talos firewall (see `talkub tailscale lockdown`)")
-    atomic_write(path, render_node_patch(name, options).encode())
+    node_ip = None
+    if settings.tailscale is not None:
+        node_ip = pinned_address(spec, options)
+        if node_ip is None:
+            warnings.append(
+                f"ip {spec.ip!r} is not an IP address, so the Kubernetes node IP is not pinned "
+                "(KubeNodeConfig): with the Tailscale extension Talos may pick the tailscale0 address"
+            )
+    atomic_write(path, render_node_patch(name, options, node_ip=node_ip).encode())
     repo.write_settings(settings)
     if locked_down:
         atomic_write(firewall, render_firewall_patch(sources).encode())

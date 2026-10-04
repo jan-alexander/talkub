@@ -38,6 +38,10 @@ talkub status
   rewrites `talos/patches/firewall.yaml` to allow the new node's `ip` (which must be an IP address,
   not a name). Apply that to the existing nodes first (`talkub apply <existing nodes>`, the warning
   names them); a plain `talkub apply` would also try the new, not yet installed node.
+- With Tailscale enabled, `node add` also pins the Kubernetes node IP to the node's address
+  (`KubeNodeConfig` with `nodeIP.validSubnets`, the static address if given, else `ip`). Without
+  the pin Talos may pick the tailscale0 address, and the API server endpoint and the kubelet would
+  depend on tailscaled; see [tailscale](tailscale.md#1c-what-the-firewall-allows).
 - If the machine already has Talos on its disk, `apply --insecure` shows that and asks: see
   [getting started](getting-started.md#2a-the-node-already-has-talos-on-its-disk).
 

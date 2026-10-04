@@ -416,3 +416,75 @@ def test_upsert_documents_keeps_non_mapping_documents(tmp_path):
     volume = {"apiVersion": "v1alpha1", "kind": "UserVolumeConfig", "name": "data"}
     upsert_documents(path, [volume])
     assert read_node_documents(path)[-2:] == [json6902, volume]
+
+
+def test_node_ip_pin_document_uses_the_host_prefix():
+    from talkub.talos.nodes import node_ip_document
+
+    assert node_ip_document("10.0.0.10") == {
+        "apiVersion": "v1alpha1",
+        "kind": "KubeNodeConfig",
+        "nodeIP": {"validSubnets": ["10.0.0.10/32"]},
+    }
+    assert node_ip_document("2001:db8::10")["nodeIP"]["validSubnets"] == ["2001:db8::10/128"]
+
+
+def test_render_node_patch_pins_the_node_ip_when_given():
+    assert "KubeNodeConfig" not in render_node_patch("cp-01")
+    kinds = {d["kind"]: d for d in _docs(render_node_patch("cp-01", node_ip="10.0.0.10"))}
+    assert kinds["KubeNodeConfig"]["nodeIP"] == {"validSubnets": ["10.0.0.10/32"]}
+
+
+def test_add_node_pins_the_node_ip_only_with_tailscale(empty_repo):
+    from talkub.config import TailscaleSpec
+
+    add_node(empty_repo, "w-01", NodeSpec(ip="10.0.0.11", role="worker"), NodeOptions())
+    assert "KubeNodeConfig" not in node_patch_path(empty_repo, "w-01").read_text()
+    settings = empty_repo.load_settings()
+    settings.tailscale = TailscaleSpec(tailnet="t.ts.net")
+    empty_repo.write_settings(settings)
+    add_node(empty_repo, "w-02", NodeSpec(ip="10.0.0.12", role="worker"), NodeOptions())
+    assert "- 10.0.0.12/32" in node_patch_path(empty_repo, "w-02").read_text()
+    # a static address wins over the (DHCP) ip the node has at `node add` time
+    add_node(
+        empty_repo,
+        "w-03",
+        NodeSpec(ip="10.0.0.13", role="worker"),
+        NodeOptions(static="10.0.0.33/24", gateway="10.0.0.1"),
+    )
+    assert "- 10.0.0.33/32" in node_patch_path(empty_repo, "w-03").read_text()
+    # a name as ip (allowed before lockdown) cannot be pinned: the user is told
+    warnings = add_node(empty_repo, "w-04", NodeSpec(ip="w-04.lan", role="worker"), NodeOptions())
+    assert "KubeNodeConfig" not in node_patch_path(empty_repo, "w-04").read_text()
+    assert any("w-04.lan" in w and "KubeNodeConfig" in w for w in warnings)
+
+
+def test_ensure_node_ip_pins_appends_and_keeps_existing_documents(empty_repo):
+    from talkub.talos.nodes import ensure_node_ip_pins
+
+    settings = empty_repo.load_settings()
+    settings.nodes["w-01"] = NodeSpec(ip="10.0.0.11", role="worker")
+    settings.nodes["w-02"] = NodeSpec(ip="10.0.0.12", role="worker")
+    settings.nodes["w-03"] = NodeSpec(ip="w-03.lan", role="worker")
+    empty_repo.write_settings(settings)
+    plain = node_patch_path(empty_repo, "w-01")
+    plain.parent.mkdir(parents=True)
+    plain.write_text(
+        render_node_patch("w-01") + "---\n# keep me\napiVersion: v1alpha1\nkind: NetworkRuleConfig\nname: x\n"
+    )
+    pinned = node_patch_path(empty_repo, "w-02")
+    pinned.write_text(render_node_patch("w-02", node_ip="10.0.0.99"))
+    node_patch_path(empty_repo, "w-03").write_text(render_node_patch("w-03"))
+    # cp-01 from sample_settings has no patch file: skipped
+    names, warnings = ensure_node_ip_pins(empty_repo, settings)
+    assert names == ["w-01"]
+    text = plain.read_text()
+    assert "# keep me" in text and "name: x" in text  # untouched, comments included
+    assert text.count("---") == 2 and "- 10.0.0.11/32" in text
+    assert [d["kind"] for d in _docs(text)] == ["HostnameConfig", "NetworkRuleConfig", "KubeNodeConfig"]
+    assert "- 10.0.0.99/32" in pinned.read_text()  # an existing pin is not rewritten
+    assert any("w-02" in w and "10.0.0.99/32" in w and "10.0.0.12/32" in w for w in warnings)
+    assert any("w-03" in w and "w-03.lan" in w for w in warnings)
+    # idempotent
+    assert ensure_node_ip_pins(empty_repo, settings)[0] == []
+    assert plain.read_text() == text
